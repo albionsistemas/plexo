@@ -6,6 +6,7 @@ import { DatabaseModule } from '@plexo/database';
 import { InventoryModule } from '@plexo/inventory';
 import { InvoicingModule } from '@plexo/invoicing';
 import { ReceivablesModule } from '@plexo/receivables';
+import { TaxesModule } from '@plexo/taxes';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module.js';
@@ -19,6 +20,7 @@ import { SalesModule } from './sales/sales.module.js';
     InvoicingModule,
     ReceivablesModule,
     AccountingModule,
+    TaxesModule,
     SalesModule,
   ],
   controllers: [AppController],

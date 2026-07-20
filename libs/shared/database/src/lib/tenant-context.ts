@@ -1,9 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Prisma, PrismaClient } from '../generated/client.js';
+import type { UserRole } from '../generated/enums.js';
 
 export interface TenantStore {
   tenantId: string;
   userId?: string;
+  role?: UserRole;
   tx: Prisma.TransactionClient;
 }
 
@@ -39,6 +41,17 @@ export function getUserId(): string | undefined {
 }
 
 /**
+ * The acting user's role, if any - for the rare case where business logic
+ * itself needs to branch on role (e.g. TaxesService gating a rate change
+ * by managedByAccountant only for ACCOUNTANT, never for OWNER/ADMIN).
+ * Prefer RolesGuard/@Roles() at the route level for anything that isn't
+ * this kind of per-record, data-dependent check.
+ */
+export function getUserRole(): UserRole | undefined {
+  return requireStore().role;
+}
+
+/**
  * The Prisma client to use for the current request. This is a transaction
  * client with `app.tenant_id` already set via set_config(), so RLS policies
  * apply. Never use the bare PrismaService client for tenant-scoped queries.
@@ -66,12 +79,13 @@ export async function withTenantContext<T>(
   tenantId: string,
   fn: () => Promise<T>,
   userId?: string,
+  role?: UserRole,
 ): Promise<T> {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
     if (userId) {
       await tx.$executeRaw`SELECT set_config('app.user_id', ${userId}, true)`;
     }
-    return tenantContextStorage.run({ tenantId, userId, tx }, fn);
+    return tenantContextStorage.run({ tenantId, userId, role, tx }, fn);
   });
 }
