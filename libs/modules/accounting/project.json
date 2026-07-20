@@ -1,0 +1,9 @@
+{
+  "name": "accounting",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/modules/accounting/src",
+  "projectType": "library",
+  "tags": ["scope:accounting", "type:feature"],
+  "// targets": "to see all targets run: nx show project accounting --web",
+  "targets": {}
+}

@@ -1,0 +1,9 @@
+{
+  "name": "receivables",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/modules/receivables/src",
+  "projectType": "library",
+  "tags": ["scope:receivables", "type:feature"],
+  "// targets": "to see all targets run: nx show project receivables --web",
+  "targets": {}
+}

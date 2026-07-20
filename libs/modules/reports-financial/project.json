@@ -1,0 +1,9 @@
+{
+  "name": "reports-financial",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/modules/reports-financial/src",
+  "projectType": "library",
+  "tags": ["scope:reports-financial", "type:feature"],
+  "// targets": "to see all targets run: nx show project reports-financial --web",
+  "targets": {}
+}

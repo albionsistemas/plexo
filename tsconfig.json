@@ -1,0 +1,59 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compileOnSave": false,
+  "files": [],
+  "references": [
+    {
+      "path": "./apps/api-e2e"
+    },
+    {
+      "path": "./apps/api"
+    },
+    {
+      "path": "./apps/web"
+    },
+    {
+      "path": "./libs/shared/types"
+    },
+    {
+      "path": "./libs/shared/database"
+    },
+    {
+      "path": "./libs/shared/auth"
+    },
+    {
+      "path": "./libs/shared/ui"
+    },
+    {
+      "path": "./libs/shared/command-palette"
+    },
+    {
+      "path": "./libs/modules/invoicing"
+    },
+    {
+      "path": "./libs/modules/quotes"
+    },
+    {
+      "path": "./libs/modules/receivables"
+    },
+    {
+      "path": "./libs/modules/inventory"
+    },
+    {
+      "path": "./libs/modules/taxes"
+    },
+    {
+      "path": "./libs/modules/accounting"
+    },
+    {
+      "path": "./libs/modules/reports-pnl"
+    },
+    {
+      "path": "./libs/modules/reports-sales"
+    },
+    {
+      "path": "./libs/modules/reports-financial"
+    }
+  ],
+  "compilerOptions": {}
+}

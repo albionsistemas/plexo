@@ -1,0 +1,9 @@
+{
+  "name": "reports-pnl",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/modules/reports-pnl/src",
+  "projectType": "library",
+  "tags": ["scope:reports-pnl", "type:feature"],
+  "// targets": "to see all targets run: nx show project reports-pnl --web",
+  "targets": {}
+}

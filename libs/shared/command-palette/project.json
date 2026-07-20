@@ -1,0 +1,15 @@
+{
+  "name": "command-palette",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/shared/command-palette/src",
+  "projectType": "library",
+  "tags": ["scope:shared", "type:ui"],
+  "// targets": "to see all targets run: nx show project command-palette --web",
+  "targets": {
+    "test": {
+      "options": {
+        "passWithNoTests": true
+      }
+    }
+  }
+}

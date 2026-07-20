@@ -1,0 +1,21 @@
+FROM node:24-alpine AS base
+WORKDIR /workspace
+
+FROM base AS deps
+COPY package.json package-lock.json ./
+COPY apps/api/package.json apps/api/package.json
+RUN npm ci
+
+FROM deps AS build
+COPY . .
+RUN npx prisma generate
+RUN npx nx build api --configuration=production
+
+FROM base AS runtime
+ENV NODE_ENV=production
+COPY --from=build /workspace/apps/api/dist ./dist
+COPY --from=build /workspace/generated ./generated
+COPY --from=build /workspace/node_modules ./node_modules
+COPY --from=build /workspace/package.json ./package.json
+EXPOSE 3000
+CMD ["node", "dist/main.js"]
