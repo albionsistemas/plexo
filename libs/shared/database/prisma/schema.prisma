@@ -48,6 +48,27 @@ enum AuditAction {
   DELETE
 }
 
+// AFIP comprobante letter. Applies to both Invoice and CreditNote - the
+// model itself (Invoice vs CreditNote) already says which kind of document
+// it is, so this only needs to carry the letter, not "CREDIT_NOTE_A" etc.
+enum DocumentLetter {
+  A
+  B
+  C
+  M
+}
+
+enum DiscountType {
+  PERCENTAGE
+  AMOUNT
+}
+
+enum TaxCalculationType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FORMULA
+}
+
 model Tenant {
   id        String   @id @default(uuid())
   name      String
@@ -66,7 +87,9 @@ model User {
   isExternalAccountant Boolean  @default(false)
   createdAt            DateTime @default(now())
 
-  moduleAccess UserModuleAccess[]
+  moduleAccess      UserModuleAccess[]
+  issuedInvoices    Invoice[]
+  issuedCreditNotes CreditNote[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -103,6 +126,42 @@ model Customer {
   @@map("customers")
 }
 
+// --- Currency ---
+
+// Pricing reference is USD (ArticleVariant.unitPrice) per the invoicing
+// design; invoices are denominated in whichever Currency the tenant issues
+// in (typically ARS), converting at Invoice.exchangeRate - which is locked
+// at issuance, never recomputed from here afterward.
+model Currency {
+  id       String  @id @default(uuid())
+  tenantId String
+  code     String
+  name     String
+  isBase   Boolean @default(false)
+
+  exchangeRates ExchangeRateHistory[]
+  invoices      Invoice[]
+  creditNotes   CreditNote[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("currencies")
+}
+
+// Append-only, like PriceHistory - never update a rate in place, insert a
+// new one. Rate is expressed as units of `currency` per 1 USD.
+model ExchangeRateHistory {
+  id          String   @id @default(uuid())
+  tenantId    String
+  currencyId  String
+  currency    Currency @relation(fields: [currencyId], references: [id])
+  rate        Decimal  @db.Decimal(18, 6)
+  effectiveAt DateTime @default(now())
+
+  @@index([tenantId, currencyId, effectiveAt])
+  @@map("exchange_rate_history")
+}
+
 // --- Inventory ---
 
 // Self-referential so category depth isn't hardcoded to 2 levels
@@ -127,16 +186,16 @@ model Category {
 // stocked directly - ArticleVariant is the sellable/stocked unit, even
 // for articles with no real variation (see ArticleVariant comment).
 model Article {
-  id            String        @id @default(uuid())
-  tenantId      String
-  name          String
-  description   String?
-  unitOfMeasure UnitOfMeasure @default(UNIT)
-  categoryId    String?
-  category      Category?     @relation(fields: [categoryId], references: [id])
-  taxConfigId   String?
-  taxConfig     TaxConfig?    @relation(fields: [taxConfigId], references: [id])
-  createdAt     DateTime      @default(now())
+  id              String         @id @default(uuid())
+  tenantId        String
+  name            String
+  description     String?
+  unitOfMeasure   UnitOfMeasure  @default(UNIT)
+  categoryId      String?
+  category        Category?      @relation(fields: [categoryId], references: [id])
+  taxDefinitionId String?
+  taxDefinition   TaxDefinition? @relation(fields: [taxDefinitionId], references: [id])
+  createdAt       DateTime       @default(now())
 
   variants ArticleVariant[]
 
@@ -279,28 +338,47 @@ model AuditLog {
   @@map("audit_log")
 }
 
+// Once afipCae is set, this row is fiscally locked (see the
+// invoice-immutability migration): every column except balanceDue/status
+// becomes read-only, even for admins. Corrections after that point are a
+// CreditNote referencing this invoice, never an UPDATE.
 model Invoice {
-  id            String        @id @default(uuid())
-  tenantId      String
-  customerId    String
-  customer      Customer      @relation(fields: [customerId], references: [id])
-  number        String
-  status        InvoiceStatus @default(DRAFT)
-  issueDate     DateTime      @default(now())
-  dueDate       DateTime?
-  subtotal      Decimal       @db.Decimal(14, 2)
-  taxTotal      Decimal       @db.Decimal(14, 2)
-  total         Decimal       @db.Decimal(14, 2)
-  balanceDue    Decimal       @db.Decimal(14, 2)
-  afipCae       String?
-  afipCaeExpiry DateTime?
+  id                    String         @id @default(uuid())
+  tenantId              String
+  customerId            String
+  customer              Customer       @relation(fields: [customerId], references: [id])
+  // Snapshot of the customer at issuance - required for fiscal documents:
+  // Customer.name/taxId can change later, the invoice must not silently
+  // change with it.
+  customerName          String
+  customerTaxId         String?
+  documentLetter        DocumentLetter
+  pointOfSale           String
+  number                String
+  status                InvoiceStatus  @default(DRAFT)
+  issueDate             DateTime       @default(now())
+  dueDate               DateTime?
+  currencyId            String
+  currency              Currency       @relation(fields: [currencyId], references: [id])
+  // USD -> currency, locked at issuance - never recompute retroactively.
+  exchangeRate          Decimal        @db.Decimal(18, 6)
+  globalDiscountPercent Decimal        @default(0) @db.Decimal(5, 2)
+  subtotal              Decimal        @db.Decimal(14, 2)
+  taxTotal              Decimal        @db.Decimal(14, 2)
+  total                 Decimal        @db.Decimal(14, 2)
+  balanceDue            Decimal        @db.Decimal(14, 2)
+  afipCae               String?
+  afipCaeExpiry         DateTime?
+  issuedByUserId        String
+  issuedBy              User           @relation(fields: [issuedByUserId], references: [id])
 
   lines        InvoiceLine[]
   movements    StockMovement[]
   journalEntry JournalEntry?
   receipts     Receipt[]
+  creditNotes  CreditNote[]
 
-  @@unique([tenantId, number])
+  @@unique([tenantId, documentLetter, pointOfSale, number])
   @@index([tenantId, customerId])
   @@map("invoices")
 }
@@ -313,12 +391,50 @@ model InvoiceLine {
   articleVariantId String
   articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
   quantity         Decimal        @db.Decimal(14, 3)
+  // Already converted to the invoice's currency (articleVariant.unitPrice
+  // in USD x Invoice.exchangeRate), before any discount.
   unitPrice        Decimal        @db.Decimal(14, 2)
+  discountType     DiscountType   @default(PERCENTAGE)
+  discountValue    Decimal        @default(0) @db.Decimal(14, 2)
+  // quantity*unitPrice net of discountType/discountValue, pre-tax,
+  // pre-global-discount - kept for auditability instead of only storing
+  // the final lineTotal, since the calculation chain has multiple stages.
+  netAmount        Decimal        @db.Decimal(14, 2)
   taxRate          Decimal        @db.Decimal(5, 2)
   lineTotal        Decimal        @db.Decimal(14, 2)
 
   @@index([tenantId])
   @@map("invoice_lines")
+}
+
+// A correction to an already-issued Invoice. Never an UPDATE to the
+// original - the trigger enforces that once an Invoice has a CAE, it's
+// read-only, so any adjustment (return, pricing error, cancellation) has
+// to be its own fiscal document, linked back via invoiceId.
+model CreditNote {
+  id             String         @id @default(uuid())
+  tenantId       String
+  invoiceId      String
+  invoice        Invoice        @relation(fields: [invoiceId], references: [id])
+  documentLetter DocumentLetter
+  pointOfSale    String
+  number         String
+  reason         String
+  currencyId     String
+  currency       Currency       @relation(fields: [currencyId], references: [id])
+  exchangeRate   Decimal        @db.Decimal(18, 6)
+  subtotal       Decimal        @db.Decimal(14, 2)
+  taxTotal       Decimal        @db.Decimal(14, 2)
+  total          Decimal        @db.Decimal(14, 2)
+  afipCae        String?
+  afipCaeExpiry  DateTime?
+  issuedByUserId String
+  issuedBy       User           @relation(fields: [issuedByUserId], references: [id])
+  issueDate      DateTime       @default(now())
+
+  @@unique([tenantId, documentLetter, pointOfSale, number])
+  @@index([tenantId, invoiceId])
+  @@map("credit_notes")
 }
 
 model Quote {
@@ -409,16 +525,29 @@ model JournalEntryLine {
   @@map("journal_entry_lines")
 }
 
-model TaxConfig {
-  id                  String  @id @default(uuid())
+// Versioned by design: never edit `rate`/`formula` on a definition that's
+// already been used by an issued invoice - close it with `validTo` and
+// create a new row instead. That's what lets a tax change (IVA 21% ->
+// 22%, a new IIBB rate) apply going forward without altering the frozen
+// calculation on documents already issued.
+model TaxDefinition {
+  id                  String             @id @default(uuid())
   tenantId            String
+  code                String
   name                String
-  rate                Decimal @db.Decimal(5, 2)
-  managedByAccountant Boolean @default(false)
+  calculationType     TaxCalculationType @default(PERCENTAGE)
+  rate                Decimal?           @db.Decimal(5, 2)
+  fixedAmount         Decimal?           @db.Decimal(14, 2)
+  formula             String?
+  validFrom           DateTime           @default(now())
+  validTo             DateTime?
+  managedByAccountant Boolean            @default(false)
 
   articles Article[]
 
-  @@map("tax_configs")
+  @@unique([tenantId, code, validFrom])
+  @@index([tenantId])
+  @@map("tax_definitions")
 }
 
 model FinancialAccount {

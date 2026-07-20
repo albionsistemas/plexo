@@ -51,7 +51,7 @@ export class InventoryService {
         description: dto.description,
         unitOfMeasure: dto.unitOfMeasure,
         categoryId: dto.categoryId,
-        taxConfigId: dto.taxConfigId,
+        taxDefinitionId: dto.taxDefinitionId,
       },
     });
   }

@@ -16,6 +16,15 @@ CREATE TYPE "MovementType" AS ENUM ('PURCHASE_IN', 'SALE_OUT', 'RETURN', 'ADJUST
 -- CreateEnum
 CREATE TYPE "AuditAction" AS ENUM ('INSERT', 'UPDATE', 'DELETE');
 
+-- CreateEnum
+CREATE TYPE "DocumentLetter" AS ENUM ('A', 'B', 'C', 'M');
+
+-- CreateEnum
+CREATE TYPE "DiscountType" AS ENUM ('PERCENTAGE', 'AMOUNT');
+
+-- CreateEnum
+CREATE TYPE "TaxCalculationType" AS ENUM ('PERCENTAGE', 'FIXED_AMOUNT', 'FORMULA');
+
 -- CreateTable
 CREATE TABLE "tenants" (
     "id" TEXT NOT NULL,
@@ -65,6 +74,28 @@ CREATE TABLE "customers" (
 );
 
 -- CreateTable
+CREATE TABLE "currencies" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "isBase" BOOLEAN NOT NULL DEFAULT false,
+
+    CONSTRAINT "currencies_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "exchange_rate_history" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "currencyId" TEXT NOT NULL,
+    "rate" DECIMAL(18,6) NOT NULL,
+    "effectiveAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "exchange_rate_history_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "categories" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
@@ -82,7 +113,7 @@ CREATE TABLE "articles" (
     "description" TEXT,
     "unitOfMeasure" "UnitOfMeasure" NOT NULL DEFAULT 'UNIT',
     "categoryId" TEXT,
-    "taxConfigId" TEXT,
+    "taxDefinitionId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "articles_pkey" PRIMARY KEY ("id")
@@ -184,16 +215,24 @@ CREATE TABLE "invoices" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
     "customerId" TEXT NOT NULL,
+    "customerName" TEXT NOT NULL,
+    "customerTaxId" TEXT,
+    "documentLetter" "DocumentLetter" NOT NULL,
+    "pointOfSale" TEXT NOT NULL,
     "number" TEXT NOT NULL,
     "status" "InvoiceStatus" NOT NULL DEFAULT 'DRAFT',
     "issueDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "dueDate" TIMESTAMP(3),
+    "currencyId" TEXT NOT NULL,
+    "exchangeRate" DECIMAL(18,6) NOT NULL,
+    "globalDiscountPercent" DECIMAL(5,2) NOT NULL DEFAULT 0,
     "subtotal" DECIMAL(14,2) NOT NULL,
     "taxTotal" DECIMAL(14,2) NOT NULL,
     "total" DECIMAL(14,2) NOT NULL,
     "balanceDue" DECIMAL(14,2) NOT NULL,
     "afipCae" TEXT,
     "afipCaeExpiry" TIMESTAMP(3),
+    "issuedByUserId" TEXT NOT NULL,
 
     CONSTRAINT "invoices_pkey" PRIMARY KEY ("id")
 );
@@ -206,10 +245,35 @@ CREATE TABLE "invoice_lines" (
     "articleVariantId" TEXT NOT NULL,
     "quantity" DECIMAL(14,3) NOT NULL,
     "unitPrice" DECIMAL(14,2) NOT NULL,
+    "discountType" "DiscountType" NOT NULL DEFAULT 'PERCENTAGE',
+    "discountValue" DECIMAL(14,2) NOT NULL DEFAULT 0,
+    "netAmount" DECIMAL(14,2) NOT NULL,
     "taxRate" DECIMAL(5,2) NOT NULL,
     "lineTotal" DECIMAL(14,2) NOT NULL,
 
     CONSTRAINT "invoice_lines_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "credit_notes" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "invoiceId" TEXT NOT NULL,
+    "documentLetter" "DocumentLetter" NOT NULL,
+    "pointOfSale" TEXT NOT NULL,
+    "number" TEXT NOT NULL,
+    "reason" TEXT NOT NULL,
+    "currencyId" TEXT NOT NULL,
+    "exchangeRate" DECIMAL(18,6) NOT NULL,
+    "subtotal" DECIMAL(14,2) NOT NULL,
+    "taxTotal" DECIMAL(14,2) NOT NULL,
+    "total" DECIMAL(14,2) NOT NULL,
+    "afipCae" TEXT,
+    "afipCaeExpiry" TIMESTAMP(3),
+    "issuedByUserId" TEXT NOT NULL,
+    "issueDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "credit_notes_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -287,14 +351,20 @@ CREATE TABLE "journal_entry_lines" (
 );
 
 -- CreateTable
-CREATE TABLE "tax_configs" (
+CREATE TABLE "tax_definitions" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
     "name" TEXT NOT NULL,
-    "rate" DECIMAL(5,2) NOT NULL,
+    "calculationType" "TaxCalculationType" NOT NULL DEFAULT 'PERCENTAGE',
+    "rate" DECIMAL(5,2),
+    "fixedAmount" DECIMAL(14,2),
+    "formula" TEXT,
+    "validFrom" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "validTo" TIMESTAMP(3),
     "managedByAccountant" BOOLEAN NOT NULL DEFAULT false,
 
-    CONSTRAINT "tax_configs_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "tax_definitions_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -335,6 +405,15 @@ CREATE UNIQUE INDEX "user_module_access_userId_module_key" ON "user_module_acces
 
 -- CreateIndex
 CREATE INDEX "customers_tenantId_idx" ON "customers"("tenantId");
+
+-- CreateIndex
+CREATE INDEX "currencies_tenantId_idx" ON "currencies"("tenantId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "currencies_tenantId_code_key" ON "currencies"("tenantId", "code");
+
+-- CreateIndex
+CREATE INDEX "exchange_rate_history_tenantId_currencyId_effectiveAt_idx" ON "exchange_rate_history"("tenantId", "currencyId", "effectiveAt");
 
 -- CreateIndex
 CREATE INDEX "categories_tenantId_idx" ON "categories"("tenantId");
@@ -385,10 +464,16 @@ CREATE INDEX "audit_log_tenantId_tableName_recordId_idx" ON "audit_log"("tenantI
 CREATE INDEX "invoices_tenantId_customerId_idx" ON "invoices"("tenantId", "customerId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "invoices_tenantId_number_key" ON "invoices"("tenantId", "number");
+CREATE UNIQUE INDEX "invoices_tenantId_documentLetter_pointOfSale_number_key" ON "invoices"("tenantId", "documentLetter", "pointOfSale", "number");
 
 -- CreateIndex
 CREATE INDEX "invoice_lines_tenantId_idx" ON "invoice_lines"("tenantId");
+
+-- CreateIndex
+CREATE INDEX "credit_notes_tenantId_invoiceId_idx" ON "credit_notes"("tenantId", "invoiceId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "credit_notes_tenantId_documentLetter_pointOfSale_number_key" ON "credit_notes"("tenantId", "documentLetter", "pointOfSale", "number");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "quotes_tenantId_number_key" ON "quotes"("tenantId", "number");
@@ -406,10 +491,19 @@ CREATE UNIQUE INDEX "journal_entries_invoiceId_key" ON "journal_entries"("invoic
 CREATE INDEX "journal_entry_lines_tenantId_idx" ON "journal_entry_lines"("tenantId");
 
 -- CreateIndex
+CREATE INDEX "tax_definitions_tenantId_idx" ON "tax_definitions"("tenantId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "tax_definitions_tenantId_code_validFrom_key" ON "tax_definitions"("tenantId", "code", "validFrom");
+
+-- CreateIndex
 CREATE INDEX "financial_transactions_tenantId_idx" ON "financial_transactions"("tenantId");
 
 -- AddForeignKey
 ALTER TABLE "user_module_access" ADD CONSTRAINT "user_module_access_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "exchange_rate_history" ADD CONSTRAINT "exchange_rate_history_currencyId_fkey" FOREIGN KEY ("currencyId") REFERENCES "currencies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "categories" ADD CONSTRAINT "categories_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "categories"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -418,7 +512,7 @@ ALTER TABLE "categories" ADD CONSTRAINT "categories_parentId_fkey" FOREIGN KEY (
 ALTER TABLE "articles" ADD CONSTRAINT "articles_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "categories"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "articles" ADD CONSTRAINT "articles_taxConfigId_fkey" FOREIGN KEY ("taxConfigId") REFERENCES "tax_configs"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "articles" ADD CONSTRAINT "articles_taxDefinitionId_fkey" FOREIGN KEY ("taxDefinitionId") REFERENCES "tax_definitions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "article_variants" ADD CONSTRAINT "article_variants_articleId_fkey" FOREIGN KEY ("articleId") REFERENCES "articles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -451,10 +545,25 @@ ALTER TABLE "stock_movements" ADD CONSTRAINT "stock_movements_invoiceId_fkey" FO
 ALTER TABLE "invoices" ADD CONSTRAINT "invoices_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "customers"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "invoices" ADD CONSTRAINT "invoices_currencyId_fkey" FOREIGN KEY ("currencyId") REFERENCES "currencies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "invoices" ADD CONSTRAINT "invoices_issuedByUserId_fkey" FOREIGN KEY ("issuedByUserId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "invoice_lines" ADD CONSTRAINT "invoice_lines_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "invoices"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "invoice_lines" ADD CONSTRAINT "invoice_lines_articleVariantId_fkey" FOREIGN KEY ("articleVariantId") REFERENCES "article_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "credit_notes" ADD CONSTRAINT "credit_notes_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "invoices"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "credit_notes" ADD CONSTRAINT "credit_notes_currencyId_fkey" FOREIGN KEY ("currencyId") REFERENCES "currencies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "credit_notes" ADD CONSTRAINT "credit_notes_issuedByUserId_fkey" FOREIGN KEY ("issuedByUserId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "quotes" ADD CONSTRAINT "quotes_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "customers"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

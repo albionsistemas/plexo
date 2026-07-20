@@ -60,6 +60,20 @@ CREATE TRIGGER audit_minimum_stock
   AFTER INSERT OR UPDATE OR DELETE ON "minimum_stock"
   FOR EACH ROW EXECUTE FUNCTION audit_log_capture();
 
+-- "AuditLog detallado de toda la transacción" for the fiscal documents:
+-- invoices, their lines, and credit notes.
+CREATE TRIGGER audit_invoices
+  AFTER INSERT OR UPDATE OR DELETE ON "invoices"
+  FOR EACH ROW EXECUTE FUNCTION audit_log_capture();
+
+CREATE TRIGGER audit_invoice_lines
+  AFTER INSERT OR UPDATE OR DELETE ON "invoice_lines"
+  FOR EACH ROW EXECUTE FUNCTION audit_log_capture();
+
+CREATE TRIGGER audit_credit_notes
+  AFTER INSERT OR UPDATE OR DELETE ON "credit_notes"
+  FOR EACH ROW EXECUTE FUNCTION audit_log_capture();
+
 -- Belt and suspenders on top of the REVOKE in the RLS migration: even if a
 -- future migration re-grants UPDATE/DELETE on audit_log, or something
 -- connects as a role that already has it, this still blocks the write.

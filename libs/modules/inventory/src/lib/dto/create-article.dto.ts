@@ -19,5 +19,5 @@ export class CreateArticleDto {
 
   @IsOptional()
   @IsUUID()
-  taxConfigId?: string;
+  taxDefinitionId?: string;
 }

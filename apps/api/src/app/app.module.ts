@@ -3,12 +3,14 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard, ModuleAccessGuard, RolesGuard } from '@plexo/auth';
 import { DatabaseModule } from '@plexo/database';
 import { InventoryModule } from '@plexo/inventory';
+import { InvoicingModule } from '@plexo/invoicing';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module.js';
+import { SalesModule } from './sales/sales.module.js';
 
 @Module({
-  imports: [DatabaseModule, AuthModule, InventoryModule],
+  imports: [DatabaseModule, AuthModule, InventoryModule, InvoicingModule, SalesModule],
   controllers: [AppController],
   providers: [
     AppService,

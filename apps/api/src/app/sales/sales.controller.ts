@@ -1,0 +1,15 @@
+import { Body, Controller, Post } from '@nestjs/common';
+import { Roles } from '@plexo/auth';
+import { CreateSaleDto } from './dto/create-sale.dto.js';
+import { SalesService } from './sales.service.js';
+
+@Controller('sales')
+export class SalesController {
+  constructor(private readonly salesService: SalesService) {}
+
+  @Roles('OWNER', 'ADMIN', 'SALES')
+  @Post('invoices')
+  createSale(@Body() dto: CreateSaleDto) {
+    return this.salesService.createSale(dto);
+  }
+}
