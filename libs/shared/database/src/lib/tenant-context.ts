@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { Prisma } from '../generated/client.js';
+import type { Prisma, PrismaClient } from '../generated/client.js';
 
 export interface TenantStore {
   tenantId: string;
@@ -35,4 +35,23 @@ export function getTenantId(): string {
  */
 export function getTenantDb(): Prisma.TransactionClient {
   return requireStore().tx;
+}
+
+/**
+ * Opens one transaction, sets app.tenant_id on it, and runs `fn` with the
+ * tenant context active so getTenantId()/getTenantDb() resolve inside it.
+ * Shared by TenantContextInterceptor (per authenticated HTTP request) and
+ * anything that needs a tenant-scoped query before a request pipeline
+ * exists — login being the obvious case: there's no request.user yet to
+ * key an interceptor off of, but we still must query `users` under RLS.
+ */
+export async function withTenantContext<T>(
+  prisma: PrismaClient,
+  tenantId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+    return tenantContextStorage.run({ tenantId, tx }, fn);
+  });
 }

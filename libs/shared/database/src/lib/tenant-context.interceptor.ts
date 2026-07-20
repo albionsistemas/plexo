@@ -8,7 +8,7 @@ import type { AuthenticatedUser } from '@plexo/types';
 import type { FastifyRequest } from 'fastify';
 import { from, lastValueFrom, Observable } from 'rxjs';
 import { PrismaService } from './prisma.service.js';
-import { tenantContextStorage } from './tenant-context.js';
+import { withTenantContext } from './tenant-context.js';
 
 type RequestWithUser = FastifyRequest & { user?: AuthenticatedUser };
 
@@ -40,12 +40,9 @@ export class TenantContextInterceptor implements NestInterceptor {
     }
 
     return from(
-      this.prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
-        return tenantContextStorage.run({ tenantId, tx }, () =>
-          lastValueFrom(next.handle(), { defaultValue: undefined }),
-        );
-      }),
+      withTenantContext(this.prisma, tenantId, () =>
+        lastValueFrom(next.handle(), { defaultValue: undefined }),
+      ),
     );
   }
 }

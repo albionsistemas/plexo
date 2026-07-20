@@ -4,7 +4,8 @@
  */
 
 import 'dotenv/config';
-import { Logger } from '@nestjs/common';
+import 'reflect-metadata';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,
@@ -17,6 +18,7 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   const globalPrefix = 'api';
   app.setGlobalPrefix(globalPrefix);
   const port = process.env.PORT || 3000;

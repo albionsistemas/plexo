@@ -42,6 +42,8 @@ services:
         condition: service_completed_successfully
     environment:
       APP_DATABASE_URL: postgresql://plexo_app:plexo_dev_password@postgres:5432/plexo?schema=public
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in your .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       PORT: 3000
     ports:
       - '3000:3000'
