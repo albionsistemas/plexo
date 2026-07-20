@@ -34,6 +34,15 @@
       "path": "../../libs/modules/taxes/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/modules/reports-sales/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/modules/reports-pnl/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/modules/reports-financial/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/modules/receivables/tsconfig.lib.json"
     },
     {

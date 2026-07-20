@@ -2,6 +2,7 @@ export * from './lib/prisma.service.js';
 export * from './lib/tenant-context.js';
 export * from './lib/tenant-context.interceptor.js';
 export * from './lib/database.module.js';
+export * from './lib/account-balance.js';
 
 // Prisma namespace as a real value (not type-only): Prisma.Decimal, Prisma.sql
 // etc. are legitimate runtime utilities business code needs. PrismaClient

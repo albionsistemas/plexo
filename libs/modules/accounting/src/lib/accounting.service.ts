@@ -3,6 +3,7 @@ import {
   getTenantDb,
   getTenantId,
   getUserId,
+  isDebitNormal,
   Prisma,
   type AccountingAccount,
   type AccountType,
@@ -24,11 +25,6 @@ export interface TrialBalanceRow {
   creditTotal: Prisma.Decimal;
   balance: Prisma.Decimal;
 }
-
-// Accounts with a normal debit balance; everything else is normal-credit.
-// Determines the sign convention when netting debitTotal/creditTotal into
-// a single trial-balance figure per account.
-const DEBIT_NORMAL_TYPES = new Set<AccountType>(['ASSET', 'EXPENSE']);
 
 @Injectable()
 export class AccountingService {
@@ -184,7 +180,7 @@ export class AccountingService {
         debit: new Prisma.Decimal(0),
         credit: new Prisma.Decimal(0),
       };
-      const balance = DEBIT_NORMAL_TYPES.has(account.type)
+      const balance = isDebitNormal(account.type)
         ? totals.debit.sub(totals.credit)
         : totals.credit.sub(totals.debit);
 

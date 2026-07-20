@@ -82,6 +82,13 @@ enum JournalLineDirection {
   CREDIT
 }
 
+enum FinancialAccountProvider {
+  BANK
+  MERCADOPAGO
+  PAYPAL
+  CASH
+}
+
 model Tenant {
   id        String   @id @default(uuid())
   name      String
@@ -577,15 +584,17 @@ model TaxDefinition {
 }
 
 model FinancialAccount {
-  id             String  @id @default(uuid())
+  id             String                   @id @default(uuid())
   tenantId       String
   name           String
-  provider       String
-  currentBalance Decimal @default(0) @db.Decimal(14, 2)
+  provider       FinancialAccountProvider
+  currentBalance Decimal                  @default(0) @db.Decimal(14, 2)
 
   receipts     Receipt[]
   transactions FinancialTransaction[]
 
+  @@unique([tenantId, name])
+  @@index([tenantId])
   @@map("financial_accounts")
 }
 
