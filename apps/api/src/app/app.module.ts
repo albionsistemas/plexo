@@ -2,12 +2,13 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard, ModuleAccessGuard, RolesGuard } from '@plexo/auth';
 import { DatabaseModule } from '@plexo/database';
+import { InventoryModule } from '@plexo/inventory';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module.js';
 
 @Module({
-  imports: [DatabaseModule, AuthModule],
+  imports: [DatabaseModule, AuthModule, InventoryModule],
   controllers: [AppController],
   providers: [
     AppService,

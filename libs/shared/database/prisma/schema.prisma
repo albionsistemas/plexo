@@ -25,11 +25,27 @@ enum InvoiceStatus {
   CANCELLED
 }
 
+enum UnitOfMeasure {
+  KG
+  LTR
+  MM
+  M2
+  UNIT
+}
+
 enum MovementType {
   PURCHASE_IN
   SALE_OUT
-  ADJUSTMENT
   RETURN
+  ADJUSTMENT
+  PRODUCTION_IN
+  PRODUCTION_OUT
+}
+
+enum AuditAction {
+  INSERT
+  UPDATE
+  DELETE
 }
 
 model Tenant {
@@ -87,37 +103,180 @@ model Customer {
   @@map("customers")
 }
 
-model Product {
-  id          String     @id @default(uuid())
-  tenantId    String
-  sku         String
-  name        String
-  unitPrice   Decimal    @db.Decimal(14, 2)
-  stockQty    Decimal    @default(0) @db.Decimal(14, 3)
-  taxConfigId String?
-  taxConfig   TaxConfig? @relation(fields: [taxConfigId], references: [id])
+// --- Inventory ---
 
-  invoiceLines InvoiceLine[]
-  movements    StockMovement[]
+// Self-referential so category depth isn't hardcoded to 2 levels
+// (Category/Subcategory) - a chain of parentId links supports any depth
+// without a schema change later.
+model Category {
+  id       String     @id @default(uuid())
+  tenantId String
+  name     String
+  parentId String?
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryHierarchy")
 
-  @@unique([tenantId, sku])
+  articles Article[]
+
+  @@unique([tenantId, parentId, name])
   @@index([tenantId])
-  @@map("products")
+  @@map("categories")
 }
 
-model StockMovement {
-  id        String       @id @default(uuid())
-  tenantId  String
-  productId String
-  product   Product      @relation(fields: [productId], references: [id])
-  type      MovementType
-  quantity  Decimal      @db.Decimal(14, 3)
-  invoiceId String?
-  invoice   Invoice?     @relation(fields: [invoiceId], references: [id])
-  createdAt DateTime     @default(now())
+// The catalog-level entry (name, unit, category, tax). Never sold or
+// stocked directly - ArticleVariant is the sellable/stocked unit, even
+// for articles with no real variation (see ArticleVariant comment).
+model Article {
+  id            String        @id @default(uuid())
+  tenantId      String
+  name          String
+  description   String?
+  unitOfMeasure UnitOfMeasure @default(UNIT)
+  categoryId    String?
+  category      Category?     @relation(fields: [categoryId], references: [id])
+  taxConfigId   String?
+  taxConfig     TaxConfig?    @relation(fields: [taxConfigId], references: [id])
+  createdAt     DateTime      @default(now())
+
+  variants ArticleVariant[]
 
   @@index([tenantId])
+  @@map("articles")
+}
+
+// The actual SKU-bearing, priced, stocked unit. An Article with no real
+// variation still gets exactly one ArticleVariant (its "default" SKU) -
+// this keeps stock/price/movement logic uniform instead of special-casing
+// "articles without variants" throughout the codebase.
+model ArticleVariant {
+  id        String   @id @default(uuid())
+  tenantId  String
+  articleId String
+  article   Article  @relation(fields: [articleId], references: [id])
+  sku       String
+  color     String?
+  size      String?
+  brand     String?
+  unitPrice Decimal  @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+
+  priceHistory  PriceHistory[]
+  stockLedger   StockLedger[]
+  minimumStocks MinimumStock[]
+  movements     StockMovement[]
+  invoiceLines  InvoiceLine[]
+  quoteLines    QuoteLine[]
+
+  @@unique([tenantId, sku])
+  @@index([tenantId, articleId])
+  @@map("article_variants")
+}
+
+// Append-only price timeline, separate from AuditLog: this is a narrow,
+// query-friendly table purpose-built for cost/margin-over-time reports,
+// not a generic diff log.
+model PriceHistory {
+  id               String         @id @default(uuid())
+  tenantId         String
+  articleVariantId String
+  articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
+  unitPrice        Decimal        @db.Decimal(14, 2)
+  costPrice        Decimal?       @db.Decimal(14, 2)
+  changedById      String?
+  effectiveAt      DateTime       @default(now())
+
+  @@index([tenantId, articleVariantId])
+  @@map("price_history")
+}
+
+model Warehouse {
+  id       String  @id @default(uuid())
+  tenantId String
+  name     String
+  location String?
+
+  stockLedger   StockLedger[]
+  minimumStocks MinimumStock[]
+  movements     StockMovement[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("warehouses")
+}
+
+// Current balance per (warehouse, variant) - materialized and kept in sync
+// with every StockMovement in the same DB transaction. StockMovement is the
+// source of truth/history; this is the fast-read projection of it, not an
+// independently-editable value.
+model StockLedger {
+  id               String         @id @default(uuid())
+  tenantId         String
+  warehouseId      String
+  warehouse        Warehouse      @relation(fields: [warehouseId], references: [id])
+  articleVariantId String
+  articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
+  quantity         Decimal        @default(0) @db.Decimal(14, 3)
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([warehouseId, articleVariantId])
+  @@index([tenantId])
+  @@map("stock_ledger")
+}
+
+model MinimumStock {
+  id               String         @id @default(uuid())
+  tenantId         String
+  warehouseId      String
+  warehouse        Warehouse      @relation(fields: [warehouseId], references: [id])
+  articleVariantId String
+  articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
+  minimumQuantity  Decimal        @db.Decimal(14, 3)
+
+  @@unique([warehouseId, articleVariantId])
+  @@index([tenantId])
+  @@map("minimum_stock")
+}
+
+// Immutable history of every stock in/out. sourceType/sourceId is a soft
+// (non-FK) pointer to whatever originated it (purchase order, production
+// order, manual adjustment...) since that can be any table; invoiceId stays
+// a real FK for the sales path specifically, since Invoice already models
+// that relation elsewhere (Invoice.movements).
+model StockMovement {
+  id               String         @id @default(uuid())
+  tenantId         String
+  warehouseId      String
+  warehouse        Warehouse      @relation(fields: [warehouseId], references: [id])
+  articleVariantId String
+  articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
+  type             MovementType
+  quantity         Decimal        @db.Decimal(14, 3)
+  sourceType       String?
+  sourceId         String?
+  invoiceId        String?
+  invoice          Invoice?       @relation(fields: [invoiceId], references: [id])
+  createdAt        DateTime       @default(now())
+
+  @@index([tenantId])
+  @@index([tenantId, articleVariantId])
   @@map("stock_movements")
+}
+
+// Populated exclusively by Postgres triggers (see the
+// row_level_security/audit migrations), never by application code - see
+// the inventory module notes on why triggers instead of Prisma middleware.
+model AuditLog {
+  id        String      @id @default(uuid())
+  tenantId  String
+  tableName String
+  recordId  String
+  action    AuditAction
+  changedBy String?
+  changes   Json
+  createdAt DateTime    @default(now())
+
+  @@index([tenantId, tableName, recordId])
+  @@map("audit_log")
 }
 
 model Invoice {
@@ -147,16 +306,16 @@ model Invoice {
 }
 
 model InvoiceLine {
-  id        String  @id @default(uuid())
-  tenantId  String
-  invoiceId String
-  invoice   Invoice @relation(fields: [invoiceId], references: [id])
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-  quantity  Decimal @db.Decimal(14, 3)
-  unitPrice Decimal @db.Decimal(14, 2)
-  taxRate   Decimal @db.Decimal(5, 2)
-  lineTotal Decimal @db.Decimal(14, 2)
+  id               String         @id @default(uuid())
+  tenantId         String
+  invoiceId        String
+  invoice          Invoice        @relation(fields: [invoiceId], references: [id])
+  articleVariantId String
+  articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
+  quantity         Decimal        @db.Decimal(14, 3)
+  unitPrice        Decimal        @db.Decimal(14, 2)
+  taxRate          Decimal        @db.Decimal(5, 2)
+  lineTotal        Decimal        @db.Decimal(14, 2)
 
   @@index([tenantId])
   @@map("invoice_lines")
@@ -180,13 +339,14 @@ model Quote {
 }
 
 model QuoteLine {
-  id        String  @id @default(uuid())
-  tenantId  String
-  quoteId   String
-  quote     Quote   @relation(fields: [quoteId], references: [id])
-  productId String
-  quantity  Decimal @db.Decimal(14, 3)
-  unitPrice Decimal @db.Decimal(14, 2)
+  id               String         @id @default(uuid())
+  tenantId         String
+  quoteId          String
+  quote            Quote          @relation(fields: [quoteId], references: [id])
+  articleVariantId String
+  articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
+  quantity         Decimal        @db.Decimal(14, 3)
+  unitPrice        Decimal        @db.Decimal(14, 2)
 
   @@index([tenantId])
   @@map("quote_lines")
@@ -256,7 +416,7 @@ model TaxConfig {
   rate                Decimal @db.Decimal(5, 2)
   managedByAccountant Boolean @default(false)
 
-  products Product[]
+  articles Article[]
 
   @@map("tax_configs")
 }

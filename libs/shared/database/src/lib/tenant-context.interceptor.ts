@@ -40,8 +40,11 @@ export class TenantContextInterceptor implements NestInterceptor {
     }
 
     return from(
-      withTenantContext(this.prisma, tenantId, () =>
-        lastValueFrom(next.handle(), { defaultValue: undefined }),
+      withTenantContext(
+        this.prisma,
+        tenantId,
+        () => lastValueFrom(next.handle(), { defaultValue: undefined }),
+        request.user?.sub,
       ),
     );
   }

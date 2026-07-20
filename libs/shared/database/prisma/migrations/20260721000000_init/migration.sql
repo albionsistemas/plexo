@@ -8,7 +8,13 @@ CREATE TYPE "UserRole" AS ENUM ('OWNER', 'ADMIN', 'SALES', 'INVENTORY', 'ACCOUNT
 CREATE TYPE "InvoiceStatus" AS ENUM ('DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'CANCELLED');
 
 -- CreateEnum
-CREATE TYPE "MovementType" AS ENUM ('PURCHASE_IN', 'SALE_OUT', 'ADJUSTMENT', 'RETURN');
+CREATE TYPE "UnitOfMeasure" AS ENUM ('KG', 'LTR', 'MM', 'M2', 'UNIT');
+
+-- CreateEnum
+CREATE TYPE "MovementType" AS ENUM ('PURCHASE_IN', 'SALE_OUT', 'RETURN', 'ADJUSTMENT', 'PRODUCTION_IN', 'PRODUCTION_OUT');
+
+-- CreateEnum
+CREATE TYPE "AuditAction" AS ENUM ('INSERT', 'UPDATE', 'DELETE');
 
 -- CreateTable
 CREATE TABLE "tenants" (
@@ -59,29 +65,118 @@ CREATE TABLE "customers" (
 );
 
 -- CreateTable
-CREATE TABLE "products" (
+CREATE TABLE "categories" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
-    "sku" TEXT NOT NULL,
     "name" TEXT NOT NULL,
-    "unitPrice" DECIMAL(14,2) NOT NULL,
-    "stockQty" DECIMAL(14,3) NOT NULL DEFAULT 0,
-    "taxConfigId" TEXT,
+    "parentId" TEXT,
 
-    CONSTRAINT "products_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "categories_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "articles" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "unitOfMeasure" "UnitOfMeasure" NOT NULL DEFAULT 'UNIT',
+    "categoryId" TEXT,
+    "taxConfigId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "articles_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "article_variants" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "articleId" TEXT NOT NULL,
+    "sku" TEXT NOT NULL,
+    "color" TEXT,
+    "size" TEXT,
+    "brand" TEXT,
+    "unitPrice" DECIMAL(14,2) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "article_variants_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "price_history" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "articleVariantId" TEXT NOT NULL,
+    "unitPrice" DECIMAL(14,2) NOT NULL,
+    "costPrice" DECIMAL(14,2),
+    "changedById" TEXT,
+    "effectiveAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "price_history_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "warehouses" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "location" TEXT,
+
+    CONSTRAINT "warehouses_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "stock_ledger" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "warehouseId" TEXT NOT NULL,
+    "articleVariantId" TEXT NOT NULL,
+    "quantity" DECIMAL(14,3) NOT NULL DEFAULT 0,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "stock_ledger_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "minimum_stock" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "warehouseId" TEXT NOT NULL,
+    "articleVariantId" TEXT NOT NULL,
+    "minimumQuantity" DECIMAL(14,3) NOT NULL,
+
+    CONSTRAINT "minimum_stock_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "stock_movements" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
-    "productId" TEXT NOT NULL,
+    "warehouseId" TEXT NOT NULL,
+    "articleVariantId" TEXT NOT NULL,
     "type" "MovementType" NOT NULL,
     "quantity" DECIMAL(14,3) NOT NULL,
+    "sourceType" TEXT,
+    "sourceId" TEXT,
     "invoiceId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "stock_movements_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "audit_log" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "tableName" TEXT NOT NULL,
+    "recordId" TEXT NOT NULL,
+    "action" "AuditAction" NOT NULL,
+    "changedBy" TEXT,
+    "changes" JSONB NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "audit_log_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -108,7 +203,7 @@ CREATE TABLE "invoice_lines" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
     "invoiceId" TEXT NOT NULL,
-    "productId" TEXT NOT NULL,
+    "articleVariantId" TEXT NOT NULL,
     "quantity" DECIMAL(14,3) NOT NULL,
     "unitPrice" DECIMAL(14,2) NOT NULL,
     "taxRate" DECIMAL(5,2) NOT NULL,
@@ -136,7 +231,7 @@ CREATE TABLE "quote_lines" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
     "quoteId" TEXT NOT NULL,
-    "productId" TEXT NOT NULL,
+    "articleVariantId" TEXT NOT NULL,
     "quantity" DECIMAL(14,3) NOT NULL,
     "unitPrice" DECIMAL(14,2) NOT NULL,
 
@@ -242,13 +337,49 @@ CREATE UNIQUE INDEX "user_module_access_userId_module_key" ON "user_module_acces
 CREATE INDEX "customers_tenantId_idx" ON "customers"("tenantId");
 
 -- CreateIndex
-CREATE INDEX "products_tenantId_idx" ON "products"("tenantId");
+CREATE INDEX "categories_tenantId_idx" ON "categories"("tenantId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "products_tenantId_sku_key" ON "products"("tenantId", "sku");
+CREATE UNIQUE INDEX "categories_tenantId_parentId_name_key" ON "categories"("tenantId", "parentId", "name");
+
+-- CreateIndex
+CREATE INDEX "articles_tenantId_idx" ON "articles"("tenantId");
+
+-- CreateIndex
+CREATE INDEX "article_variants_tenantId_articleId_idx" ON "article_variants"("tenantId", "articleId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "article_variants_tenantId_sku_key" ON "article_variants"("tenantId", "sku");
+
+-- CreateIndex
+CREATE INDEX "price_history_tenantId_articleVariantId_idx" ON "price_history"("tenantId", "articleVariantId");
+
+-- CreateIndex
+CREATE INDEX "warehouses_tenantId_idx" ON "warehouses"("tenantId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "warehouses_tenantId_name_key" ON "warehouses"("tenantId", "name");
+
+-- CreateIndex
+CREATE INDEX "stock_ledger_tenantId_idx" ON "stock_ledger"("tenantId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "stock_ledger_warehouseId_articleVariantId_key" ON "stock_ledger"("warehouseId", "articleVariantId");
+
+-- CreateIndex
+CREATE INDEX "minimum_stock_tenantId_idx" ON "minimum_stock"("tenantId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "minimum_stock_warehouseId_articleVariantId_key" ON "minimum_stock"("warehouseId", "articleVariantId");
 
 -- CreateIndex
 CREATE INDEX "stock_movements_tenantId_idx" ON "stock_movements"("tenantId");
+
+-- CreateIndex
+CREATE INDEX "stock_movements_tenantId_articleVariantId_idx" ON "stock_movements"("tenantId", "articleVariantId");
+
+-- CreateIndex
+CREATE INDEX "audit_log_tenantId_tableName_recordId_idx" ON "audit_log"("tenantId", "tableName", "recordId");
 
 -- CreateIndex
 CREATE INDEX "invoices_tenantId_customerId_idx" ON "invoices"("tenantId", "customerId");
@@ -281,10 +412,37 @@ CREATE INDEX "financial_transactions_tenantId_idx" ON "financial_transactions"("
 ALTER TABLE "user_module_access" ADD CONSTRAINT "user_module_access_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "products" ADD CONSTRAINT "products_taxConfigId_fkey" FOREIGN KEY ("taxConfigId") REFERENCES "tax_configs"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "categories" ADD CONSTRAINT "categories_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "categories"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "stock_movements" ADD CONSTRAINT "stock_movements_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "articles" ADD CONSTRAINT "articles_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "categories"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "articles" ADD CONSTRAINT "articles_taxConfigId_fkey" FOREIGN KEY ("taxConfigId") REFERENCES "tax_configs"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "article_variants" ADD CONSTRAINT "article_variants_articleId_fkey" FOREIGN KEY ("articleId") REFERENCES "articles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "price_history" ADD CONSTRAINT "price_history_articleVariantId_fkey" FOREIGN KEY ("articleVariantId") REFERENCES "article_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "stock_ledger" ADD CONSTRAINT "stock_ledger_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "warehouses"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "stock_ledger" ADD CONSTRAINT "stock_ledger_articleVariantId_fkey" FOREIGN KEY ("articleVariantId") REFERENCES "article_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "minimum_stock" ADD CONSTRAINT "minimum_stock_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "warehouses"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "minimum_stock" ADD CONSTRAINT "minimum_stock_articleVariantId_fkey" FOREIGN KEY ("articleVariantId") REFERENCES "article_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "stock_movements" ADD CONSTRAINT "stock_movements_warehouseId_fkey" FOREIGN KEY ("warehouseId") REFERENCES "warehouses"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "stock_movements" ADD CONSTRAINT "stock_movements_articleVariantId_fkey" FOREIGN KEY ("articleVariantId") REFERENCES "article_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "stock_movements" ADD CONSTRAINT "stock_movements_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "invoices"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -296,13 +454,16 @@ ALTER TABLE "invoices" ADD CONSTRAINT "invoices_customerId_fkey" FOREIGN KEY ("c
 ALTER TABLE "invoice_lines" ADD CONSTRAINT "invoice_lines_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "invoices"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "invoice_lines" ADD CONSTRAINT "invoice_lines_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "invoice_lines" ADD CONSTRAINT "invoice_lines_articleVariantId_fkey" FOREIGN KEY ("articleVariantId") REFERENCES "article_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "quotes" ADD CONSTRAINT "quotes_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "customers"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "quote_lines" ADD CONSTRAINT "quote_lines_quoteId_fkey" FOREIGN KEY ("quoteId") REFERENCES "quotes"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "quote_lines" ADD CONSTRAINT "quote_lines_articleVariantId_fkey" FOREIGN KEY ("articleVariantId") REFERENCES "article_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "receipts" ADD CONSTRAINT "receipts_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "invoices"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
