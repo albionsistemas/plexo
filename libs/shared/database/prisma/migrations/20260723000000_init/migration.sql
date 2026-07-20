@@ -25,6 +25,12 @@ CREATE TYPE "DiscountType" AS ENUM ('PERCENTAGE', 'AMOUNT');
 -- CreateEnum
 CREATE TYPE "TaxCalculationType" AS ENUM ('PERCENTAGE', 'FIXED_AMOUNT', 'FORMULA');
 
+-- CreateEnum
+CREATE TYPE "AccountType" AS ENUM ('ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE');
+
+-- CreateEnum
+CREATE TYPE "JournalLineDirection" AS ENUM ('DEBIT', 'CREDIT');
+
 -- CreateTable
 CREATE TABLE "tenants" (
     "id" TEXT NOT NULL,
@@ -321,7 +327,7 @@ CREATE TABLE "accounting_accounts" (
     "tenantId" TEXT NOT NULL,
     "code" TEXT NOT NULL,
     "name" TEXT NOT NULL,
-    "type" TEXT NOT NULL,
+    "type" "AccountType" NOT NULL,
 
     CONSTRAINT "accounting_accounts_pkey" PRIMARY KEY ("id")
 );
@@ -334,6 +340,7 @@ CREATE TABLE "journal_entries" (
     "description" TEXT NOT NULL,
     "date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdById" TEXT NOT NULL,
+    "reversalOfId" TEXT,
 
     CONSTRAINT "journal_entries_pkey" PRIMARY KEY ("id")
 );
@@ -343,8 +350,8 @@ CREATE TABLE "journal_entry_lines" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
     "journalEntryId" TEXT NOT NULL,
-    "debitAccountId" TEXT,
-    "creditAccountId" TEXT,
+    "accountId" TEXT NOT NULL,
+    "direction" "JournalLineDirection" NOT NULL,
     "amount" DECIMAL(14,2) NOT NULL,
 
     CONSTRAINT "journal_entry_lines_pkey" PRIMARY KEY ("id")
@@ -482,13 +489,25 @@ CREATE UNIQUE INDEX "quotes_tenantId_number_key" ON "quotes"("tenantId", "number
 CREATE INDEX "quote_lines_tenantId_idx" ON "quote_lines"("tenantId");
 
 -- CreateIndex
+CREATE INDEX "accounting_accounts_tenantId_idx" ON "accounting_accounts"("tenantId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "accounting_accounts_tenantId_code_key" ON "accounting_accounts"("tenantId", "code");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "journal_entries_invoiceId_key" ON "journal_entries"("invoiceId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "journal_entries_reversalOfId_key" ON "journal_entries"("reversalOfId");
+
+-- CreateIndex
+CREATE INDEX "journal_entries_tenantId_idx" ON "journal_entries"("tenantId");
+
+-- CreateIndex
 CREATE INDEX "journal_entry_lines_tenantId_idx" ON "journal_entry_lines"("tenantId");
+
+-- CreateIndex
+CREATE INDEX "journal_entry_lines_tenantId_accountId_idx" ON "journal_entry_lines"("tenantId", "accountId");
 
 -- CreateIndex
 CREATE INDEX "tax_definitions_tenantId_idx" ON "tax_definitions"("tenantId");
@@ -584,13 +603,16 @@ ALTER TABLE "receipts" ADD CONSTRAINT "receipts_financialAccountId_fkey" FOREIGN
 ALTER TABLE "journal_entries" ADD CONSTRAINT "journal_entries_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "invoices"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "journal_entries" ADD CONSTRAINT "journal_entries_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "journal_entries" ADD CONSTRAINT "journal_entries_reversalOfId_fkey" FOREIGN KEY ("reversalOfId") REFERENCES "journal_entries"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "journal_entry_lines" ADD CONSTRAINT "journal_entry_lines_journalEntryId_fkey" FOREIGN KEY ("journalEntryId") REFERENCES "journal_entries"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "journal_entry_lines" ADD CONSTRAINT "journal_entry_lines_debitAccountId_fkey" FOREIGN KEY ("debitAccountId") REFERENCES "accounting_accounts"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "journal_entry_lines" ADD CONSTRAINT "journal_entry_lines_creditAccountId_fkey" FOREIGN KEY ("creditAccountId") REFERENCES "accounting_accounts"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "journal_entry_lines" ADD CONSTRAINT "journal_entry_lines_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "accounting_accounts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "financial_transactions" ADD CONSTRAINT "financial_transactions_financialAccountId_fkey" FOREIGN KEY ("financialAccountId") REFERENCES "financial_accounts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

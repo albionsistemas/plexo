@@ -74,6 +74,22 @@ CREATE TRIGGER audit_credit_notes
   AFTER INSERT OR UPDATE OR DELETE ON "credit_notes"
   FOR EACH ROW EXECUTE FUNCTION audit_log_capture();
 
+-- Same for the accounting ledger. UPDATE/DELETE here never actually
+-- succeed once journal_entry_lock (next migration) is in place, but the
+-- trigger stays regardless - it's an independent safety net, not
+-- conditional on that other trigger existing.
+CREATE TRIGGER audit_accounting_accounts
+  AFTER INSERT OR UPDATE OR DELETE ON "accounting_accounts"
+  FOR EACH ROW EXECUTE FUNCTION audit_log_capture();
+
+CREATE TRIGGER audit_journal_entries
+  AFTER INSERT OR UPDATE OR DELETE ON "journal_entries"
+  FOR EACH ROW EXECUTE FUNCTION audit_log_capture();
+
+CREATE TRIGGER audit_journal_entry_lines
+  AFTER INSERT OR UPDATE OR DELETE ON "journal_entry_lines"
+  FOR EACH ROW EXECUTE FUNCTION audit_log_capture();
+
 -- Belt and suspenders on top of the REVOKE in the RLS migration: even if a
 -- future migration re-grants UPDATE/DELETE on audit_log, or something
 -- connects as a role that already has it, this still blocks the write.

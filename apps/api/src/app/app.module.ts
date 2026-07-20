@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { AccountingModule } from '@plexo/accounting';
 import { JwtAuthGuard, ModuleAccessGuard, RolesGuard } from '@plexo/auth';
 import { DatabaseModule } from '@plexo/database';
 import { InventoryModule } from '@plexo/inventory';
@@ -17,6 +18,7 @@ import { SalesModule } from './sales/sales.module.js';
     InventoryModule,
     InvoicingModule,
     ReceivablesModule,
+    AccountingModule,
     SalesModule,
   ],
   controllers: [AppController],

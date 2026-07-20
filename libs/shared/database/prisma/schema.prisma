@@ -69,6 +69,19 @@ enum TaxCalculationType {
   FORMULA
 }
 
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+enum JournalLineDirection {
+  DEBIT
+  CREDIT
+}
+
 model Tenant {
   id        String   @id @default(uuid())
   name      String
@@ -87,9 +100,10 @@ model User {
   isExternalAccountant Boolean  @default(false)
   createdAt            DateTime @default(now())
 
-  moduleAccess      UserModuleAccess[]
-  issuedInvoices    Invoice[]
-  issuedCreditNotes CreditNote[]
+  moduleAccess          UserModuleAccess[]
+  issuedInvoices        Invoice[]
+  issuedCreditNotes     CreditNote[]
+  createdJournalEntries JournalEntry[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -483,45 +497,57 @@ model Receipt {
 }
 
 model AccountingAccount {
-  id       String @id @default(uuid())
+  id       String      @id @default(uuid())
   tenantId String
   code     String
   name     String
-  type     String
-
-  linesDebit  JournalEntryLine[] @relation("debitAccount")
-  linesCredit JournalEntryLine[] @relation("creditAccount")
-
-  @@unique([tenantId, code])
-  @@map("accounting_accounts")
-}
-
-model JournalEntry {
-  id          String   @id @default(uuid())
-  tenantId    String
-  invoiceId   String?  @unique
-  invoice     Invoice? @relation(fields: [invoiceId], references: [id])
-  description String
-  date        DateTime @default(now())
-  createdById String
+  type     AccountType
 
   lines JournalEntryLine[]
 
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("accounting_accounts")
+}
+
+// Posted entries are immutable (see the journal-entry-lock migration) -
+// correcting one is a reversing entry (same lines, DEBIT/CREDIT swapped),
+// linked via reversalOfId, never an UPDATE to the original.
+model JournalEntry {
+  id           String        @id @default(uuid())
+  tenantId     String
+  invoiceId    String?       @unique
+  invoice      Invoice?      @relation(fields: [invoiceId], references: [id])
+  description  String
+  date         DateTime      @default(now())
+  createdById  String
+  createdBy    User          @relation(fields: [createdById], references: [id])
+  reversalOfId String?       @unique
+  reversalOf   JournalEntry? @relation("EntryReversal", fields: [reversalOfId], references: [id])
+  reversedBy   JournalEntry? @relation("EntryReversal")
+
+  lines JournalEntryLine[]
+
+  @@index([tenantId])
   @@map("journal_entries")
 }
 
+// One line = one account + one direction + one amount (the standard
+// double-entry shape) - NOT a debit account and a credit account on the
+// same row, which can't express a compound entry (e.g. one debit split
+// across several credit accounts of different amounts).
 model JournalEntryLine {
-  id              String             @id @default(uuid())
-  tenantId        String
-  journalEntryId  String
-  journalEntry    JournalEntry       @relation(fields: [journalEntryId], references: [id])
-  debitAccountId  String?
-  debitAccount    AccountingAccount? @relation("debitAccount", fields: [debitAccountId], references: [id])
-  creditAccountId String?
-  creditAccount   AccountingAccount? @relation("creditAccount", fields: [creditAccountId], references: [id])
-  amount          Decimal            @db.Decimal(14, 2)
+  id             String               @id @default(uuid())
+  tenantId       String
+  journalEntryId String
+  journalEntry   JournalEntry         @relation(fields: [journalEntryId], references: [id])
+  accountId      String
+  account        AccountingAccount    @relation(fields: [accountId], references: [id])
+  direction      JournalLineDirection
+  amount         Decimal              @db.Decimal(14, 2)
 
   @@index([tenantId])
+  @@index([tenantId, accountId])
   @@map("journal_entry_lines")
 }
 
