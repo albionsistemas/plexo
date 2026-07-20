@@ -16,6 +16,9 @@
     }
   },
   "dependencies": {
+    "@nestjs/common": "^11.1.28",
+    "@plexo/auth": "^0.0.1",
+    "@plexo/database": "^0.0.1",
     "tslib": "^2.3.0"
   }
 }

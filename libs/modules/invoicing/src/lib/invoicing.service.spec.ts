@@ -268,6 +268,26 @@ describe('InvoicingService.recordReceipt', () => {
     expect(updateArgs.data.balanceDue.toNumber()).toBe(60);
   });
 
+  it('keeps the invoice OVERDUE (not PARTIALLY_PAID) when a partial payment still leaves it past due', async () => {
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const pastDueDate = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+    const db = {
+      invoice: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'invoice-1', balanceDue: new Prisma.Decimal(100), dueDate: pastDueDate }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      receipt: { create: jest.fn().mockResolvedValue({ id: 'receipt-1' }) },
+    };
+
+    await runInTenant(db, () =>
+      service.recordReceipt({ invoiceId: 'invoice-1', amount: 40, method: 'CASH' }),
+    );
+
+    expect((db.invoice.update as jest.Mock).mock.calls[0][0].data.status).toBe('OVERDUE');
+  });
+
   it('marks the invoice PAID when the receipt covers the full balance', async () => {
     const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
     const db = {

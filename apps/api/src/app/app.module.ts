@@ -4,13 +4,21 @@ import { JwtAuthGuard, ModuleAccessGuard, RolesGuard } from '@plexo/auth';
 import { DatabaseModule } from '@plexo/database';
 import { InventoryModule } from '@plexo/inventory';
 import { InvoicingModule } from '@plexo/invoicing';
+import { ReceivablesModule } from '@plexo/receivables';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module.js';
 import { SalesModule } from './sales/sales.module.js';
 
 @Module({
-  imports: [DatabaseModule, AuthModule, InventoryModule, InvoicingModule, SalesModule],
+  imports: [
+    DatabaseModule,
+    AuthModule,
+    InventoryModule,
+    InvoicingModule,
+    ReceivablesModule,
+    SalesModule,
+  ],
   controllers: [AppController],
   providers: [
     AppService,

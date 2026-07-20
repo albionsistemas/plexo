@@ -320,11 +320,16 @@ export class InvoicingService {
     });
 
     const balanceDue = invoice.balanceDue.sub(amount);
+    const stillOverdue = Boolean(invoice.dueDate && invoice.dueDate < new Date());
     await db.invoice.update({
       where: { id: dto.invoiceId },
       data: {
         balanceDue,
-        status: balanceDue.isZero() ? 'PAID' : 'PARTIALLY_PAID',
+        status: balanceDue.isZero()
+          ? 'PAID'
+          : stillOverdue
+            ? 'OVERDUE'
+            : 'PARTIALLY_PAID',
       },
     });
 
