@@ -1,0 +1,51 @@
+import {
+  CallHandler,
+  ExecutionContext,
+  Injectable,
+  NestInterceptor,
+} from '@nestjs/common';
+import type { AuthenticatedUser } from '@plexo/types';
+import type { FastifyRequest } from 'fastify';
+import { from, lastValueFrom, Observable } from 'rxjs';
+import { PrismaService } from './prisma.service.js';
+import { tenantContextStorage } from './tenant-context.js';
+
+type RequestWithUser = FastifyRequest & { user?: AuthenticatedUser };
+
+/**
+ * Opens one Postgres transaction per request, sets `app.tenant_id` on it via
+ * set_config() (RLS policies read that), and runs the rest of the request
+ * pipeline inside tenantContextStorage so getTenantDb()/getTenantId() work
+ * anywhere downstream without REQUEST-scoped providers.
+ *
+ * Must run after whatever guard populates request.user (Nest always runs
+ * Guards before Interceptors, so ordering is safe regardless of provider
+ * registration order).
+ *
+ * Trade-off: this holds a pooled connection open for the full request
+ * lifetime, not just the DB calls within it. Fine for an MVP; if a route
+ * ends up doing slow non-DB work (external APIs, etc.) inside the request,
+ * revisit before it starts starving the pool under load.
+ */
+@Injectable()
+export class TenantContextInterceptor implements NestInterceptor {
+  constructor(private readonly prisma: PrismaService) {}
+
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const request = context.switchToHttp().getRequest<RequestWithUser>();
+    const tenantId = request.user?.tenantId;
+
+    if (!tenantId) {
+      return next.handle();
+    }
+
+    return from(
+      this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+        return tenantContextStorage.run({ tenantId, tx }, () =>
+          lastValueFrom(next.handle(), { defaultValue: undefined }),
+        );
+      }),
+    );
+  }
+}

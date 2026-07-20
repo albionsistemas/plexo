@@ -14,7 +14,7 @@ RUN npx nx build api --configuration=production
 FROM base AS runtime
 ENV NODE_ENV=production
 COPY --from=build /workspace/apps/api/dist ./dist
-COPY --from=build /workspace/generated ./generated
+COPY --from=build /workspace/libs/shared/database/src/generated ./libs/shared/database/src/generated
 COPY --from=build /workspace/node_modules ./node_modules
 COPY --from=build /workspace/package.json ./package.json
 EXPOSE 3000

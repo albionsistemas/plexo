@@ -55,7 +55,7 @@ Thumbs.db
 !.env.example
 
 # prisma generated client
-/generated
+libs/shared/database/src/generated
 test-output
 
 # Next.js
