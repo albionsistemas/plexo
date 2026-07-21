@@ -1,12 +1,17 @@
+import type { AccountingService } from '@plexo/accounting';
 import { Prisma } from '@plexo/database';
 import type { InventoryService } from '@plexo/inventory';
 import type { InvoicingService } from '@plexo/invoicing';
 import { SalesService } from './sales.service.js';
 
 describe('SalesService.createSale', () => {
-  it('creates the invoice then records one SALE_OUT movement per line, tagged with the invoice id', async () => {
+  it('creates the invoice, posts its journal entry, then records one SALE_OUT movement per line', async () => {
     const invoice = {
       id: 'invoice-1',
+      subtotal: new Prisma.Decimal(100),
+      taxTotal: new Prisma.Decimal(21),
+      total: new Prisma.Decimal(121),
+      issueDate: new Date('2026-01-01'),
       lines: [
         { articleVariantId: 'variant-1', quantity: new Prisma.Decimal(3) },
         { articleVariantId: 'variant-2', quantity: new Prisma.Decimal(1) },
@@ -18,8 +23,11 @@ describe('SalesService.createSale', () => {
     const inventoryService = {
       recordMovement: jest.fn().mockResolvedValue({}),
     } as unknown as InventoryService;
+    const accountingService = {
+      postInvoiceJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-1', lines: [] }),
+    } as unknown as AccountingService;
 
-    const service = new SalesService(invoicingService, inventoryService);
+    const service = new SalesService(invoicingService, inventoryService, accountingService);
     const dto = {
       customerId: 'customer-1',
       warehouseId: 'warehouse-1',
@@ -42,6 +50,13 @@ describe('SalesService.createSale', () => {
       globalDiscountPercent: undefined,
       dueDate: undefined,
       lines: dto.lines,
+    });
+    expect(accountingService.postInvoiceJournalEntry).toHaveBeenCalledWith({
+      invoiceId: 'invoice-1',
+      subtotal: invoice.subtotal,
+      taxTotal: invoice.taxTotal,
+      total: invoice.total,
+      date: invoice.issueDate,
     });
     expect(inventoryService.recordMovement).toHaveBeenNthCalledWith(1, {
       warehouseId: 'warehouse-1',
@@ -67,6 +82,10 @@ describe('SalesService.createSale', () => {
   it('propagates an insufficient-stock error without swallowing it (the enclosing tx rolls back the invoice too)', async () => {
     const invoice = {
       id: 'invoice-1',
+      subtotal: new Prisma.Decimal(100),
+      taxTotal: new Prisma.Decimal(21),
+      total: new Prisma.Decimal(121),
+      issueDate: new Date('2026-01-01'),
       lines: [{ articleVariantId: 'variant-1', quantity: new Prisma.Decimal(999) }],
     };
     const invoicingService = {
@@ -76,8 +95,11 @@ describe('SalesService.createSale', () => {
     const inventoryService = {
       recordMovement: jest.fn().mockRejectedValue(failure),
     } as unknown as InventoryService;
+    const accountingService = {
+      postInvoiceJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-1', lines: [] }),
+    } as unknown as AccountingService;
 
-    const service = new SalesService(invoicingService, inventoryService);
+    const service = new SalesService(invoicingService, inventoryService, accountingService);
 
     await expect(
       service.createSale({
@@ -89,5 +111,40 @@ describe('SalesService.createSale', () => {
         lines: [{ articleVariantId: 'variant-1', quantity: 999 }],
       }),
     ).rejects.toThrow(failure);
+  });
+
+  it('propagates an unbalanced-entry error from accounting without recording any stock movement', async () => {
+    const invoice = {
+      id: 'invoice-1',
+      subtotal: new Prisma.Decimal(100),
+      taxTotal: new Prisma.Decimal(21),
+      total: new Prisma.Decimal(121),
+      issueDate: new Date('2026-01-01'),
+      lines: [{ articleVariantId: 'variant-1', quantity: new Prisma.Decimal(1) }],
+    };
+    const invoicingService = {
+      createInvoice: jest.fn().mockResolvedValue(invoice),
+    } as unknown as InvoicingService;
+    const inventoryService = {
+      recordMovement: jest.fn().mockResolvedValue({}),
+    } as unknown as InventoryService;
+    const failure = new Error('Journal entry is not balanced');
+    const accountingService = {
+      postInvoiceJournalEntry: jest.fn().mockRejectedValue(failure),
+    } as unknown as AccountingService;
+
+    const service = new SalesService(invoicingService, inventoryService, accountingService);
+
+    await expect(
+      service.createSale({
+        customerId: 'customer-1',
+        warehouseId: 'warehouse-1',
+        documentLetter: 'B',
+        pointOfSale: '0001',
+        currencyId: 'currency-1',
+        lines: [{ articleVariantId: 'variant-1', quantity: 1 }],
+      }),
+    ).rejects.toThrow(failure);
+    expect(inventoryService.recordMovement).not.toHaveBeenCalled();
   });
 });

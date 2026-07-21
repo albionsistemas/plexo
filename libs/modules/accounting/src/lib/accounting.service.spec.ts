@@ -54,6 +54,90 @@ describe('AccountingService.postJournalEntry', () => {
   });
 });
 
+describe('AccountingService.postInvoiceJournalEntry', () => {
+  function dbWithAccounts(existingByCode: Record<string, { id: string }> = {}) {
+    const created: { code: string; name: string; type: string }[] = [];
+    return {
+      accountingAccount: {
+        findFirst: jest.fn(({ where }: { where: { code: string } }) =>
+          Promise.resolve(existingByCode[where.code] ?? null),
+        ),
+        create: jest.fn(({ data }: { data: { code: string; name: string; type: string } }) => {
+          created.push({ code: data.code, name: data.name, type: data.type });
+          return Promise.resolve({ id: `acc-${data.code}`, ...data });
+        }),
+      },
+      journalEntry: {
+        create: jest.fn().mockResolvedValue({ id: 'entry-1', lines: [] }),
+      },
+      _created: created,
+    };
+  }
+
+  it('books debit AR / credit Sales+VAT, creating accounts on first use', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postInvoiceJournalEntry({
+        invoiceId: 'inv-1',
+        subtotal: 100,
+        taxTotal: 21,
+        total: 121,
+      }),
+    );
+
+    expect(db._created.map((a) => a.code)).toEqual(
+      expect.arrayContaining(['1.1.02', '4.1.01', '2.1.03']),
+    );
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.invoiceId).toBe('inv-1');
+    expect(createArgs.data.lines.createMany.data).toEqual([
+      { tenantId: 'tenant-1', accountId: 'acc-1.1.02', direction: 'DEBIT', amount: 121 },
+      { tenantId: 'tenant-1', accountId: 'acc-4.1.01', direction: 'CREDIT', amount: 100 },
+      { tenantId: 'tenant-1', accountId: 'acc-2.1.03', direction: 'CREDIT', amount: 21 },
+    ]);
+  });
+
+  it('reuses an existing account instead of creating a duplicate for the same code', async () => {
+    const db = dbWithAccounts({ '1.1.02': { id: 'existing-ar' } });
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postInvoiceJournalEntry({ invoiceId: 'inv-2', subtotal: 100, taxTotal: 21, total: 121 }),
+    );
+
+    expect(db._created.some((a) => a.code === '1.1.02')).toBe(false);
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.lines.createMany.data[0].accountId).toBe('existing-ar');
+  });
+
+  it('omits the VAT line entirely for a tax-exempt sale', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postInvoiceJournalEntry({ invoiceId: 'inv-3', subtotal: 50, taxTotal: 0, total: 50 }),
+    );
+
+    expect(db._created.some((a) => a.code === '2.1.03')).toBe(false);
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.lines.createMany.data).toHaveLength(2);
+  });
+
+  it('skips posting entirely for a zero-total invoice', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    const result = await runInTenant(db, () =>
+      service.postInvoiceJournalEntry({ invoiceId: 'inv-4', subtotal: 0, taxTotal: 0, total: 0 }),
+    );
+
+    expect(result).toBeUndefined();
+    expect(db.journalEntry.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('AccountingService.createReversingEntry', () => {
   it('throws when the original entry does not exist', async () => {
     const db = { journalEntry: { findUnique: jest.fn().mockResolvedValue(null) } };

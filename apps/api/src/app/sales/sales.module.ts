@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
+import { AccountingModule } from '@plexo/accounting';
 import { InventoryModule } from '@plexo/inventory';
 import { InvoicingModule } from '@plexo/invoicing';
 import { SalesController } from './sales.controller.js';
 import { SalesService } from './sales.service.js';
 
 @Module({
-  imports: [InventoryModule, InvoicingModule],
+  imports: [InventoryModule, InvoicingModule, AccountingModule],
   controllers: [SalesController],
   providers: [SalesService],
 })

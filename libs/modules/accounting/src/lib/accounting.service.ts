@@ -16,6 +16,30 @@ import type { PostJournalEntryDto } from './dto/post-journal-entry.dto.js';
 
 type JournalEntryWithLines = JournalEntry & { lines: JournalEntryLine[] };
 
+/** System accounts auto-posting resolves by code, creating them on first
+ * use if a tenant hasn't set up its chart of accounts yet. Codes/names are
+ * just sensible AR-flavored defaults - nothing stops an accountant from
+ * renaming the account afterwards, the code is what auto-posting keys on. */
+const SALES_REVENUE_ACCOUNT = { code: '4.1.01', name: 'Ventas', type: 'INCOME' as const };
+const ACCOUNTS_RECEIVABLE_ACCOUNT = {
+  code: '1.1.02',
+  name: 'Deudores por Ventas',
+  type: 'ASSET' as const,
+};
+const VAT_PAYABLE_ACCOUNT = {
+  code: '2.1.03',
+  name: 'IVA Débito Fiscal',
+  type: 'LIABILITY' as const,
+};
+
+export interface PostInvoiceJournalEntryInput {
+  invoiceId: string;
+  subtotal: Prisma.Decimal | number | string;
+  taxTotal: Prisma.Decimal | number | string;
+  total: Prisma.Decimal | number | string;
+  date?: Date;
+}
+
 export interface TrialBalanceRow {
   accountId: string;
   code: string;
@@ -106,6 +130,72 @@ export class AccountingService {
         },
       },
       include: { lines: true },
+    });
+  }
+
+  private async getOrCreateAccount(spec: {
+    code: string;
+    name: string;
+    type: AccountType;
+  }): Promise<AccountingAccount> {
+    const db = getTenantDb();
+    const existing = await db.accountingAccount.findFirst({ where: { code: spec.code } });
+    if (existing) {
+      return existing;
+    }
+    return db.accountingAccount.create({
+      data: { tenantId: getTenantId(), code: spec.code, name: spec.name, type: spec.type },
+    });
+  }
+
+  /**
+   * Auto-posting entry point for the sales flow: called by SalesService
+   * (apps/api) right after an invoice is created, in the same per-request
+   * transaction, so a rollback of one rolls back the other. Books the
+   * standard accrual sale - debit Accounts Receivable for the full total,
+   * credit Sales Revenue for the pre-tax subtotal, credit VAT payable for
+   * the tax - which is always balanced by construction, since
+   * Invoice.total is defined as subtotal + taxTotal. Reuses
+   * postJournalEntry()'s balance check as a defense-in-depth sanity check,
+   * not because it's expected to ever fail here.
+   *
+   * Resolves accounts by well-known code, creating them tenant-side on
+   * first use - see the *_ACCOUNT constants above. A tenant that already
+   * created its own account with one of those codes (e.g. via
+   * POST /accounting/accounts) gets that account reused instead.
+   *
+   * Skips posting entirely for a zero-total invoice (nothing financial
+   * happened) rather than writing a degenerate zero-amount entry.
+   */
+  async postInvoiceJournalEntry(
+    input: PostInvoiceJournalEntryInput,
+  ): Promise<JournalEntryWithLines | undefined> {
+    const total = new Prisma.Decimal(input.total);
+    if (total.lte(0)) {
+      return undefined;
+    }
+    const subtotal = new Prisma.Decimal(input.subtotal);
+    const taxTotal = new Prisma.Decimal(input.taxTotal);
+
+    const [ar, revenue, vat] = await Promise.all([
+      this.getOrCreateAccount(ACCOUNTS_RECEIVABLE_ACCOUNT),
+      this.getOrCreateAccount(SALES_REVENUE_ACCOUNT),
+      taxTotal.gt(0) ? this.getOrCreateAccount(VAT_PAYABLE_ACCOUNT) : Promise.resolve(undefined),
+    ]);
+
+    const lines: PostJournalEntryDto['lines'] = [
+      { accountId: ar.id, direction: 'DEBIT', amount: total.toNumber() },
+      { accountId: revenue.id, direction: 'CREDIT', amount: subtotal.toNumber() },
+    ];
+    if (vat && taxTotal.gt(0)) {
+      lines.push({ accountId: vat.id, direction: 'CREDIT', amount: taxTotal.toNumber() });
+    }
+
+    return this.postJournalEntry({
+      description: `Venta - comprobante ${input.invoiceId}`,
+      date: input.date?.toISOString(),
+      invoiceId: input.invoiceId,
+      lines,
     });
   }
 
