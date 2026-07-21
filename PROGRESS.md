@@ -28,6 +28,7 @@ Los 9 módulos de negocio del brief original están construidos y commiteados. H
 - **Auditoría + bloqueos fiscales**: triggers de Postgres, no middleware de la app (así no se puede esquivar desde ningún cliente/conexión).
 - **Entre módulos**: nunca se importa el `Service` de otro módulo. O se consulta la tabla directo vía `getTenantDb()` (RLS igual protege), o se compone a nivel `apps/api` (ver `SalesService`, que junta Facturación+Inventario).
 - **`ModuleAccessGuard` + `UserModuleAccess`**: permisos granulares por módulo, pensado específicamente para el contador externo.
+- **Venta sin factura ("asiento manual por ahora")**: `POST /inventory/movements` permite un `SALE_OUT` sin `invoiceId` — stock que sale sin pasar por Facturación (venta informal, ajuste que hace de venta, etc.). Esto NO dispara el auto-posteo contable a propósito: Inventario solo conoce cantidades, nunca precio/moneda, así que no hay con qué generar un asiento correcto ahí. Decisión (2026-07-21): por ahora esos casos requieren que alguien postee el asiento a mano vía `POST /accounting/journal-entries` (ya existe). Si esto resulta ser un flujo frecuente, la alternativa es forzar que toda venta pase por `SalesService`/Facturación (con un "ticket interno" sin CAE real) para tener una sola fuente de verdad — pero eso le agrega fricción a la venta informal, por eso no se hizo todavía.
 
 ## Setup local de ESTA máquina (Windows, sin Docker)
 

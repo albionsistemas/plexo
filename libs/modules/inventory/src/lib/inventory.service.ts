@@ -195,6 +195,17 @@ export class InventoryService {
    * `UPDATE ... WHERE quantity >= $1` - if two concurrent sales race for
    * the last units, only one UPDATE matches a row, the other gets count=0
    * and fails cleanly instead of double-decrementing past zero.
+   *
+   * Deliberately does NOT post anything to the ledger (accounting). A
+   * SALE_OUT recorded here without going through SalesService (apps/api,
+   * which composes Invoicing + Inventory + Accounting) has no invoiceId
+   * and no price - this module only knows quantities, never money - so
+   * there's nothing correct to auto-post from. Any stock movement that
+   * represents real revenue but didn't go through an invoice (informal
+   * sale, manual adjustment standing in for one, etc.) needs its journal
+   * entry posted by hand via POST /accounting/journal-entries. Revisit if
+   * this turns out to be a common enough flow to deserve its own
+   * quantity+price DTO and an auto-posting path like invoices get.
    */
   async recordMovement(dto: RecordStockMovementDto) {
     if (dto.type === 'ADJUSTMENT') {
