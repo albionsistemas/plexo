@@ -16,3 +16,25 @@ export interface InvoiceCreatedEvent {
   status: string;
   issueDate: string;
 }
+
+// Presence isn't driven through EventEmitter2 like the two above - the
+// gateway raises these directly from handleConnection/handleDisconnect,
+// which already have everything they need (no other module produces
+// presence changes).
+export const PRESENCE_ONLINE = 'presence.online';
+export const PRESENCE_OFFLINE = 'presence.offline';
+export const PRESENCE_SNAPSHOT = 'presence.snapshot';
+
+export interface PresenceUser {
+  userId: string;
+  name: string | null;
+  email: string;
+}
+
+export interface PresenceChangeEvent {
+  userId: string;
+}
+
+export interface PresenceSnapshotEvent {
+  online: PresenceUser[];
+}

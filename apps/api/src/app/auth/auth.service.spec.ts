@@ -16,6 +16,7 @@ describe('AuthService', () => {
     const fakeTx = {
       user: { findUnique: jest.fn().mockResolvedValue(user) },
       userModuleAccess: { findMany: jest.fn().mockResolvedValue(moduleAccess) },
+      userActivityLog: { create: jest.fn().mockResolvedValue({}) },
       $executeRaw: jest.fn().mockResolvedValue(undefined),
     };
     return {
@@ -31,7 +32,7 @@ describe('AuthService', () => {
 
   it('throws when no user exists for that email in the tenant', async () => {
     const service = new AuthService(makePrisma(null), makeJwt());
-    await expect(service.login(dto)).rejects.toThrow(UnauthorizedException);
+    await expect(service.login(dto, '127.0.0.1')).rejects.toThrow(UnauthorizedException);
   });
 
   it('throws when the password does not match', async () => {
@@ -40,7 +41,7 @@ describe('AuthService', () => {
       makePrisma({ id: 'user-1', email: dto.email, role: 'OWNER', passwordHash }),
       makeJwt(),
     );
-    await expect(service.login(dto)).rejects.toThrow(UnauthorizedException);
+    await expect(service.login(dto, '127.0.0.1')).rejects.toThrow(UnauthorizedException);
   });
 
   it('signs a token with the expected payload on valid credentials', async () => {
@@ -54,7 +55,7 @@ describe('AuthService', () => {
       jwt,
     );
 
-    const result = await service.login(dto);
+    const result = await service.login(dto, '127.0.0.1');
 
     expect(result).toEqual({ accessToken: 'signed.jwt.token' });
     expect(jwt.signAsync).toHaveBeenCalledWith({

@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ActivityLogInterceptor } from './activity-log.interceptor.js';
 import { PrismaService } from './prisma.service.js';
 import { TenantContextInterceptor } from './tenant-context.interceptor.js';
 
@@ -16,6 +17,7 @@ import { TenantContextInterceptor } from './tenant-context.interceptor.js';
   providers: [
     PrismaService,
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: ActivityLogInterceptor },
   ],
   exports: [PrismaService],
 })
