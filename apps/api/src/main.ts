@@ -18,6 +18,7 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+  app.enableCors({ origin: ['http://localhost:4200', 'http://localhost:3000'] });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   const globalPrefix = 'api';
   app.setGlobalPrefix(globalPrefix);
