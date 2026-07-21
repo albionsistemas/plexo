@@ -41,14 +41,19 @@ Docker Desktop no corre en este Windows (build 18362, muy vieja para WSL2). Se i
 
 **Si retomás en otra computadora**: si tiene Docker andando, usar el `docker-compose.yml` normal del repo. Si no, repetir el proceso de Postgres nativo (instalar, crear base `plexo`, correr `docker/postgres-init/01-init-roles.sql`, `npx prisma migrate deploy`, seed) y ajustar tu propio `.env` — no se sincroniza entre máquinas.
 
+## Módulos / features completos (actualización 2026-07-20)
+
+| Commit | Qué es |
+|---|---|
+| (pendiente commit) | **Tablero en tiempo real** — login, dashboard con KPIs, stock por depósito, últimas facturas, gráfico de ventas 7 días, alertas de stock bajo mínimo. WebSockets socket.io (port 3001) con salas por tenant. TanStack Query + recharts en frontend. |
+
 ## Pendiente / próximos pasos
 
-1. **Tablero en tiempo real** (pedido, quedó pausado para volver a Reportes): WebSockets con salas por tenant, vista materializada de stock por depósito, componente Tremor + TanStack Query en el frontend.
-2. Proveedor de email real (hoy: stub que solo loguea en consola).
-3. Integración AFIP real (hoy: CAE falso, `StubElectronicInvoicingService`).
-4. Auto-posteo de asientos contables desde Facturación — sin esto, Reportes de Resultados (`getIncomeStatement`) da vacío. `getRevenueSummary` es el respaldo que sí funciona hoy.
-5. Scheduler/cron real — `refreshOverdueStatuses` de Cuentas a Cobrar es manual por ahora.
-6. Frontend (`apps/web`) no tiene login ni ninguna pantalla de negocio todavía, solo la landing.
+1. Proveedor de email real (hoy: stub que solo loguea en consola).
+2. Integración AFIP real (hoy: CAE falso, `StubElectronicInvoicingService`).
+3. Auto-posteo de asientos contables desde Facturación — sin esto, Reportes de Resultados (`getIncomeStatement`) da vacío. `getRevenueSummary` es el respaldo que sí funciona hoy.
+4. Scheduler/cron real — `refreshOverdueStatuses` de Cuentas a Cobrar es manual por ahora.
+5. Frontend: las pantallas de negocio (inventario, facturación, cuentas a cobrar, etc.) — solo existe el tablero hoy.
 
 ## Para retomar
 
@@ -58,6 +63,8 @@ git pull
 npm install
 npx prisma generate
 # Postgres: en esta máquina ya está configurado (ver arriba). En otra, levantar según corresponda.
-npx nx serve api   # http://localhost:3000/api
-npx nx serve web   # http://localhost:4200
+npx nx serve api            # http://localhost:3000/api  (WebSocket en :3001)
+cd apps/web && npx next dev -p 4200   # http://localhost:4200
 ```
+
+Login de prueba (esta PC, nuevo seed): `tenantId=f307123c-4bcd-438e-a580-0b4b92e4e293`, `owner@demo.plexo` / `changeme123`

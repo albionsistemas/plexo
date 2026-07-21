@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   getTenantDb,
   getTenantId,
@@ -42,6 +43,7 @@ export class InvoicingService {
     @Inject(EMAIL_SENDER) private readonly emailSender: EmailSender,
     @Inject(ELECTRONIC_INVOICING)
     private readonly electronicInvoicing: ElectronicInvoicingPort,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   createCustomer(dto: CreateCustomerDto): Promise<Customer> {
@@ -243,6 +245,15 @@ export class InvoicingService {
         total: finalInvoice.total.toFixed(2),
       });
     }
+
+    this.eventEmitter.emit('invoice.created', {
+      tenantId: finalInvoice.tenantId,
+      invoiceId: finalInvoice.id,
+      total: finalInvoice.total.toString(),
+      customerName: finalInvoice.customerName,
+      status: finalInvoice.status,
+      issueDate: finalInvoice.issueDate.toISOString(),
+    });
 
     return finalInvoice;
   }

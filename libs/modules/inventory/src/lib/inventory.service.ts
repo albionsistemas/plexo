@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   getTenantDb,
   getTenantId,
@@ -27,6 +28,8 @@ export interface ReorderSuggestion {
 
 @Injectable()
 export class InventoryService {
+  constructor(private readonly eventEmitter: EventEmitter2) {}
+
   createWarehouse(dto: CreateWarehouseDto): Promise<Warehouse> {
     return getTenantDb().warehouse.create({
       data: { tenantId: getTenantId(), name: dto.name, location: dto.location },
@@ -177,7 +180,7 @@ export class InventoryService {
       });
     }
 
-    return db.stockMovement.create({
+    const movement = await db.stockMovement.create({
       data: {
         tenantId,
         warehouseId: dto.warehouseId,
@@ -189,6 +192,24 @@ export class InventoryService {
         invoiceId: dto.invoiceId,
       },
     });
+
+    const ledger = await db.stockLedger.findUnique({
+      where: {
+        warehouseId_articleVariantId: {
+          warehouseId: dto.warehouseId,
+          articleVariantId: dto.articleVariantId,
+        },
+      },
+      select: { quantity: true },
+    });
+    this.eventEmitter.emit('stock.updated', {
+      tenantId,
+      warehouseId: dto.warehouseId,
+      articleVariantId: dto.articleVariantId,
+      newQuantity: (ledger?.quantity ?? new Prisma.Decimal(0)).toString(),
+    });
+
+    return movement;
   }
 
   /** Sum of a variant's stock across every warehouse. Computed on read from

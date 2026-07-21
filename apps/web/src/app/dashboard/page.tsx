@@ -1,0 +1,285 @@
+'use client';
+
+import { api } from '@/lib/api';
+import { getSocket } from '@/lib/socket';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+
+interface WarehouseStock {
+  warehouseId: string;
+  warehouseName: string;
+  items: { articleVariantId: string; sku: string; articleName: string; quantity: number }[];
+  totalItems: number;
+}
+
+interface RecentInvoice {
+  id: string;
+  customerName: string;
+  total: number;
+  balanceDue: number;
+  status: string;
+  issueDate: string;
+  documentLetter: string;
+  number: string;
+}
+
+interface Snapshot {
+  stockByWarehouse: WarehouseStock[];
+  recentInvoices: RecentInvoice[];
+  todaySummary: { invoiceCount: number; total: number; paidCount: number };
+  lowStockAlerts: {
+    warehouseName: string;
+    sku: string;
+    articleName: string;
+    currentQuantity: number;
+    minimumQuantity: number;
+  }[];
+  salesLast7Days: { date: string; total: number; count: number }[];
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: 'Borrador',
+  ISSUED: 'Emitida',
+  PARTIALLY_PAID: 'Pago parcial',
+  PAID: 'Pagada',
+  OVERDUE: 'Vencida',
+  CANCELLED: 'Cancelada',
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  DRAFT: 'bg-slate-700 text-slate-300',
+  ISSUED: 'bg-blue-900 text-blue-300',
+  PARTIALLY_PAID: 'bg-yellow-900 text-yellow-300',
+  PAID: 'bg-green-900 text-green-300',
+  OVERDUE: 'bg-red-900 text-red-300',
+  CANCELLED: 'bg-slate-800 text-slate-500',
+};
+
+export default function DashboardPage() {
+  const queryClient = useQueryClient();
+
+  const { data, isLoading, error } = useQuery<Snapshot>({
+    queryKey: ['dashboard-snapshot'],
+    queryFn: () => api.get('/dashboard/snapshot').then((r) => r.data as Snapshot),
+  });
+
+  useEffect(() => {
+    const socket = getSocket();
+
+    socket.on('stock.updated', () => {
+      void queryClient.invalidateQueries({ queryKey: ['dashboard-snapshot'] });
+    });
+
+    socket.on('invoice.created', () => {
+      void queryClient.invalidateQueries({ queryKey: ['dashboard-snapshot'] });
+    });
+
+    return () => {
+      socket.off('stock.updated');
+      socket.off('invoice.created');
+    };
+  }, [queryClient]);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center text-slate-500">
+        Cargando tablero...
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex h-64 items-center justify-center text-red-400">
+        Error al cargar el tablero
+      </div>
+    );
+  }
+
+  const { todaySummary, stockByWarehouse, recentInvoices, lowStockAlerts, salesLast7Days } = data;
+
+  return (
+    <div className="flex flex-col gap-6">
+      <h1 className="text-xl font-semibold text-slate-100">Tablero</h1>
+
+      {/* KPI cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <KpiCard
+          label="Facturado hoy"
+          value={`$${todaySummary.total.toFixed(2)}`}
+          sub={`${todaySummary.invoiceCount} factura${todaySummary.invoiceCount !== 1 ? 's' : ''}`}
+        />
+        <KpiCard
+          label="Cobrado hoy"
+          value={`${todaySummary.paidCount}`}
+          sub={`de ${todaySummary.invoiceCount} factura${todaySummary.invoiceCount !== 1 ? 's' : ''}`}
+        />
+        <KpiCard
+          label="Alertas de stock"
+          value={`${lowStockAlerts.length}`}
+          sub="productos bajo mínimo"
+          alert={lowStockAlerts.length > 0}
+        />
+      </div>
+
+      {/* Sales chart + low stock */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="col-span-2 rounded-xl border border-slate-800 bg-slate-900 p-4">
+          <h2 className="mb-4 text-sm font-medium text-slate-400">Ventas últimos 7 días</h2>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={salesLast7Days}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 11, fill: '#94a3b8' }}
+                tickFormatter={(v: string) => v.slice(5)}
+              />
+              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} width={60} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b' }}
+                labelStyle={{ color: '#94a3b8' }}
+                formatter={(v: number) => [`$${v.toFixed(2)}`, 'Total']}
+              />
+              <Bar dataKey="total" fill="#6366f1" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+          <h2 className="mb-3 text-sm font-medium text-slate-400">Alertas de stock</h2>
+          {lowStockAlerts.length === 0 ? (
+            <p className="text-sm text-slate-600">Sin alertas</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {lowStockAlerts.map((a, i) => (
+                <li key={i} className="rounded-lg bg-red-950 p-3">
+                  <p className="text-sm font-medium text-red-300">{a.sku}</p>
+                  <p className="text-xs text-red-400">{a.articleName}</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {a.currentQuantity} / {a.minimumQuantity} mín · {a.warehouseName}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {/* Stock by warehouse */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <h2 className="mb-4 text-sm font-medium text-slate-400">Stock por depósito</h2>
+        {stockByWarehouse.length === 0 ? (
+          <p className="text-sm text-slate-600">Sin depósitos creados</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {stockByWarehouse.map((wh) => (
+              <div key={wh.warehouseId} className="rounded-lg border border-slate-700 bg-slate-800 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="font-medium text-slate-200">{wh.warehouseName}</span>
+                  <span className="text-lg font-bold text-indigo-400">{wh.totalItems}</span>
+                </div>
+                {wh.items.length === 0 ? (
+                  <p className="text-xs text-slate-600">Sin stock</p>
+                ) : (
+                  <ul className="flex flex-col gap-1">
+                    {wh.items.slice(0, 5).map((item) => (
+                      <li key={item.articleVariantId} className="flex justify-between text-xs">
+                        <span className="text-slate-400 truncate">{item.sku}</span>
+                        <span className="ml-2 text-slate-300 shrink-0">{item.quantity}</span>
+                      </li>
+                    ))}
+                    {wh.items.length > 5 && (
+                      <li className="text-xs text-slate-600">+{wh.items.length - 5} más</li>
+                    )}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Recent invoices */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <h2 className="mb-4 text-sm font-medium text-slate-400">Últimas facturas</h2>
+        {recentInvoices.length === 0 ? (
+          <p className="text-sm text-slate-600">Sin facturas</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-800 text-left text-xs text-slate-500">
+                  <th className="pb-2 pr-4">Número</th>
+                  <th className="pb-2 pr-4">Cliente</th>
+                  <th className="pb-2 pr-4">Fecha</th>
+                  <th className="pb-2 pr-4 text-right">Total</th>
+                  <th className="pb-2 pr-4 text-right">Saldo</th>
+                  <th className="pb-2">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentInvoices.map((inv) => (
+                  <tr key={inv.id} className="border-b border-slate-800/50 hover:bg-slate-800/40">
+                    <td className="py-2 pr-4 font-mono text-xs text-slate-400">
+                      {inv.documentLetter}-{inv.number}
+                    </td>
+                    <td className="py-2 pr-4 text-slate-200">{inv.customerName}</td>
+                    <td className="py-2 pr-4 text-slate-400">
+                      {new Date(inv.issueDate).toLocaleDateString('es-AR')}
+                    </td>
+                    <td className="py-2 pr-4 text-right text-slate-200">
+                      ${inv.total.toFixed(2)}
+                    </td>
+                    <td className="py-2 pr-4 text-right text-slate-400">
+                      ${inv.balanceDue.toFixed(2)}
+                    </td>
+                    <td className="py-2">
+                      <span
+                        className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[inv.status] ?? 'bg-slate-700 text-slate-300'}`}
+                      >
+                        {STATUS_LABELS[inv.status] ?? inv.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+  sub,
+  alert,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  alert?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-xl border p-4 ${alert ? 'border-red-800 bg-red-950' : 'border-slate-800 bg-slate-900'}`}
+    >
+      <p className="text-xs text-slate-400">{label}</p>
+      <p className={`mt-1 text-2xl font-bold ${alert ? 'text-red-300' : 'text-slate-100'}`}>
+        {value}
+      </p>
+      <p className="mt-0.5 text-xs text-slate-500">{sub}</p>
+    </div>
+  );
+}
