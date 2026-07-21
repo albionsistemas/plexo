@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { getTenantDb, Prisma, type Invoice, type Customer } from '@plexo/database';
+import { getTenantDb, Prisma, type Invoice, type Company } from '@plexo/database';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -103,10 +103,10 @@ export class ReceivablesService {
       return [];
     }
 
-    const customers = await db.customer.findMany({
+    const customers = await db.company.findMany({
       where: { id: { in: grouped.map((g) => g.customerId) } },
     });
-    const customerById = new Map<string, Customer>(customers.map((c) => [c.id, c]));
+    const customerById = new Map<string, Company>(customers.map((c) => [c.id, c]));
 
     return grouped
       .map((g) => {
@@ -126,7 +126,7 @@ export class ReceivablesService {
 
   async getCustomerStatement(customerId: string): Promise<CustomerStatement> {
     const db = getTenantDb();
-    const customer = await db.customer.findUnique({ where: { id: customerId } });
+    const customer = await db.company.findUnique({ where: { id: customerId } });
     if (!customer) {
       throw new NotFoundException('Customer not found');
     }
@@ -166,7 +166,7 @@ export class ReceivablesService {
    * is the one caller today, using the result to send one overdue-alert
    * email per invoice via InvoicingService.
    */
-  listInvoicesBecomingOverdue(asOf: Date = new Date()): Promise<(Invoice & { customer: Customer })[]> {
+  listInvoicesBecomingOverdue(asOf: Date = new Date()): Promise<(Invoice & { customer: Company })[]> {
     return getTenantDb().invoice.findMany({
       where: {
         balanceDue: { gt: 0 },

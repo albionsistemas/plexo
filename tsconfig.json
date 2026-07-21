@@ -53,6 +53,9 @@
     },
     {
       "path": "./libs/modules/reports-financial"
+    },
+    {
+      "path": "./libs/modules/companies"
     }
   ],
   "compilerOptions": {}

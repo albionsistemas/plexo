@@ -1,11 +1,27 @@
 import type { AccountingService } from '@plexo/accounting';
-import { Prisma } from '@plexo/database';
+import { Prisma, tenantContextStorage } from '@plexo/database';
 import type { InventoryService } from '@plexo/inventory';
 import type { InvoicingService } from '@plexo/invoicing';
 import { SalesService } from './sales.service.js';
 
+function runInTenant<T>(db: Record<string, unknown>, fn: () => T): T {
+  return tenantContextStorage.run({ tenantId: 'tenant-1', userId: 'user-1', tx: db as never }, fn);
+}
+
+function makeBranchDb(branch: unknown = defaultBranch()) {
+  return { company: { findUnique: jest.fn().mockResolvedValue(branch) } };
+}
+
+function defaultBranch() {
+  return {
+    id: 'branch-1',
+    pointOfSaleNumber: '0001',
+    roles: [{ role: 'BRANCH' }],
+  };
+}
+
 describe('SalesService.createSale', () => {
-  it('creates the invoice, posts its journal entry, then records one SALE_OUT movement per line', async () => {
+  it('resolves the branch, creates the invoice, posts its journal entry, then records one SALE_OUT movement per line', async () => {
     const invoice = {
       id: 'invoice-1',
       subtotal: new Prisma.Decimal(100),
@@ -32,7 +48,7 @@ describe('SalesService.createSale', () => {
       customerId: 'customer-1',
       warehouseId: 'warehouse-1',
       documentLetter: 'B' as const,
-      pointOfSale: '0001',
+      branchId: 'branch-1',
       currencyId: 'currency-1',
       lines: [
         { articleVariantId: 'variant-1', quantity: 3 },
@@ -40,12 +56,12 @@ describe('SalesService.createSale', () => {
       ],
     };
 
-    const result = await service.createSale(dto);
+    const result = await runInTenant(makeBranchDb(), () => service.createSale(dto));
 
     expect(invoicingService.createInvoice).toHaveBeenCalledWith({
       customerId: dto.customerId,
       documentLetter: dto.documentLetter,
-      pointOfSale: dto.pointOfSale,
+      pointOfSale: '0001',
       currencyId: dto.currencyId,
       globalDiscountPercent: undefined,
       dueDate: undefined,
@@ -79,6 +95,28 @@ describe('SalesService.createSale', () => {
     expect(result).toBe(invoice);
   });
 
+  it('rejects when the referenced company is not flagged as a BRANCH', async () => {
+    const invoicingService = { createInvoice: jest.fn() } as unknown as InvoicingService;
+    const inventoryService = {} as unknown as InventoryService;
+    const accountingService = {} as unknown as AccountingService;
+    const service = new SalesService(invoicingService, inventoryService, accountingService);
+    const db = makeBranchDb({ id: 'branch-1', pointOfSaleNumber: '0001', roles: [{ role: 'CUSTOMER' }] });
+
+    await expect(
+      runInTenant(db, () =>
+        service.createSale({
+          customerId: 'customer-1',
+          warehouseId: 'warehouse-1',
+          documentLetter: 'B',
+          branchId: 'branch-1',
+          currencyId: 'currency-1',
+          lines: [{ articleVariantId: 'variant-1', quantity: 1 }],
+        }),
+      ),
+    ).rejects.toThrow('not flagged as a branch');
+    expect(invoicingService.createInvoice).not.toHaveBeenCalled();
+  });
+
   it('propagates an insufficient-stock error without swallowing it (the enclosing tx rolls back the invoice too)', async () => {
     const invoice = {
       id: 'invoice-1',
@@ -102,14 +140,16 @@ describe('SalesService.createSale', () => {
     const service = new SalesService(invoicingService, inventoryService, accountingService);
 
     await expect(
-      service.createSale({
-        customerId: 'customer-1',
-        warehouseId: 'warehouse-1',
-        documentLetter: 'B',
-        pointOfSale: '0001',
-        currencyId: 'currency-1',
-        lines: [{ articleVariantId: 'variant-1', quantity: 999 }],
-      }),
+      runInTenant(makeBranchDb(), () =>
+        service.createSale({
+          customerId: 'customer-1',
+          warehouseId: 'warehouse-1',
+          documentLetter: 'B',
+          branchId: 'branch-1',
+          currencyId: 'currency-1',
+          lines: [{ articleVariantId: 'variant-1', quantity: 999 }],
+        }),
+      ),
     ).rejects.toThrow(failure);
   });
 
@@ -136,14 +176,16 @@ describe('SalesService.createSale', () => {
     const service = new SalesService(invoicingService, inventoryService, accountingService);
 
     await expect(
-      service.createSale({
-        customerId: 'customer-1',
-        warehouseId: 'warehouse-1',
-        documentLetter: 'B',
-        pointOfSale: '0001',
-        currencyId: 'currency-1',
-        lines: [{ articleVariantId: 'variant-1', quantity: 1 }],
-      }),
+      runInTenant(makeBranchDb(), () =>
+        service.createSale({
+          customerId: 'customer-1',
+          warehouseId: 'warehouse-1',
+          documentLetter: 'B',
+          branchId: 'branch-1',
+          currencyId: 'currency-1',
+          lines: [{ articleVariantId: 'variant-1', quantity: 1 }],
+        }),
+      ),
     ).rejects.toThrow(failure);
     expect(inventoryService.recordMovement).not.toHaveBeenCalled();
   });

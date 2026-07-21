@@ -4,6 +4,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AccountingModule } from '@plexo/accounting';
 import { JwtAuthGuard, ModuleAccessGuard, RolesGuard } from '@plexo/auth';
+import { CompaniesModule } from '@plexo/companies';
 import { DatabaseModule } from '@plexo/database';
 import { InventoryModule } from '@plexo/inventory';
 import { InvoicingModule } from '@plexo/invoicing';
@@ -25,6 +26,7 @@ import { SchedulerModule } from './scheduler/scheduler.module.js';
     ScheduleModule.forRoot(),
     DatabaseModule,
     AuthModule,
+    CompaniesModule,
     InventoryModule,
     InvoicingModule,
     ReceivablesModule,

@@ -1,0 +1,9 @@
+{
+  "name": "companies",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/modules/companies/src",
+  "projectType": "library",
+  "tags": ["scope:companies", "type:feature"],
+  "// targets": "to see all targets run: nx show project companies --web",
+  "targets": {}
+}

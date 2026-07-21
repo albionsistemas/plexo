@@ -54,7 +54,7 @@ describe('ReceivablesService.listCustomerBalances', () => {
           { customerId: 'customer-1', _sum: { balanceDue: new Prisma.Decimal(150) } },
         ]),
       },
-      customer: {
+      company: {
         findMany: jest
           .fn()
           .mockResolvedValue([{ id: 'customer-1', name: 'Acme', creditLimit: new Prisma.Decimal(1000) }]),
@@ -79,20 +79,20 @@ describe('ReceivablesService.listCustomerBalances', () => {
   it('skips the customer lookup entirely when nobody owes anything', async () => {
     const db = {
       invoice: { groupBy: jest.fn().mockResolvedValue([]) },
-      customer: { findMany: jest.fn() },
+      company: { findMany: jest.fn() },
     };
     const service = new ReceivablesService();
 
     const balances = await runInTenant(db, () => service.listCustomerBalances());
 
     expect(balances).toEqual([]);
-    expect(db.customer.findMany).not.toHaveBeenCalled();
+    expect(db.company.findMany).not.toHaveBeenCalled();
   });
 });
 
 describe('ReceivablesService.getCustomerStatement', () => {
   it('throws when the customer does not exist', async () => {
-    const db = { customer: { findUnique: jest.fn().mockResolvedValue(null) } };
+    const db = { company: { findUnique: jest.fn().mockResolvedValue(null) } };
     const service = new ReceivablesService();
 
     await expect(runInTenant(db, () => service.getCustomerStatement('missing'))).rejects.toThrow(
@@ -102,7 +102,7 @@ describe('ReceivablesService.getCustomerStatement', () => {
 
   it('returns the open invoices and their total', async () => {
     const db = {
-      customer: {
+      company: {
         findUnique: jest
           .fn()
           .mockResolvedValue({ id: 'customer-1', name: 'Acme', creditLimit: new Prisma.Decimal(500) }),

@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AccountingService } from '@plexo/accounting';
+import { getTenantDb } from '@plexo/database';
 import { InventoryService } from '@plexo/inventory';
 import { InvoicingService, type CreateCreditNoteDto } from '@plexo/invoicing';
 import type { CreateSaleDto } from './dto/create-sale.dto.js';
@@ -27,10 +28,24 @@ export class SalesService {
   ) {}
 
   async createSale(dto: CreateSaleDto) {
+    const branch = await getTenantDb().company.findUnique({
+      where: { id: dto.branchId },
+      include: { roles: true },
+    });
+    if (!branch) {
+      throw new NotFoundException('Branch not found');
+    }
+    if (!branch.roles.some((r) => r.role === 'BRANCH')) {
+      throw new BadRequestException('This company is not flagged as a branch');
+    }
+    if (!branch.pointOfSaleNumber) {
+      throw new BadRequestException('Branch has no pointOfSaleNumber configured');
+    }
+
     const invoice = await this.invoicingService.createInvoice({
       customerId: dto.customerId,
       documentLetter: dto.documentLetter,
-      pointOfSale: dto.pointOfSale,
+      pointOfSale: branch.pointOfSaleNumber,
       currencyId: dto.currencyId,
       globalDiscountPercent: dto.globalDiscountPercent,
       dueDate: dto.dueDate,

@@ -6,7 +6,6 @@ import {
   getUserId,
   Prisma,
   type Currency,
-  type Customer,
   type DiscountType,
   type DocumentLetter,
   type Invoice,
@@ -18,7 +17,6 @@ import {
 } from '@plexo/database';
 import type { CreateCreditNoteDto } from './dto/create-credit-note.dto.js';
 import type { CreateCurrencyDto } from './dto/create-currency.dto.js';
-import type { CreateCustomerDto } from './dto/create-customer.dto.js';
 import type { CreateInvoiceDto } from './dto/create-invoice.dto.js';
 import type { RecordExchangeRateDto } from './dto/record-exchange-rate.dto.js';
 import type { RecordReceiptDto } from './dto/record-receipt.dto.js';
@@ -45,22 +43,6 @@ export class InvoicingService {
     private readonly electronicInvoicing: ElectronicInvoicingPort,
     private readonly eventEmitter: EventEmitter2,
   ) {}
-
-  createCustomer(dto: CreateCustomerDto): Promise<Customer> {
-    return getTenantDb().customer.create({
-      data: {
-        tenantId: getTenantId(),
-        name: dto.name,
-        taxId: dto.taxId,
-        email: dto.email,
-        creditLimit: dto.creditLimit ?? 0,
-      },
-    });
-  }
-
-  listCustomers(): Promise<Customer[]> {
-    return getTenantDb().customer.findMany({ orderBy: { name: 'asc' } });
-  }
 
   createCurrency(dto: CreateCurrencyDto): Promise<Currency> {
     return getTenantDb().currency.create({
@@ -125,9 +107,15 @@ export class InvoicingService {
       throw new BadRequestException('An authenticated user is required to issue an invoice');
     }
 
-    const customer = await db.customer.findUnique({ where: { id: dto.customerId } });
+    const customer = await db.company.findUnique({
+      where: { id: dto.customerId },
+      include: { roles: true },
+    });
     if (!customer) {
       throw new NotFoundException('Customer not found');
+    }
+    if (!customer.roles.some((r) => r.role === 'CUSTOMER')) {
+      throw new BadRequestException('This company is not flagged as a customer');
     }
 
     const currency = await db.currency.findUnique({ where: { id: dto.currencyId } });

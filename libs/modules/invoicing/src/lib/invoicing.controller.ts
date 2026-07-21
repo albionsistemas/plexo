@@ -1,7 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { Roles } from '@plexo/auth';
 import { CreateCurrencyDto } from './dto/create-currency.dto.js';
-import { CreateCustomerDto } from './dto/create-customer.dto.js';
 import { RecordExchangeRateDto } from './dto/record-exchange-rate.dto.js';
 import { RecordReceiptDto } from './dto/record-receipt.dto.js';
 import { InvoicingService } from './invoicing.service.js';
@@ -12,16 +11,10 @@ const WRITE_ROLES = ['OWNER', 'ADMIN', 'SALES'] as const;
 export class InvoicingController {
   constructor(private readonly invoicingService: InvoicingService) {}
 
-  @Roles(...WRITE_ROLES)
-  @Post('customers')
-  createCustomer(@Body() dto: CreateCustomerDto) {
-    return this.invoicingService.createCustomer(dto);
-  }
-
-  @Get('customers')
-  listCustomers() {
-    return this.invoicingService.listCustomers();
-  }
+  // Customers are managed via POST/GET /companies (role=CUSTOMER) now -
+  // see @plexo/companies. A Company can be a customer, a supplier, and/or
+  // one of the tenant's own branches, so that CRUD doesn't belong to
+  // Invoicing specifically anymore.
 
   @Roles('OWNER', 'ADMIN', 'ACCOUNTANT')
   @Post('currencies')

@@ -4,7 +4,6 @@ export * from './lib/email-sender.port.js';
 export * from './lib/electronic-invoicing.port.js';
 export * from './lib/dto/create-credit-note.dto.js';
 export * from './lib/dto/create-currency.dto.js';
-export * from './lib/dto/create-customer.dto.js';
 export * from './lib/dto/create-invoice.dto.js';
 export * from './lib/dto/record-exchange-rate.dto.js';
 export * from './lib/dto/record-receipt.dto.js';

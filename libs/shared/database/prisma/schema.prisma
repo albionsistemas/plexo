@@ -139,20 +139,75 @@ model UserModuleAccess {
   @@map("user_module_access")
 }
 
-model Customer {
-  id          String   @id @default(uuid())
-  tenantId    String
-  name        String
-  taxId       String?
-  email       String?
-  creditLimit Decimal  @default(0) @db.Decimal(14, 2)
-  createdAt   DateTime @default(now())
+enum CompanyRoleType {
+  CUSTOMER
+  SUPPLIER
+  BRANCH
+}
 
+// Unifies what used to be a Customer-only table: any external company the
+// tenant deals with (as a customer and/or a supplier) plus the tenant's
+// own branches/points of sale - all three are "a company", just playing
+// different roles (see CompanyRole, many-to-many: a distributor can be
+// both a customer and a supplier at once). pointOfSaleNumber only means
+// something for a BRANCH (the AFIP punto de venta invoices are issued
+// under); it's simply unused for CUSTOMER/SUPPLIER rows.
+model Company {
+  id                String   @id @default(uuid())
+  tenantId          String
+  name              String
+  taxId             String?
+  email             String?
+  creditLimit       Decimal  @default(0) @db.Decimal(14, 2)
+  pointOfSaleNumber String?
+  createdAt         DateTime @default(now())
+
+  roles  CompanyRole[]
+  people Person[]
+
+  // Relation field on Invoice/Quote is kept named `customer` (not renamed
+  // to `company`) so every existing `include: { customer: true }` /
+  // `invoice.customer.name` call site across Invoicing/Receivables/Reports
+  // keeps working unchanged - only the model/table the FK targets changed.
   invoices Invoice[]
   quotes   Quote[]
 
   @@index([tenantId])
-  @@map("customers")
+  @@map("companies")
+}
+
+model CompanyRole {
+  id        String          @id @default(uuid())
+  tenantId  String
+  companyId String
+  company   Company         @relation(fields: [companyId], references: [id])
+  role      CompanyRoleType
+
+  @@unique([tenantId, companyId, role])
+  @@index([tenantId, role])
+  @@map("company_roles")
+}
+
+// Contact person at a customer or supplier company (not meaningful for a
+// BRANCH - that's the tenant's own location, not an external contact).
+// Nothing enforces that at the schema level; CompaniesService is where
+// that rule actually lives.
+model Person {
+  id        String   @id @default(uuid())
+  tenantId  String
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  firstName String
+  lastName  String?
+  nickname  String?
+  email     String?
+  whatsapp  String?
+  avatarUrl String?
+  jobTitle  String?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, companyId])
+  @@map("people")
 }
 
 // --- Currency ---
@@ -402,9 +457,9 @@ model Invoice {
   id                    String         @id @default(uuid())
   tenantId              String
   customerId            String
-  customer              Customer       @relation(fields: [customerId], references: [id])
+  customer              Company        @relation(fields: [customerId], references: [id])
   // Snapshot of the customer at issuance - required for fiscal documents:
-  // Customer.name/taxId can change later, the invoice must not silently
+  // Company.name/taxId can change later, the invoice must not silently
   // change with it.
   customerName          String
   customerTaxId         String?
@@ -497,7 +552,7 @@ model Quote {
   id              String    @id @default(uuid())
   tenantId        String
   customerId      String
-  customer        Customer  @relation(fields: [customerId], references: [id])
+  customer        Company   @relation(fields: [customerId], references: [id])
   number          String
   status          String    @default("DRAFT")
   brandingLogoUrl String?

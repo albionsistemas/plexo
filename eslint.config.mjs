@@ -20,6 +20,7 @@ export default [
             // Cross-module data flows through shared/types contracts, not direct imports.
             { sourceTag: 'scope:shared', onlyDependOnLibsWithTags: ['scope:shared'] },
             { sourceTag: 'scope:invoicing', onlyDependOnLibsWithTags: ['scope:invoicing', 'scope:shared'] },
+            { sourceTag: 'scope:companies', onlyDependOnLibsWithTags: ['scope:companies', 'scope:shared'] },
             { sourceTag: 'scope:quotes', onlyDependOnLibsWithTags: ['scope:quotes', 'scope:shared'] },
             { sourceTag: 'scope:receivables', onlyDependOnLibsWithTags: ['scope:receivables', 'scope:shared'] },
             { sourceTag: 'scope:inventory', onlyDependOnLibsWithTags: ['scope:inventory', 'scope:shared'] },
@@ -33,6 +34,7 @@ export default [
               onlyDependOnLibsWithTags: [
                 'scope:shared',
                 'scope:invoicing',
+                'scope:companies',
                 'scope:quotes',
                 'scope:receivables',
                 'scope:inventory',
@@ -48,6 +50,7 @@ export default [
               onlyDependOnLibsWithTags: [
                 'scope:shared',
                 'scope:invoicing',
+                'scope:companies',
                 'scope:quotes',
                 'scope:receivables',
                 'scope:inventory',

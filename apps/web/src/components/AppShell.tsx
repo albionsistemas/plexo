@@ -8,6 +8,8 @@ import { useEffect, useState } from 'react';
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Tablero' },
   { href: '/inventory', label: 'Inventario' },
+  { href: '/invoicing', label: 'Facturación' },
+  { href: '/receivables', label: 'Cuentas a Cobrar' },
   { href: '/profile', label: 'Perfil' },
 ];
 

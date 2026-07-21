@@ -38,7 +38,7 @@ export class ReportsSalesService {
       return [];
     }
 
-    const customers = await db.customer.findMany({
+    const customers = await db.company.findMany({
       where: { id: { in: grouped.map((g) => g.customerId) } },
     });
     const customerById = new Map(customers.map((c) => [c.id, c]));

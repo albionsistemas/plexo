@@ -14,7 +14,7 @@ describe('ReportsSalesService.getSalesByCustomer', () => {
           { customerId: 'c2', _sum: { total: new Prisma.Decimal(500) }, _count: 1 },
         ]),
       },
-      customer: {
+      company: {
         findMany: jest
           .fn()
           .mockResolvedValue([
@@ -37,14 +37,14 @@ describe('ReportsSalesService.getSalesByCustomer', () => {
   it('skips the customer lookup when there are no sales in range', async () => {
     const db = {
       invoice: { groupBy: jest.fn().mockResolvedValue([]) },
-      customer: { findMany: jest.fn() },
+      company: { findMany: jest.fn() },
     };
     const service = new ReportsSalesService();
 
     const result = await runInTenant(db, () => service.getSalesByCustomer());
 
     expect(result).toEqual([]);
-    expect(db.customer.findMany).not.toHaveBeenCalled();
+    expect(db.company.findMany).not.toHaveBeenCalled();
   });
 });
 
