@@ -347,6 +347,24 @@ export class InvoicingService {
     return receipt;
   }
 
+  /**
+   * Called by ReceivablesSchedulerService (apps/api) once per invoice that
+   * ReceivablesService.listInvoicesBecomingOverdue() found - keeps the
+   * EMAIL_SENDER port encapsulated in this module (it's not exported)
+   * instead of every caller needing to know the token exists.
+   */
+  async sendOverdueInvoiceAlert(
+    invoice: Pick<Invoice, 'documentLetter' | 'number' | 'balanceDue' | 'dueDate'>,
+    customerEmail: string,
+  ): Promise<void> {
+    await this.emailSender.sendOverdueAlertEmail({
+      to: customerEmail,
+      invoiceNumber: `${invoice.documentLetter}-${invoice.number}`,
+      balanceDue: invoice.balanceDue.toFixed(2),
+      dueDate: invoice.dueDate?.toLocaleDateString('es-AR') ?? '',
+    });
+  }
+
   private async resolveExchangeRate(currency: Currency): Promise<Prisma.Decimal> {
     if (currency.isBase) {
       return new Prisma.Decimal(1);

@@ -13,7 +13,10 @@ function runWithoutUser<T>(db: Record<string, unknown>, fn: () => T): T {
 }
 
 function makeEmailSender(): EmailSender {
-  return { sendInvoiceEmail: jest.fn().mockResolvedValue(undefined) };
+  return {
+    sendInvoiceEmail: jest.fn().mockResolvedValue(undefined),
+    sendOverdueAlertEmail: jest.fn().mockResolvedValue(undefined),
+  };
 }
 
 function makeElectronicInvoicing(): ElectronicInvoicingPort {
@@ -318,5 +321,27 @@ describe('InvoicingService.recordReceipt', () => {
         service.recordReceipt({ invoiceId: 'invoice-1', amount: 100, method: 'CASH' }),
       ),
     ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('InvoicingService.sendOverdueInvoiceAlert', () => {
+  it('formats the invoice number/balance/due date and forwards them to the email sender', async () => {
+    const emailSender = makeEmailSender();
+    const service = new InvoicingService(emailSender, makeElectronicInvoicing());
+    const invoice = {
+      documentLetter: 'B' as const,
+      number: '00000042',
+      balanceDue: new Prisma.Decimal(1210.5),
+      dueDate: new Date('2026-07-01T00:00:00.000Z'),
+    };
+
+    await service.sendOverdueInvoiceAlert(invoice, 'cliente@demo.com');
+
+    expect(emailSender.sendOverdueAlertEmail).toHaveBeenCalledWith({
+      to: 'cliente@demo.com',
+      invoiceNumber: 'B-00000042',
+      balanceDue: '1210.50',
+      dueDate: invoice.dueDate.toLocaleDateString('es-AR'),
+    });
   });
 });

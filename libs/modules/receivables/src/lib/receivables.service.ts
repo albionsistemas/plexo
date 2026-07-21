@@ -157,11 +157,33 @@ export class ReceivablesService {
   }
 
   /**
-   * Syncs the stored Invoice.status to OVERDUE where it's warranted -
-   * nothing does this automatically yet (no scheduler wired up in this
-   * project), so call it manually or from a future cron. Reports above
-   * don't depend on this having run; this is only for code elsewhere that
-   * filters directly on the status column.
+   * The invoices refreshOverdueStatuses() is about to flip below - i.e.
+   * exactly the ones that just crossed into overdue, not every invoice
+   * that's already OVERDUE (which would mean re-alerting on the same
+   * invoice every single day forever). Call this BEFORE
+   * refreshOverdueStatuses() in the same tenant context so it still sees
+   * their pre-transition status; ReceivablesSchedulerService (apps/api)
+   * is the one caller today, using the result to send one overdue-alert
+   * email per invoice via InvoicingService.
+   */
+  listInvoicesBecomingOverdue(asOf: Date = new Date()): Promise<(Invoice & { customer: Customer })[]> {
+    return getTenantDb().invoice.findMany({
+      where: {
+        balanceDue: { gt: 0 },
+        dueDate: { lt: asOf },
+        status: { in: ['ISSUED', 'PARTIALLY_PAID'] },
+      },
+      include: { customer: true },
+      orderBy: { dueDate: 'asc' },
+    });
+  }
+
+  /**
+   * Syncs the stored Invoice.status to OVERDUE where it's warranted.
+   * Reports above don't depend on this having run; this is only for code
+   * elsewhere that filters directly on the status column. Called daily,
+   * per tenant, by ReceivablesSchedulerService (apps/api) - also callable
+   * manually via POST /receivables/overdue/refresh.
    */
   async refreshOverdueStatuses(asOf: Date = new Date()): Promise<{ updated: number }> {
     const result = await getTenantDb().invoice.updateMany({

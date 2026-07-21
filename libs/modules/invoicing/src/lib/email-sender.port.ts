@@ -4,14 +4,22 @@ export interface InvoiceEmailPayload {
   total: string;
 }
 
+export interface OverdueAlertEmailPayload {
+  to: string;
+  invoiceNumber: string;
+  balanceDue: string;
+  dueDate: string;
+}
+
 /**
- * No real provider chosen yet (Resend/SES/SMTP - deferred). InvoicingService
- * depends on this interface, not a concrete implementation, so swapping in a
- * real sender later is one new class + one line in InvoicingModule, not a
- * change to InvoicingService.
+ * Resend is the real provider (see ResendEmailSender); InvoicingService
+ * depends on this interface, not the concrete class, so swapping providers
+ * later is one new class + one line in InvoicingModule, not a change to
+ * InvoicingService.
  */
 export interface EmailSender {
   sendInvoiceEmail(payload: InvoiceEmailPayload): Promise<void>;
+  sendOverdueAlertEmail(payload: OverdueAlertEmailPayload): Promise<void>;
 }
 
 export const EMAIL_SENDER = Symbol('EMAIL_SENDER');

@@ -123,6 +123,29 @@ describe('ReceivablesService.getCustomerStatement', () => {
   });
 });
 
+describe('ReceivablesService.listInvoicesBecomingOverdue', () => {
+  it('queries the same pre-transition set that refreshOverdueStatuses is about to flip', async () => {
+    const invoices = [
+      { id: 'inv-1', customer: { name: 'Acme', email: 'acme@example.com' } },
+    ];
+    const db = { invoice: { findMany: jest.fn().mockResolvedValue(invoices) } };
+    const service = new ReceivablesService();
+
+    const result = await runInTenant(db, () => service.listInvoicesBecomingOverdue(ASOF));
+
+    expect(db.invoice.findMany).toHaveBeenCalledWith({
+      where: {
+        balanceDue: { gt: 0 },
+        dueDate: { lt: ASOF },
+        status: { in: ['ISSUED', 'PARTIALLY_PAID'] },
+      },
+      include: { customer: true },
+      orderBy: { dueDate: 'asc' },
+    });
+    expect(result).toBe(invoices);
+  });
+});
+
 describe('ReceivablesService.refreshOverdueStatuses', () => {
   it('marks overdue invoices and reports how many changed', async () => {
     const db = { invoice: { updateMany: jest.fn().mockResolvedValue({ count: 3 }) } };

@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Resend } from 'resend';
-import type { EmailSender, InvoiceEmailPayload } from './email-sender.port.js';
+import type {
+  EmailSender,
+  InvoiceEmailPayload,
+  OverdueAlertEmailPayload,
+} from './email-sender.port.js';
 
 /**
  * Real sender, wired in only when RESEND_API_KEY is set (see
@@ -31,6 +35,21 @@ export class ResendEmailSender implements EmailSender {
     if (error) {
       this.logger.error(
         `Failed to email invoice ${payload.invoiceNumber} to ${payload.to}: ${error.message}`,
+      );
+    }
+  }
+
+  async sendOverdueAlertEmail(payload: OverdueAlertEmailPayload): Promise<void> {
+    const { error } = await this.resend.emails.send({
+      from: this.from,
+      to: payload.to,
+      subject: `Factura ${payload.invoiceNumber} vencida`,
+      text: `Tu factura ${payload.invoiceNumber} está vencida desde el ${payload.dueDate}. Saldo pendiente: $${payload.balanceDue}.`,
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to email overdue alert for invoice ${payload.invoiceNumber} to ${payload.to}: ${error.message}`,
       );
     }
   }

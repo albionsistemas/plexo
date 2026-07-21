@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AccountingModule } from '@plexo/accounting';
 import { JwtAuthGuard, ModuleAccessGuard, RolesGuard } from '@plexo/auth';
 import { DatabaseModule } from '@plexo/database';
@@ -16,10 +17,12 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { SalesModule } from './sales/sales.module.js';
+import { SchedulerModule } from './scheduler/scheduler.module.js';
 
 @Module({
   imports: [
     EventEmitterModule.forRoot(),
+    ScheduleModule.forRoot(),
     DatabaseModule,
     AuthModule,
     InventoryModule,
@@ -32,6 +35,7 @@ import { SalesModule } from './sales/sales.module.js';
     ReportsFinancialModule,
     SalesModule,
     DashboardModule,
+    SchedulerModule,
   ],
   controllers: [AppController],
   providers: [
