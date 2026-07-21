@@ -39,6 +39,11 @@ export class InventoryController {
     return this.inventoryService.createCategory(dto);
   }
 
+  @Get('categories')
+  listCategories() {
+    return this.inventoryService.listCategories();
+  }
+
   @Roles(...WRITE_ROLES)
   @Post('articles')
   createArticle(@Body() dto: CreateArticleDto) {

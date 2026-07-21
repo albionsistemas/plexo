@@ -6,7 +6,6 @@ import {
   getUserId,
   Prisma,
   type Article,
-  type ArticleVariant,
   type Category,
   type MinimumStock,
   type Warehouse,
@@ -24,6 +23,33 @@ export interface ReorderSuggestion {
   articleVariantId: string;
   minimumQuantity: Prisma.Decimal;
   currentQuantity: Prisma.Decimal;
+}
+
+export interface WarehouseStockRow {
+  warehouseId: string;
+  warehouseName: string;
+  quantity: number;
+}
+
+export interface ArticleVariantListItem {
+  id: string;
+  sku: string;
+  color: string | null;
+  size: string | null;
+  brand: string | null;
+  unitPrice: number;
+  totalStock: number;
+  stockByWarehouse: WarehouseStockRow[];
+}
+
+export interface ArticleListItem {
+  id: string;
+  name: string;
+  description: string | null;
+  unitOfMeasure: string;
+  categoryId: string | null;
+  categoryName: string | null;
+  variants: ArticleVariantListItem[];
 }
 
 @Injectable()
@@ -46,6 +72,10 @@ export class InventoryService {
     });
   }
 
+  listCategories(): Promise<Category[]> {
+    return getTenantDb().category.findMany({ orderBy: { name: 'asc' } });
+  }
+
   createArticle(dto: CreateArticleDto): Promise<Article> {
     return getTenantDb().article.create({
       data: {
@@ -59,11 +89,40 @@ export class InventoryService {
     });
   }
 
-  listArticles(): Promise<(Article & { variants: ArticleVariant[] })[]> {
-    return getTenantDb().article.findMany({
-      include: { variants: true },
+  async listArticles(): Promise<ArticleListItem[]> {
+    const articles = await getTenantDb().article.findMany({
+      include: {
+        category: true,
+        variants: { include: { stockLedger: { include: { warehouse: true } } } },
+      },
       orderBy: { name: 'asc' },
     });
+
+    return articles.map((article) => ({
+      id: article.id,
+      name: article.name,
+      description: article.description,
+      unitOfMeasure: article.unitOfMeasure,
+      categoryId: article.categoryId,
+      categoryName: article.category?.name ?? null,
+      variants: article.variants.map((variant) => {
+        const stockByWarehouse: WarehouseStockRow[] = variant.stockLedger.map((sl) => ({
+          warehouseId: sl.warehouseId,
+          warehouseName: sl.warehouse.name,
+          quantity: sl.quantity.toNumber(),
+        }));
+        return {
+          id: variant.id,
+          sku: variant.sku,
+          color: variant.color,
+          size: variant.size,
+          brand: variant.brand,
+          unitPrice: variant.unitPrice.toNumber(),
+          totalStock: stockByWarehouse.reduce((sum, row) => sum + row.quantity, 0),
+          stockByWarehouse,
+        };
+      }),
+    }));
   }
 
   async createArticleVariant(dto: CreateArticleVariantDto) {

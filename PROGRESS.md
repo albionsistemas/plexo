@@ -47,15 +47,23 @@ Docker Desktop no corre en este Windows (build 18362, muy vieja para WSL2). Se i
 |---|---|
 | `b4ab08e` | **Tablero en tiempo real** — login, dashboard con KPIs, stock por depósito, últimas facturas, gráfico de ventas 7 días, alertas de stock bajo mínimo. WebSockets socket.io (port 3001) con salas por tenant. TanStack Query + recharts en frontend. |
 | `de65fc3` | Fix: CORS habilitado para `localhost:4200` en la API Fastify |
-| (este commit) | Fix: login guardaba `res.data.access_token` (no existe) en vez de `res.data.accessToken` — el token quedaba como string `"undefined"` y todo el dashboard fallaba con 401. Encontrado al probar el tablero por primera vez contra una base real. |
+| `67a0ed9` | Fix: login guardaba `res.data.access_token` (no existe) en vez de `res.data.accessToken` — el token quedaba como string `"undefined"` y todo el dashboard fallaba con 401. Encontrado al probar el tablero por primera vez contra una base real. |
+| (este commit) | **Frontend — pantalla de Inventario** (`apps/web/src/app/inventory`): tabla de artículos/variantes con buscador en tiempo real (client-side) y filtro por categoría, stock consolidado por depósito (columnas dinámicas según los depósitos que existan), modal para registrar movimientos de stock (atómico, vía el endpoint ya existente `POST /inventory/movements`). Se extrajo `AppShell` (`apps/web/src/components/AppShell.tsx`) como layout compartido con nav — el Tablero ahora lo usa también. Backend: se agregó `GET /inventory/categories` (no existía) y se enriqueció `GET /inventory/articles` para traer categoría + stock por depósito por variante (antes no traía nada de stock). |
+
+**Nota sobre Tremor**: el brief pedía Tremor para estos componentes, pero `@tremor/react` tiene como peer dependency `react@^18` y el proyecto está en React 19 — instalarlo rompía peer deps. Se construyó con Tailwind puro, seteando el mismo estilo (dark, slate/indigo) que ya usa el Tablero.
+
+**Datos de demo**: el seed (`libs/shared/database/prisma/seed.ts`) solo crea tenant + usuario, nada de inventario. Para poder probar la pantalla se cargaron a mano vía API (no vía script versionado) 2 depósitos, 2 categorías, 3 artículos con 4 variantes y stock inicial, sólo en la base local de esta máquina — no persiste en git ni afecta otras máquinas.
+
+**Bug preexistente encontrado (no arreglado, fuera de alcance)**: `inventory.service.spec.ts` tiene 2 tests que ya fallaban en `main` antes de este trabajo (`recordMovement` — el mock de test no incluye `stockLedger.findUnique`, que el código sí llama al final para el evento `stock.updated`). Confirmado con `git stash` que falla igual sin estos cambios.
 
 ## Pendiente / próximos pasos
 
-1. Proveedor de email real (hoy: stub que solo loguea en consola).
-2. Integración AFIP real (hoy: CAE falso, `StubElectronicInvoicingService`).
-3. Auto-posteo de asientos contables desde Facturación — sin esto, Reportes de Resultados (`getIncomeStatement`) da vacío. `getRevenueSummary` es el respaldo que sí funciona hoy.
-4. Scheduler/cron real — `refreshOverdueStatuses` de Cuentas a Cobrar es manual por ahora.
-5. Frontend: las pantallas de negocio (inventario, facturación, cuentas a cobrar, etc.) — solo existe el tablero hoy.
+1. Proveedor de email real (hoy: stub que solo loguea en consola). Facturación y Cuentas a Cobrar deberían poder enviar comprobantes/alertas de vencimiento por este medio.
+2. **Auto-posteo contable (crítico)**: cada emisión de comprobante fiscal debería generar el asiento contable correspondiente, atómico, en la misma transacción de Prisma. Sin esto, Reportes de Resultados (`getIncomeStatement`) da vacío — `getRevenueSummary` es el respaldo que sí funciona hoy.
+3. Cron jobs reales (NestJS `@nestjs/schedule` o similar) — `refreshOverdueStatuses` de Cuentas a Cobrar es manual por ahora.
+4. Integración AFIP real (hoy: CAE falso, `StubElectronicInvoicingService`).
+5. Frontend: siguen faltando las pantallas de Facturación, Cuentas a Cobrar, Contabilidad, Impuestos y Reportes — Inventario fue la primera (ver arriba). Corregir además el mojibake pre-existente en nombres con tildes (p. ej. "Dep�sito Central") — es un problema de encoding en los datos ya sembrados, no del código.
+6. Arreglar los 2 tests preexistentes rotos en `inventory.service.spec.ts` (ver nota arriba).
 
 ## Para retomar
 
