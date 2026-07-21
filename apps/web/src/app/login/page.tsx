@@ -15,8 +15,8 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await api.post<{ access_token: string; tenantId: string }>('/auth/login', form);
-      localStorage.setItem('token', res.data.access_token);
+      const res = await api.post<{ accessToken: string }>('/auth/login', form);
+      localStorage.setItem('token', res.data.accessToken);
       localStorage.setItem('tenantId', form.tenantId);
       router.push('/dashboard');
     } catch {

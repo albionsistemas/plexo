@@ -1,6 +1,6 @@
 # PLEXO — Estado del proyecto
 
-Última actualización: 2026-07-20. Repo: `github.com/albionsistemas/plexo`, rama `main`.
+Última actualización: 2026-07-21. Repo: `github.com/albionsistemas/plexo`, rama `main`.
 
 ## Resumen ejecutivo
 
@@ -41,11 +41,13 @@ Docker Desktop no corre en este Windows (build 18362, muy vieja para WSL2). Se i
 
 **Si retomás en otra computadora**: si tiene Docker andando, usar el `docker-compose.yml` normal del repo. Si no, repetir el proceso de Postgres nativo (instalar, crear base `plexo`, correr `docker/postgres-init/01-init-roles.sql`, `npx prisma migrate deploy`, seed) y ajustar tu propio `.env` — no se sincroniza entre máquinas.
 
-## Módulos / features completos (actualización 2026-07-20)
+## Módulos / features completos (actualización 2026-07-20/21)
 
 | Commit | Qué es |
 |---|---|
-| (pendiente commit) | **Tablero en tiempo real** — login, dashboard con KPIs, stock por depósito, últimas facturas, gráfico de ventas 7 días, alertas de stock bajo mínimo. WebSockets socket.io (port 3001) con salas por tenant. TanStack Query + recharts en frontend. |
+| `b4ab08e` | **Tablero en tiempo real** — login, dashboard con KPIs, stock por depósito, últimas facturas, gráfico de ventas 7 días, alertas de stock bajo mínimo. WebSockets socket.io (port 3001) con salas por tenant. TanStack Query + recharts en frontend. |
+| `de65fc3` | Fix: CORS habilitado para `localhost:4200` en la API Fastify |
+| (este commit) | Fix: login guardaba `res.data.access_token` (no existe) en vez de `res.data.accessToken` — el token quedaba como string `"undefined"` y todo el dashboard fallaba con 401. Encontrado al probar el tablero por primera vez contra una base real. |
 
 ## Pendiente / próximos pasos
 
@@ -67,4 +69,4 @@ npx nx serve api            # http://localhost:3000/api  (WebSocket en :3001)
 cd apps/web && npx next dev -p 4200   # http://localhost:4200
 ```
 
-Login de prueba (esta PC, nuevo seed): `tenantId=f307123c-4bcd-438e-a580-0b4b92e4e293`, `owner@demo.plexo` / `changeme123`
+Login de prueba (esta PC): `tenantId=79dcca57-3830-4f17-af13-c000c0c0d0df`, `owner@demo.plexo` / `changeme123`. (El `tenantId=f307123c-...` anotado antes acá corresponde al seed de la otra máquina donde se hizo el tablero — cada máquina tiene su propia base local, el tenantId no viaja con git.)
