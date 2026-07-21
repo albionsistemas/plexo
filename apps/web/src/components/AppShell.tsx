@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { href: '/inventory', label: 'Inventario' },
   { href: '/invoicing', label: 'Facturación' },
   { href: '/receivables', label: 'Cuentas a Cobrar' },
+  { href: '/companies', label: 'Empresas' },
   { href: '/profile', label: 'Perfil' },
 ];
 
