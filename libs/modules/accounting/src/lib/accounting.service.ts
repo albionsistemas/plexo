@@ -199,6 +199,30 @@ export class AccountingService {
     });
   }
 
+  /**
+   * Reverses the entry postInvoiceJournalEntry() posted for an invoice,
+   * for when a (full-reversal) credit note voids it - called by
+   * SalesService.voidSale() (apps/api) in the same transaction as the
+   * credit note itself, same atomicity guarantee as the sale side.
+   *
+   * Looks the entry up by invoiceId (unique on JournalEntry) instead of
+   * making the caller track the entry id. Returns undefined - a no-op,
+   * not an error - when the invoice never had one posted in the first
+   * place (a zero-total invoice postInvoiceJournalEntry skipped, or one
+   * issued before auto-posting existed): crediting something with
+   * nothing on the ledger has nothing to reverse.
+   */
+  async reverseInvoiceJournalEntry(invoiceId: string): Promise<JournalEntryWithLines | undefined> {
+    const original = await getTenantDb().journalEntry.findUnique({ where: { invoiceId } });
+    if (!original) {
+      return undefined;
+    }
+    return this.createReversingEntry({
+      originalEntryId: original.id,
+      description: `Nota de crédito - comprobante ${invoiceId}`,
+    });
+  }
+
   /** The only way to correct a posted entry: a new entry with the same
    * lines, DEBIT/CREDIT swapped, linked back via reversalOfId. Never an
    * UPDATE to the original - the DB trigger wouldn't allow it anyway. */

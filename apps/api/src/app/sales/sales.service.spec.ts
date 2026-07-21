@@ -148,3 +148,43 @@ describe('SalesService.createSale', () => {
     expect(inventoryService.recordMovement).not.toHaveBeenCalled();
   });
 });
+
+describe('SalesService.voidSale', () => {
+  it('creates the credit note then reverses the invoice journal entry', async () => {
+    const creditNote = { id: 'credit-note-1', invoiceId: 'invoice-1' };
+    const invoicingService = {
+      createCreditNote: jest.fn().mockResolvedValue(creditNote),
+    } as unknown as InvoicingService;
+    const inventoryService = {} as unknown as InventoryService;
+    const accountingService = {
+      reverseInvoiceJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-2', lines: [] }),
+    } as unknown as AccountingService;
+
+    const service = new SalesService(invoicingService, inventoryService, accountingService);
+    const dto = { invoiceId: 'invoice-1', reason: 'Devolución de mercadería' };
+
+    const result = await service.voidSale(dto);
+
+    expect(invoicingService.createCreditNote).toHaveBeenCalledWith(dto);
+    expect(accountingService.reverseInvoiceJournalEntry).toHaveBeenCalledWith('invoice-1');
+    expect(result).toBe(creditNote);
+  });
+
+  it('propagates a reversal failure without swallowing it', async () => {
+    const creditNote = { id: 'credit-note-1', invoiceId: 'invoice-1' };
+    const invoicingService = {
+      createCreditNote: jest.fn().mockResolvedValue(creditNote),
+    } as unknown as InvoicingService;
+    const inventoryService = {} as unknown as InventoryService;
+    const failure = new Error('Journal entry not found');
+    const accountingService = {
+      reverseInvoiceJournalEntry: jest.fn().mockRejectedValue(failure),
+    } as unknown as AccountingService;
+
+    const service = new SalesService(invoicingService, inventoryService, accountingService);
+
+    await expect(
+      service.voidSale({ invoiceId: 'invoice-1', reason: 'Devolución de mercadería' }),
+    ).rejects.toThrow(failure);
+  });
+});

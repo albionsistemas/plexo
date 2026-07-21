@@ -1,6 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { Roles } from '@plexo/auth';
-import { CreateCreditNoteDto } from './dto/create-credit-note.dto.js';
 import { CreateCurrencyDto } from './dto/create-currency.dto.js';
 import { CreateCustomerDto } from './dto/create-customer.dto.js';
 import { RecordExchangeRateDto } from './dto/record-exchange-rate.dto.js';
@@ -51,11 +50,12 @@ export class InvoicingController {
     return this.invoicingService.getInvoice(id);
   }
 
-  @Roles(...WRITE_ROLES)
-  @Post('credit-notes')
-  createCreditNote(@Body() dto: CreateCreditNoteDto) {
-    return this.invoicingService.createCreditNote(dto);
-  }
+  // Credit notes are created via POST /sales/credit-notes (SalesService),
+  // not here - that's the composition that also reverses the invoice's
+  // journal entry. InvoicingService.createCreditNote() stays on this
+  // service for that composition to call; it's just not exposed as its
+  // own route anymore, so there's no path that credits an invoice
+  // without also closing out its GL entry.
 
   @Roles(...WRITE_ROLES)
   @Post('receipts')

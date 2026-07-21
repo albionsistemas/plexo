@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AccountingService } from '@plexo/accounting';
 import { InventoryService } from '@plexo/inventory';
-import { InvoicingService } from '@plexo/invoicing';
+import { InvoicingService, type CreateCreditNoteDto } from '@plexo/invoicing';
 import type { CreateSaleDto } from './dto/create-sale.dto.js';
 
 /**
@@ -58,5 +58,28 @@ export class SalesService {
     }
 
     return invoice;
+  }
+
+  /**
+   * Composes InvoicingService.createCreditNote + the matching GL reversal,
+   * same transaction/atomicity story as createSale(). This is the only
+   * place a credit note gets created (InvoicingController no longer
+   * exposes its own POST /invoicing/credit-notes) specifically so there's
+   * no path that credits an invoice without also reversing its journal
+   * entry - see the recordMovement() doc comment in InventoryService for
+   * why the analogous "SALE_OUT without an invoice" gap was left as a
+   * manual accounting step instead: there, the caller has no journal
+   * entry id to reverse in the first place. Here it does, so there's no
+   * excuse not to close the loop.
+   *
+   * Does not touch stock - a returned invoice's stock isn't reversed by
+   * this yet, matching how createSale() -> createCreditNote() already
+   * didn't do that before this method existed. Out of scope for the
+   * accounting gap this closes; flag if returns should restock too.
+   */
+  async voidSale(dto: CreateCreditNoteDto) {
+    const creditNote = await this.invoicingService.createCreditNote(dto);
+    await this.accountingService.reverseInvoiceJournalEntry(dto.invoiceId);
+    return creditNote;
   }
 }

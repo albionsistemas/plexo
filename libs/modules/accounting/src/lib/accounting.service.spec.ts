@@ -138,6 +138,58 @@ describe('AccountingService.postInvoiceJournalEntry', () => {
   });
 });
 
+describe('AccountingService.reverseInvoiceJournalEntry', () => {
+  it('returns undefined without touching the ledger when the invoice never had an entry posted', async () => {
+    const db = {
+      journalEntry: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn(),
+      },
+    };
+    const service = new AccountingService();
+
+    const result = await runInTenant(db, () => service.reverseInvoiceJournalEntry('inv-1'));
+
+    expect(result).toBeUndefined();
+    expect(db.journalEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('finds the entry by invoiceId and reverses it', async () => {
+    const original = {
+      id: 'entry-1',
+      description: 'Venta - comprobante inv-1',
+      lines: [
+        { accountId: 'acc-ar', direction: 'DEBIT', amount: new Prisma.Decimal(121) },
+        { accountId: 'acc-sales', direction: 'CREDIT', amount: new Prisma.Decimal(100) },
+        { accountId: 'acc-vat', direction: 'CREDIT', amount: new Prisma.Decimal(21) },
+      ],
+    };
+    const db = {
+      journalEntry: {
+        findUnique: jest
+          .fn()
+          .mockImplementation(({ where }: { where: { invoiceId?: string; id?: string } }) =>
+            Promise.resolve(where.invoiceId === 'inv-1' || where.id === 'entry-1' ? original : null),
+          ),
+        create: jest.fn().mockResolvedValue({ id: 'entry-2', lines: [] }),
+      },
+    };
+    const service = new AccountingService();
+
+    await runInTenant(db, () => service.reverseInvoiceJournalEntry('inv-1'));
+
+    expect(db.journalEntry.findUnique).toHaveBeenCalledWith({ where: { invoiceId: 'inv-1' } });
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.reversalOfId).toBe('entry-1');
+    expect(createArgs.data.description).toBe('Nota de crédito - comprobante inv-1');
+    expect(createArgs.data.lines.createMany.data).toEqual([
+      { tenantId: 'tenant-1', accountId: 'acc-ar', direction: 'CREDIT', amount: original.lines[0].amount },
+      { tenantId: 'tenant-1', accountId: 'acc-sales', direction: 'DEBIT', amount: original.lines[1].amount },
+      { tenantId: 'tenant-1', accountId: 'acc-vat', direction: 'DEBIT', amount: original.lines[2].amount },
+    ]);
+  });
+});
+
 describe('AccountingService.createReversingEntry', () => {
   it('throws when the original entry does not exist', async () => {
     const db = { journalEntry: { findUnique: jest.fn().mockResolvedValue(null) } };
