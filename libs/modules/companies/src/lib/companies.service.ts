@@ -49,15 +49,26 @@ export class CompaniesService {
     });
   }
 
+  /** Two sequential queries, not one `include` with two to-many relations -
+   * getTenantDb() is a single interactive-transaction client (one Postgres
+   * connection via $transaction), and Prisma can dispatch multiple to-many
+   * relations as concurrent follow-up queries against it, which the driver
+   * doesn't support on one connection (hangs instead of erroring - see
+   * InvoicingService.getInvoice() for where this actually bit). Didn't
+   * reproduce here under real load (8 sequential + 5 concurrent requests,
+   * no hang, no pg deprecation warning), but the same risk shape is
+   * present, so it gets the same fix preventively. */
   async getCompany(id: string): Promise<CompanyWithRoles & { people: Person[] }> {
-    const company = await getTenantDb().company.findUnique({
+    const db = getTenantDb();
+    const company = await db.company.findUnique({
       where: { id },
-      include: { roles: true, people: true },
+      include: { roles: true },
     });
     if (!company) {
       throw new NotFoundException('Company not found');
     }
-    return company;
+    const people = await db.person.findMany({ where: { companyId: id } });
+    return { ...company, people };
   }
 
   /**
