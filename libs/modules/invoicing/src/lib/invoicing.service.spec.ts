@@ -60,7 +60,20 @@ describe('InvoicingService.createInvoice', () => {
   it('throws when the referenced company is not flagged as a customer', async () => {
     const db = {
       company: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', email: null, roles: [{ role: 'SUPPLIER' }] }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', active: true, email: null, roles: [{ role: 'SUPPLIER' }] }),
+      },
+    };
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
+
+    await expect(runInTenant(db, () => service.createInvoice(baseDto))).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('throws when the customer is inactive', async () => {
+    const db = {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', active: false, email: null, roles: [{ role: 'CUSTOMER' }] }),
       },
     };
     const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
@@ -73,7 +86,7 @@ describe('InvoicingService.createInvoice', () => {
   it('throws when the currency does not exist', async () => {
     const db = {
       company: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', email: null, roles: [{ role: 'CUSTOMER' }] }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', active: true, email: null, roles: [{ role: 'CUSTOMER' }] }),
       },
       currency: { findUnique: jest.fn().mockResolvedValue(null) },
     };
@@ -87,7 +100,7 @@ describe('InvoicingService.createInvoice', () => {
   it('throws when a non-base currency has no exchange rate on file', async () => {
     const db = {
       company: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', email: null, roles: [{ role: 'CUSTOMER' }] }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', active: true, email: null, roles: [{ role: 'CUSTOMER' }] }),
       },
       currency: {
         findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', code: 'ARS', isBase: false }),
@@ -104,7 +117,7 @@ describe('InvoicingService.createInvoice', () => {
   it('throws when a line references a missing article variant', async () => {
     const db = {
       company: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', email: null, roles: [{ role: 'CUSTOMER' }] }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', active: true, email: null, roles: [{ role: 'CUSTOMER' }] }),
       },
       currency: { findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', isBase: true }) },
       articleVariant: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -160,6 +173,7 @@ describe('InvoicingService.createInvoice', () => {
       company: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'customer-1',
+          active: true,
           name: 'Acme',
           taxId: '20-1-1',
           email: 'buyer@example.com',
@@ -211,7 +225,7 @@ describe('InvoicingService.createInvoice', () => {
   it('rejects a FORMULA tax definition rather than silently mis-taxing', async () => {
     const db = {
       company: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', email: null, roles: [{ role: 'CUSTOMER' }] }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', active: true, email: null, roles: [{ role: 'CUSTOMER' }] }),
       },
       currency: { findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', isBase: true }) },
       articleVariant: {

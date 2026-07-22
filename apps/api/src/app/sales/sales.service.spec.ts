@@ -15,6 +15,7 @@ function makeBranchDb(branch: unknown = defaultBranch()) {
 function defaultBranch() {
   return {
     id: 'branch-1',
+    active: true,
     pointOfSaleNumber: '0001',
     roles: [{ role: 'BRANCH' }],
   };
@@ -100,7 +101,12 @@ describe('SalesService.createSale', () => {
     const inventoryService = {} as unknown as InventoryService;
     const accountingService = {} as unknown as AccountingService;
     const service = new SalesService(invoicingService, inventoryService, accountingService);
-    const db = makeBranchDb({ id: 'branch-1', pointOfSaleNumber: '0001', roles: [{ role: 'CUSTOMER' }] });
+    const db = makeBranchDb({
+      id: 'branch-1',
+      active: true,
+      pointOfSaleNumber: '0001',
+      roles: [{ role: 'CUSTOMER' }],
+    });
 
     await expect(
       runInTenant(db, () =>
@@ -114,6 +120,33 @@ describe('SalesService.createSale', () => {
         }),
       ),
     ).rejects.toThrow('not flagged as a branch');
+    expect(invoicingService.createInvoice).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the branch is inactive', async () => {
+    const invoicingService = { createInvoice: jest.fn() } as unknown as InvoicingService;
+    const inventoryService = {} as unknown as InventoryService;
+    const accountingService = {} as unknown as AccountingService;
+    const service = new SalesService(invoicingService, inventoryService, accountingService);
+    const db = makeBranchDb({
+      id: 'branch-1',
+      active: false,
+      pointOfSaleNumber: '0001',
+      roles: [{ role: 'BRANCH' }],
+    });
+
+    await expect(
+      runInTenant(db, () =>
+        service.createSale({
+          customerId: 'customer-1',
+          warehouseId: 'warehouse-1',
+          documentLetter: 'B',
+          branchId: 'branch-1',
+          currencyId: 'currency-1',
+          lines: [{ articleVariantId: 'variant-1', quantity: 1 }],
+        }),
+      ),
+    ).rejects.toThrow('inactive');
     expect(invoicingService.createInvoice).not.toHaveBeenCalled();
   });
 

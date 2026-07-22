@@ -9,6 +9,7 @@ export interface Company {
   email: string | null;
   creditLimit: string;
   pointOfSaleNumber: string | null;
+  active: boolean;
   createdAt: string;
   roles: { role: CompanyRoleType }[];
 }
@@ -41,6 +42,7 @@ export interface UpdateCompanyInput {
   creditLimit?: number;
   pointOfSaleNumber?: string;
   roles?: CompanyRoleType[];
+  active?: boolean;
 }
 
 export interface CreatePersonInput {
@@ -63,9 +65,14 @@ export interface AfipPadronData {
 }
 
 export const companiesApi = {
-  list: (role?: CompanyRoleType) =>
+  list: (role?: CompanyRoleType, includeInactive?: boolean) =>
     api
-      .get<Company[]>('/companies', { params: role ? { role } : undefined })
+      .get<Company[]>('/companies', {
+        params: {
+          ...(role ? { role } : {}),
+          ...(includeInactive ? { includeInactive: 'true' } : {}),
+        },
+      })
       .then((r) => r.data),
   get: (id: string) => api.get<Company & { people: Person[] }>(`/companies/${id}`).then((r) => r.data),
   create: (dto: CreateCompanyInput) => api.post<Company>('/companies', dto).then((r) => r.data),
@@ -76,4 +83,5 @@ export const companiesApi = {
   createPerson: (dto: CreatePersonInput) => api.post<Person>('/companies/people', dto).then((r) => r.data),
   lookupAfip: (cuit: string) =>
     api.get<AfipPadronData>(`/companies/afip/${encodeURIComponent(cuit)}`).then((r) => r.data),
+  removePerson: (id: string) => api.delete(`/companies/people/${id}`).then(() => undefined),
 };

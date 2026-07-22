@@ -41,9 +41,14 @@ export class CompaniesService {
     });
   }
 
-  listCompanies(role?: CompanyRoleType): Promise<CompanyWithRoles[]> {
+  /** Inactive companies (soft-deleted, see Company.active) are excluded by
+   * default - pass includeInactive to reach them (e.g. to reactivate one). */
+  listCompanies(role?: CompanyRoleType, includeInactive = false): Promise<CompanyWithRoles[]> {
     return getTenantDb().company.findMany({
-      where: role ? { roles: { some: { role } } } : undefined,
+      where: {
+        ...(includeInactive ? {} : { active: true }),
+        ...(role ? { roles: { some: { role } } } : {}),
+      },
       include: { roles: true },
       orderBy: { name: 'asc' },
     });
@@ -99,6 +104,7 @@ export class CompaniesService {
         email: dto.email,
         creditLimit: dto.creditLimit,
         pointOfSaleNumber: dto.pointOfSaleNumber,
+        active: dto.active,
       },
       include: { roles: true },
     });
@@ -153,6 +159,18 @@ export class CompaniesService {
       throw new NotFoundException('Person not found');
     }
     return getTenantDb().person.update({ where: { id }, data: { ...dto } });
+  }
+
+  /** Contacts have no fiscal/commercial significance and nothing else in
+   * the schema references a Person, so this is a real delete - unlike
+   * Company, there's no historical record that would dangle from it. */
+  async deletePerson(id: string): Promise<void> {
+    const db = getTenantDb();
+    const existing = await db.person.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException('Person not found');
+    }
+    await db.person.delete({ where: { id } });
   }
 
   /** User-initiated (a "Buscar en AFIP" button), so failures surface as

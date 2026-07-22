@@ -22,13 +22,14 @@ const ROLE_FILTERS: { value: CompanyRoleType | ''; label: string }[] = [
 export default function CompaniesPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<CompanyRoleType | ''>('');
+  const [showInactive, setShowInactive] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   const [selected, setSelected] = useState<Company | null>(null);
   const [editing, setEditing] = useState<Company | null>(null);
 
   const companiesQuery = useQuery({
-    queryKey: ['companies', roleFilter || 'ALL'],
-    queryFn: () => companiesApi.list(roleFilter || undefined),
+    queryKey: ['companies', roleFilter || 'ALL', showInactive],
+    queryFn: () => companiesApi.list(roleFilter || undefined, showInactive),
   });
 
   const companies = companiesQuery.data ?? [];
@@ -66,7 +67,7 @@ export default function CompaniesPage() {
           placeholder="Buscar por nombre o CUIT..."
           className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500 sm:max-w-sm"
         />
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           {ROLE_FILTERS.map((f) => (
             <button
               key={f.value}
@@ -80,6 +81,14 @@ export default function CompaniesPage() {
               {f.label}
             </button>
           ))}
+          <label className="ml-2 flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+            />
+            Mostrar inactivas
+          </label>
         </div>
       </div>
 
@@ -113,7 +122,7 @@ export default function CompaniesPage() {
                   <tr
                     key={c.id}
                     onClick={() => setSelected(c)}
-                    className="cursor-pointer border-b border-slate-200/50 dark:border-slate-800/50 hover:bg-slate-200/40 dark:hover:bg-slate-800/40"
+                    className={`cursor-pointer border-b border-slate-200/50 dark:border-slate-800/50 hover:bg-slate-200/40 dark:hover:bg-slate-800/40 ${!c.active ? 'opacity-50' : ''}`}
                   >
                     <td className="py-2 pr-4 text-slate-800 dark:text-slate-200">{c.name}</td>
                     <td className="py-2 pr-4">
@@ -126,6 +135,11 @@ export default function CompaniesPage() {
                             {ROLE_LABELS[r.role] ?? r.role}
                           </span>
                         ))}
+                        {!c.active && (
+                          <span className="rounded bg-red-100 dark:bg-red-900 px-2 py-0.5 text-xs text-red-700 dark:text-red-300">
+                            Inactiva
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="py-2 pr-4 text-slate-600 dark:text-slate-400">{c.taxId ?? '—'}</td>

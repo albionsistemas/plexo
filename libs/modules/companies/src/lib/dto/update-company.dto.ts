@@ -3,6 +3,7 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsNumber,
@@ -45,4 +46,11 @@ export class UpdateCompanyDto {
   @ArrayUnique()
   @IsEnum(CompanyRoleType, { each: true })
   roles?: CompanyRoleType[];
+
+  // Soft delete: false hides the company from default listings and blocks
+  // new invoices/sales against it, without touching any historical record
+  // that already references it (see Company.active in schema.prisma).
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
 }

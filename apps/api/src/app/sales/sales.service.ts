@@ -35,6 +35,9 @@ export class SalesService {
     if (!branch) {
       throw new NotFoundException('Branch not found');
     }
+    if (!branch.active) {
+      throw new BadRequestException('This branch is inactive');
+    }
     if (!branch.roles.some((r) => r.role === 'BRANCH')) {
       throw new BadRequestException('This company is not flagged as a branch');
     }

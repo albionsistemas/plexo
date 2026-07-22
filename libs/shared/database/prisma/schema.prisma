@@ -160,6 +160,14 @@ model Company {
   email             String?
   creditLimit       Decimal  @default(0) @db.Decimal(14, 2)
   pointOfSaleNumber String?
+  // Soft delete: a Company can be referenced by historical fiscal records
+  // (Invoice/Quote have no onDelete cascade on purpose - see the migration
+  // for why), so "deleting" one means hiding it from active use, not
+  // removing the row. Historical reports/statements deliberately ignore
+  // this flag; anything that creates a NEW forward-looking record against
+  // the company (a new invoice, resolving a branch for a new sale) checks
+  // it and rejects if false.
+  active            Boolean  @default(true)
   createdAt         DateTime @default(now())
 
   roles  CompanyRole[]

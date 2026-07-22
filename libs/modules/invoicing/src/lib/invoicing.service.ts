@@ -145,6 +145,9 @@ export class InvoicingService {
     if (!customer) {
       throw new NotFoundException('Customer not found');
     }
+    if (!customer.active) {
+      throw new BadRequestException('This company is inactive');
+    }
     if (!customer.roles.some((r) => r.role === 'CUSTOMER')) {
       throw new BadRequestException('This company is not flagged as a customer');
     }

@@ -74,6 +74,23 @@ describe('CompaniesService.updateCompany', () => {
     expect(db.companyRole.deleteMany).not.toHaveBeenCalled();
     expect(db.companyRole.createMany).not.toHaveBeenCalled();
   });
+
+  it('deactivates a company (soft delete) by setting active: false', async () => {
+    const update = jest.fn().mockResolvedValue({ id: 'company-1', active: false });
+    const db = {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'company-1' }),
+        update,
+      },
+    };
+    const service = new CompaniesService(stubAfipPadron);
+
+    await runInTenant(db, () => service.updateCompany('company-1', { active: false }));
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ active: false }) }),
+    );
+  });
 });
 
 describe('CompaniesService.createPerson', () => {
@@ -174,5 +191,69 @@ describe('CompaniesService.lookupAfip', () => {
 
     await expect(service.lookupAfip('20-12345678-6')).resolves.toEqual(data);
     expect(stubAfipPadron.lookup).toHaveBeenCalledWith('20123456786');
+  });
+});
+
+describe('CompaniesService.listCompanies', () => {
+  it('filters to active companies by default', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const db = { company: { findMany } };
+    const service = new CompaniesService(stubAfipPadron);
+
+    await runInTenant(db, () => service.listCompanies());
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { active: true } }),
+    );
+  });
+
+  it('includes inactive companies when includeInactive is true', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const db = { company: { findMany } };
+    const service = new CompaniesService(stubAfipPadron);
+
+    await runInTenant(db, () => service.listCompanies(undefined, true));
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: {} }));
+  });
+
+  it('combines the active filter with a role filter', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const db = { company: { findMany } };
+    const service = new CompaniesService(stubAfipPadron);
+
+    await runInTenant(db, () => service.listCompanies('CUSTOMER'));
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { active: true, roles: { some: { role: 'CUSTOMER' } } },
+      }),
+    );
+  });
+});
+
+describe('CompaniesService.deletePerson', () => {
+  it('throws when the person does not exist', async () => {
+    const db = { person: { findUnique: jest.fn().mockResolvedValue(null) } };
+    const service = new CompaniesService(stubAfipPadron);
+
+    await expect(runInTenant(db, () => service.deletePerson('missing'))).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('deletes the person when it exists', async () => {
+    const deletePerson = jest.fn().mockResolvedValue({ id: 'person-1' });
+    const db = {
+      person: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'person-1' }),
+        delete: deletePerson,
+      },
+    };
+    const service = new CompaniesService(stubAfipPadron);
+
+    await runInTenant(db, () => service.deletePerson('person-1'));
+
+    expect(deletePerson).toHaveBeenCalledWith({ where: { id: 'person-1' } });
   });
 });

@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { Roles } from '@plexo/auth';
 import type { CompanyRoleType } from '@plexo/database';
 import { CompaniesService } from './companies.service.js';
@@ -20,8 +31,11 @@ export class CompaniesController {
   }
 
   @Get()
-  listCompanies(@Query('role') role?: CompanyRoleType) {
-    return this.companiesService.listCompanies(role);
+  listCompanies(
+    @Query('role') role?: CompanyRoleType,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    return this.companiesService.listCompanies(role, includeInactive === 'true');
   }
 
   @Roles(...WRITE_ROLES)
@@ -34,6 +48,13 @@ export class CompaniesController {
   @Patch('people/:id')
   updatePerson(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePersonDto) {
     return this.companiesService.updatePerson(id, dto);
+  }
+
+  @Roles(...WRITE_ROLES)
+  @HttpCode(204)
+  @Delete('people/:id')
+  deletePerson(@Param('id', ParseUUIDPipe) id: string) {
+    return this.companiesService.deletePerson(id);
   }
 
   @Get('afip/:cuit')
