@@ -192,27 +192,15 @@ function UserMenu() {
           </Link>
 
           <div className="px-4 py-2">
-            <p className="mb-1.5 text-xs text-slate-600 dark:text-slate-400">Apariencia</p>
-            <div className="flex rounded-lg border border-slate-200 dark:border-slate-800 p-0.5">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-600 dark:text-slate-400">Apariencia</p>
               <button
-                onClick={() => setTheme('light')}
-                className={`flex-1 rounded-md px-2 py-1 text-xs transition ${
-                  theme === 'light'
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-                }`}
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+                title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-slate-600 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100"
               >
-                Claro
-              </button>
-              <button
-                onClick={() => setTheme('dark')}
-                className={`flex-1 rounded-md px-2 py-1 text-xs transition ${
-                  theme === 'dark'
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-                }`}
-              >
-                Oscuro
+                {theme === 'dark' ? <MoonIcon /> : <SunIcon />}
               </button>
             </div>
           </div>
@@ -228,5 +216,22 @@ function UserMenu() {
         </div>
       )}
     </div>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+      <path d="M20.354 15.354A9 9 0 0 1 8.646 3.646 9.003 9.003 0 1 0 20.354 15.354Z" />
+    </svg>
   );
 }
