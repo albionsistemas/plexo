@@ -82,20 +82,36 @@ export class InvoicingService {
 
   /** Full detail (line items, discounts, receipt history, credit notes) -
    * for the "ver detalle" panel, unlike listInvoices()/InvoiceWithLines
-   * which only carries lines (all it needs for the table). */
+   * which only carries lines (all it needs for the table).
+   *
+   * Three separate sequential queries, not one `include` with three
+   * to-many relations - getTenantDb() is a single interactive-transaction
+   * client (one Postgres connection), and Prisma dispatches multiple
+   * to-many relations as concurrent follow-up queries against it, which
+   * the driver can't do on one connection (silently hangs instead of
+   * erroring - surfaces client-side as node-postgres's "already executing
+   * a query" deprecation warning). Awaiting each one in turn avoids that
+   * entirely; the extra round trips are irrelevant next to a
+   * user-initiated "view this one invoice" click.
+   */
   async getInvoice(id: string): Promise<InvoiceDetail> {
-    const invoice = await getTenantDb().invoice.findUnique({
+    const db = getTenantDb();
+    const invoice = await db.invoice.findUnique({
       where: { id },
-      include: {
-        lines: { include: { articleVariant: { include: { article: true } } } },
-        receipts: { orderBy: { paidAt: 'desc' } },
-        creditNotes: { orderBy: { issueDate: 'desc' } },
-      },
+      include: { lines: { include: { articleVariant: { include: { article: true } } } } },
     });
     if (!invoice) {
       throw new NotFoundException('Invoice not found');
     }
-    return invoice;
+    const receipts = await db.receipt.findMany({
+      where: { invoiceId: id },
+      orderBy: { paidAt: 'desc' },
+    });
+    const creditNotes = await db.creditNote.findMany({
+      where: { invoiceId: id },
+      orderBy: { issueDate: 'desc' },
+    });
+    return { ...invoice, receipts, creditNotes };
   }
 
   /**
