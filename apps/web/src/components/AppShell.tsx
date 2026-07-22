@@ -191,19 +191,14 @@ function UserMenu() {
             Perfil
           </Link>
 
-          <div className="px-4 py-2">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-slate-600 dark:text-slate-400">Apariencia</p>
-              <button
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-                title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-slate-600 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100"
-              >
-                {theme === 'dark' ? <MoonIcon /> : <SunIcon />}
-              </button>
-            </div>
-          </div>
+          <button
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+            title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+            className="flex w-full items-center gap-3 px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            {theme === 'dark' ? <MoonIcon /> : <SunIcon />}
+          </button>
 
           <div className="mt-1 border-t border-slate-200 dark:border-slate-800 pt-1">
             <button
