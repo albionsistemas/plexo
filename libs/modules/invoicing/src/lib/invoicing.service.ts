@@ -5,6 +5,8 @@ import {
   getTenantId,
   getUserId,
   Prisma,
+  type Article,
+  type ArticleVariant,
   type Currency,
   type DiscountType,
   type DocumentLetter,
@@ -24,6 +26,12 @@ import { EMAIL_SENDER, type EmailSender } from './email-sender.port.js';
 import { ELECTRONIC_INVOICING, type ElectronicInvoicingPort } from './electronic-invoicing.port.js';
 
 type InvoiceWithLines = Invoice & { lines: InvoiceLine[] };
+type InvoiceLineDetail = InvoiceLine & { articleVariant: ArticleVariant & { article: Article } };
+type InvoiceDetail = Invoice & {
+  lines: InvoiceLineDetail[];
+  receipts: Receipt[];
+  creditNotes: CreditNote[];
+};
 
 interface LineCalculation {
   articleVariantId: string;
@@ -72,10 +80,17 @@ export class InvoicingService {
     });
   }
 
-  async getInvoice(id: string): Promise<InvoiceWithLines> {
+  /** Full detail (line items, discounts, receipt history, credit notes) -
+   * for the "ver detalle" panel, unlike listInvoices()/InvoiceWithLines
+   * which only carries lines (all it needs for the table). */
+  async getInvoice(id: string): Promise<InvoiceDetail> {
     const invoice = await getTenantDb().invoice.findUnique({
       where: { id },
-      include: { lines: true },
+      include: {
+        lines: { include: { articleVariant: { include: { article: true } } } },
+        receipts: { orderBy: { paidAt: 'desc' } },
+        creditNotes: { orderBy: { issueDate: 'desc' } },
+      },
     });
     if (!invoice) {
       throw new NotFoundException('Invoice not found');

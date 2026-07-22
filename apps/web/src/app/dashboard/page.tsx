@@ -5,6 +5,7 @@ import { getSocket } from '@/lib/socket';
 import { useTheme } from '@/providers/ThemeProvider';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
+import OnboardingChecklist from './OnboardingChecklist';
 import {
   Bar,
   BarChart,
@@ -112,6 +113,8 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Tablero</h1>
+
+      <OnboardingChecklist />
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

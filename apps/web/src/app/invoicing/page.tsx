@@ -5,6 +5,7 @@ import { getSocket } from '@/lib/socket';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import CreditNoteModal from './CreditNoteModal';
+import InvoiceDetailPanel from './InvoiceDetailPanel';
 import NewInvoiceModal from './NewInvoiceModal';
 import ReceiptModal from './ReceiptModal';
 
@@ -32,6 +33,7 @@ export default function InvoicingPage() {
   const [newInvoiceOpen, setNewInvoiceOpen] = useState(false);
   const [receiptFor, setReceiptFor] = useState<Invoice | null>(null);
   const [creditNoteFor, setCreditNoteFor] = useState<Invoice | null>(null);
+  const [detailFor, setDetailFor] = useState<Invoice | null>(null);
 
   const invoicesQuery = useQuery({
     queryKey: ['invoices'],
@@ -135,6 +137,12 @@ export default function InvoicingPage() {
                     </td>
                     <td className="py-2">
                       <div className="flex gap-3">
+                        <button
+                          onClick={() => setDetailFor(inv)}
+                          className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                        >
+                          Ver detalle
+                        </button>
                         {Number(inv.balanceDue) > 0 && inv.status !== 'CANCELLED' && (
                           <button
                             onClick={() => setReceiptFor(inv)}
@@ -166,6 +174,7 @@ export default function InvoicingPage() {
       {creditNoteFor && (
         <CreditNoteModal invoice={creditNoteFor} onClose={() => setCreditNoteFor(null)} />
       )}
+      {detailFor && <InvoiceDetailPanel invoice={detailFor} onClose={() => setDetailFor(null)} />}
     </div>
   );
 }

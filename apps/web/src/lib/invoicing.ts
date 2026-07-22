@@ -12,6 +12,10 @@ export interface InvoiceLine {
   articleVariantId: string;
   quantity: string;
   unitPrice: string;
+  discountType: 'PERCENTAGE' | 'AMOUNT';
+  discountValue: string;
+  netAmount: string;
+  taxRate: string;
   lineTotal: string;
 }
 
@@ -32,6 +36,34 @@ export interface Invoice {
   balanceDue: string;
   afipCae: string | null;
   lines: InvoiceLine[];
+}
+
+export interface InvoiceLineDetail extends InvoiceLine {
+  articleVariant: { sku: string; article: { name: string } };
+}
+
+export interface InvoiceReceipt {
+  id: string;
+  amount: string;
+  method: string;
+  paidAt: string;
+}
+
+export interface InvoiceCreditNote {
+  id: string;
+  documentLetter: string;
+  pointOfSale: string;
+  number: string;
+  reason: string;
+  total: string;
+  issueDate: string;
+  afipCae: string | null;
+}
+
+export interface InvoiceDetail extends Invoice {
+  lines: InvoiceLineDetail[];
+  receipts: InvoiceReceipt[];
+  creditNotes: InvoiceCreditNote[];
 }
 
 export interface CreateSaleLineInput {
@@ -66,6 +98,7 @@ export interface CreateCreditNoteInput {
 
 export const invoicingApi = {
   listInvoices: () => api.get<Invoice[]>('/invoicing/invoices').then((r) => r.data),
+  getInvoice: (id: string) => api.get<InvoiceDetail>(`/invoicing/invoices/${id}`).then((r) => r.data),
   listCurrencies: () => api.get<Currency[]>('/invoicing/currencies').then((r) => r.data),
   createSale: (dto: CreateSaleInput) => api.post<Invoice>('/sales/invoices', dto).then((r) => r.data),
   recordReceipt: (dto: RecordReceiptInput) =>
