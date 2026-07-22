@@ -29,7 +29,12 @@ export interface RevenueSummary {
 
 function defaultRange(from?: Date, to?: Date): { from: Date; to: Date } {
   const rangeTo = to ?? new Date();
-  const rangeFrom = from ?? new Date(rangeTo.getFullYear(), rangeTo.getMonth(), 1);
+  // A "to" of just a calendar day (the common case from a date-picker,
+  // e.g. "2026-07-21") parses to that day's UTC midnight - without this,
+  // every invoice issued later that same day would silently fall outside
+  // an "up to today" range.
+  rangeTo.setUTCHours(23, 59, 59, 999);
+  const rangeFrom = from ?? new Date(Date.UTC(rangeTo.getUTCFullYear(), rangeTo.getUTCMonth(), 1));
   return { from: rangeFrom, to: rangeTo };
 }
 
