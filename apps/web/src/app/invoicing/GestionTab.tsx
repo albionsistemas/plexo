@@ -1,12 +1,12 @@
 'use client';
 
+import InvoiceDetailPanel from '@/components/InvoiceDetailPanel';
 import { invoicingApi, type Invoice } from '@/lib/invoicing';
 import { getSocket } from '@/lib/socket';
 import { useDensity } from '@/providers/DensityProvider';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import CreditNoteModal from './CreditNoteModal';
-import InvoiceDetailPanel from './InvoiceDetailPanel';
 import NewInvoiceModal from './NewInvoiceModal';
 import ReceiptModal from './ReceiptModal';
 

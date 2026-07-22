@@ -1,11 +1,15 @@
 'use client';
 
-import { invoicingApi, type Invoice } from '@/lib/invoicing';
+import { invoicingApi } from '@/lib/invoicing';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 interface Props {
-  invoice: Invoice;
+  // Only what the header needs before the full detail loads - deliberately
+  // not the whole Invoice type, so callers that only have a summary row
+  // (e.g. StatementModal's per-customer invoice list) can open this too
+  // without an extra round trip just to get a full Invoice object first.
+  invoice: { id: string; documentLetter: string; number: string; customerName: string };
   onClose: () => void;
 }
 

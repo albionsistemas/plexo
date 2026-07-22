@@ -1,7 +1,9 @@
 'use client';
 
+import InvoiceDetailPanel from '@/components/InvoiceDetailPanel';
 import { receivablesApi } from '@/lib/receivables';
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 
 interface Props {
   customerId: string;
@@ -19,6 +21,11 @@ export default function StatementModal({ customerId, onClose }: Props) {
     queryKey: ['customer-statement', customerId],
     queryFn: () => receivablesApi.getCustomerStatement(customerId),
   });
+  const [detailFor, setDetailFor] = useState<{
+    id: string;
+    documentLetter: string;
+    number: string;
+  } | null>(null);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -58,7 +65,8 @@ export default function StatementModal({ customerId, onClose }: Props) {
                     <th className="pb-2 pr-4">Número</th>
                     <th className="pb-2 pr-4">Vencimiento</th>
                     <th className="pb-2 pr-4 text-right">Saldo</th>
-                    <th className="pb-2">Estado</th>
+                    <th className="pb-2 pr-4">Estado</th>
+                    <th className="pb-2"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -73,8 +81,22 @@ export default function StatementModal({ customerId, onClose }: Props) {
                       <td className="py-2 pr-4 text-right text-slate-800 dark:text-slate-200">
                         ${Number(inv.balanceDue).toFixed(2)}
                       </td>
-                      <td className="py-2 text-xs text-slate-600 dark:text-slate-400">
+                      <td className="py-2 pr-4 text-xs text-slate-600 dark:text-slate-400">
                         {STATUS_LABELS[inv.status] ?? inv.status}
+                      </td>
+                      <td className="py-2">
+                        <button
+                          onClick={() =>
+                            setDetailFor({
+                              id: inv.id,
+                              documentLetter: inv.documentLetter,
+                              number: inv.number,
+                            })
+                          }
+                          className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                        >
+                          Ver detalle
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -84,6 +106,13 @@ export default function StatementModal({ customerId, onClose }: Props) {
           </>
         )}
       </div>
+
+      {detailFor && (
+        <InvoiceDetailPanel
+          invoice={{ ...detailFor, customerName: statement?.customerName ?? '' }}
+          onClose={() => setDetailFor(null)}
+        />
+      )}
     </div>
   );
 }
