@@ -1,4 +1,5 @@
 import './global.css';
+import { DensityProvider } from '@/providers/DensityProvider';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { ThemeProvider } from '@/providers/ThemeProvider';
 
@@ -27,7 +28,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <ThemeProvider>
-          <QueryProvider>{children}</QueryProvider>
+          <DensityProvider>
+            <QueryProvider>{children}</QueryProvider>
+          </DensityProvider>
         </ThemeProvider>
       </body>
     </html>

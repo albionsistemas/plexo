@@ -1,11 +1,16 @@
 'use client';
 
 import { accountingApi } from '@/lib/accounting';
+import { useDensity } from '@/providers/DensityProvider';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 export default function LedgerTab() {
   const [accountId, setAccountId] = useState('');
+  const { density } = useDensity();
+  const cellY = density === 'compact' ? 'py-1' : 'py-2';
+  const headY = density === 'compact' ? 'pb-1' : 'pb-2';
+  const bodyText = density === 'compact' ? 'text-xs' : 'text-sm';
 
   const accountsQuery = useQuery({
     queryKey: ['accounting-accounts'],
@@ -47,14 +52,14 @@ export default function LedgerTab() {
         ) : ledger?.lines.length === 0 ? (
           <p className="text-sm text-slate-400 dark:text-slate-600">Sin movimientos para esta cuenta</p>
         ) : (
-          <table className="w-full text-sm">
+          <table className={`w-full ${bodyText}`}>
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs text-slate-500">
-                <th className="pb-2 pr-4">Fecha</th>
-                <th className="pb-2 pr-4">Descripción</th>
-                <th className="pb-2 pr-4 text-right">Debe</th>
-                <th className="pb-2 pr-4 text-right">Haber</th>
-                <th className="pb-2 text-right">Saldo</th>
+                <th className={`${headY} pr-4`}>Fecha</th>
+                <th className={`${headY} pr-4`}>Descripción</th>
+                <th className={`${headY} pr-4 text-right`}>Debe</th>
+                <th className={`${headY} pr-4 text-right`}>Haber</th>
+                <th className={`${headY} text-right`}>Saldo</th>
               </tr>
             </thead>
             <tbody>
@@ -63,17 +68,17 @@ export default function LedgerTab() {
                 running += line.direction === 'DEBIT' ? amount : -amount;
                 return (
                   <tr key={line.id} className="border-b border-slate-200/50 dark:border-slate-800/50">
-                    <td className="py-2 pr-4 text-slate-600 dark:text-slate-400">
+                    <td className={`${cellY} pr-4 text-slate-600 dark:text-slate-400`}>
                       {new Date(line.journalEntry.date).toLocaleDateString('es-AR')}
                     </td>
-                    <td className="py-2 pr-4 text-slate-700 dark:text-slate-300">{line.journalEntry.description}</td>
-                    <td className="py-2 pr-4 text-right text-slate-700 dark:text-slate-300">
+                    <td className={`${cellY} pr-4 text-slate-700 dark:text-slate-300`}>{line.journalEntry.description}</td>
+                    <td className={`${cellY} pr-4 text-right text-slate-700 dark:text-slate-300`}>
                       {line.direction === 'DEBIT' ? `$${amount.toFixed(2)}` : ''}
                     </td>
-                    <td className="py-2 pr-4 text-right text-slate-700 dark:text-slate-300">
+                    <td className={`${cellY} pr-4 text-right text-slate-700 dark:text-slate-300`}>
                       {line.direction === 'CREDIT' ? `$${amount.toFixed(2)}` : ''}
                     </td>
-                    <td className="py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                    <td className={`${cellY} text-right font-medium text-slate-900 dark:text-slate-100`}>
                       ${running.toFixed(2)}
                     </td>
                   </tr>

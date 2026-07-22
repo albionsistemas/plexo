@@ -1,6 +1,7 @@
 'use client';
 
 import { accountingApi, type AccountingAccount } from '@/lib/accounting';
+import { useDensity } from '@/providers/DensityProvider';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import NewJournalEntryModal from './NewJournalEntryModal';
@@ -8,6 +9,9 @@ import NewJournalEntryModal from './NewJournalEntryModal';
 export default function JournalTab() {
   const [newOpen, setNewOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const { density } = useDensity();
+  const headerY = density === 'compact' ? 'py-1.5' : 'py-3';
+  const cellY = density === 'compact' ? 'py-1' : 'py-2';
 
   const entriesQuery = useQuery({
     queryKey: ['accounting-journal-entries'],
@@ -53,7 +57,7 @@ export default function JournalTab() {
                 <div key={entry.id} className="rounded-lg border border-slate-200 dark:border-slate-800">
                   <button
                     onClick={() => setExpanded(isOpen ? null : entry.id)}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left text-sm hover:bg-slate-200/40 dark:hover:bg-slate-800/40"
+                    className={`flex w-full items-center justify-between px-4 ${headerY} text-left text-sm hover:bg-slate-200/40 dark:hover:bg-slate-800/40`}
                   >
                     <div>
                       <p className="text-slate-800 dark:text-slate-200">{entry.description}</p>
@@ -68,22 +72,22 @@ export default function JournalTab() {
                     <table className="w-full border-t border-slate-200 dark:border-slate-800 text-xs">
                       <thead>
                         <tr className="text-left text-slate-500">
-                          <th className="px-4 py-2">Cuenta</th>
-                          <th className="px-4 py-2">Dirección</th>
-                          <th className="px-4 py-2 text-right">Importe</th>
+                          <th className={`px-4 ${cellY}`}>Cuenta</th>
+                          <th className={`px-4 ${cellY}`}>Dirección</th>
+                          <th className={`px-4 ${cellY} text-right`}>Importe</th>
                         </tr>
                       </thead>
                       <tbody>
                         {entry.lines.map((line) => (
                           <tr key={line.id} className="border-t border-slate-200/50 dark:border-slate-800/50">
-                            <td className="px-4 py-2 text-slate-700 dark:text-slate-300">
+                            <td className={`px-4 ${cellY} text-slate-700 dark:text-slate-300`}>
                               {accountsById.get(line.accountId)?.code ?? '—'} —{' '}
                               {accountsById.get(line.accountId)?.name ?? line.accountId}
                             </td>
-                            <td className="px-4 py-2 text-slate-600 dark:text-slate-400">
+                            <td className={`px-4 ${cellY} text-slate-600 dark:text-slate-400`}>
                               {line.direction === 'DEBIT' ? 'Debe' : 'Haber'}
                             </td>
-                            <td className="px-4 py-2 text-right text-slate-700 dark:text-slate-300">
+                            <td className={`px-4 ${cellY} text-right text-slate-700 dark:text-slate-300`}>
                               ${Number(line.amount).toFixed(2)}
                             </td>
                           </tr>

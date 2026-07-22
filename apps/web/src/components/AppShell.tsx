@@ -2,6 +2,7 @@
 
 import { initials, profileApi } from '@/lib/profile';
 import { disconnectSocket, getSocket } from '@/lib/socket';
+import { useDensity } from '@/providers/DensityProvider';
 import { useTheme } from '@/providers/ThemeProvider';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -119,6 +120,7 @@ function OnlineColleagues({ users }: { users: PresenceUser[] }) {
 function UserMenu() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+  const { density, setDensity } = useDensity();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -200,6 +202,15 @@ function UserMenu() {
             {theme === 'dark' ? <MoonIcon /> : <SunIcon />}
           </button>
 
+          <button
+            onClick={() => setDensity(density === 'compact' ? 'comfortable' : 'compact')}
+            aria-label={density === 'compact' ? 'Cambiar a vista cómoda' : 'Cambiar a vista compacta'}
+            title={density === 'compact' ? 'Cambiar a vista cómoda' : 'Cambiar a vista compacta'}
+            className="flex w-full items-center gap-3 px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            {density === 'compact' ? <CompactRowsIcon /> : <ComfortableRowsIcon />}
+          </button>
+
           <div className="mt-1 border-t border-slate-200 dark:border-slate-800 pt-1">
             <button
               onClick={handleLogout}
@@ -227,6 +238,22 @@ function MoonIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
       <path d="M20.354 15.354A9 9 0 0 1 8.646 3.646 9.003 9.003 0 1 0 20.354 15.354Z" />
+    </svg>
+  );
+}
+
+function ComfortableRowsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4">
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
+function CompactRowsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4">
+      <path d="M4 4h16M4 9h16M4 14h16M4 19h16" />
     </svg>
   );
 }
