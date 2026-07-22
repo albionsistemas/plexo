@@ -8,6 +8,15 @@ import { useState } from 'react';
 interface Props {
   company?: Company;
   onClose: () => void;
+  /** Roles checked by default when creating a new company (ignored when
+   * editing an existing one). Lets a caller like NewInvoiceModal open this
+   * pre-set to BRANCH instead of the CUSTOMER default. */
+  defaultRoles?: CompanyRoleType[];
+  /** Called with the created/updated company right after a successful
+   * save, in addition to the normal invalidate+onClose - so a caller that
+   * opened this inline (e.g. to create a customer/branch without leaving
+   * another form) can auto-select the result. */
+  onSaved?: (company: Company) => void;
 }
 
 const inputClass =
@@ -19,7 +28,7 @@ const ROLE_OPTIONS: { value: CompanyRoleType; label: string }[] = [
   { value: 'BRANCH', label: 'Sucursal / punto de venta propio' },
 ];
 
-export default function CompanyFormModal({ company, onClose }: Props) {
+export default function CompanyFormModal({ company, onClose, defaultRoles, onSaved }: Props) {
   const queryClient = useQueryClient();
   const isEdit = Boolean(company);
 
@@ -29,7 +38,7 @@ export default function CompanyFormModal({ company, onClose }: Props) {
   const [creditLimit, setCreditLimit] = useState(company?.creditLimit ?? '0');
   const [pointOfSaleNumber, setPointOfSaleNumber] = useState(company?.pointOfSaleNumber ?? '');
   const [roles, setRoles] = useState<CompanyRoleType[]>(
-    company?.roles.map((r) => r.role) ?? ['CUSTOMER'],
+    company?.roles.map((r) => r.role) ?? defaultRoles ?? ['CUSTOMER'],
   );
   const [error, setError] = useState('');
   const [afipMessage, setAfipMessage] = useState('');
@@ -64,8 +73,9 @@ export default function CompanyFormModal({ company, onClose }: Props) {
       };
       return company ? companiesApi.update(company.id, dto) : companiesApi.create(dto);
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
       void queryClient.invalidateQueries({ queryKey: ['companies'] });
+      onSaved?.(saved);
       onClose();
     },
     onError: (err: AxiosError<{ message?: string | string[] }>) => {

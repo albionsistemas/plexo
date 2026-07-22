@@ -1,5 +1,6 @@
 'use client';
 
+import CompanyFormModal from '@/app/companies/CompanyFormModal';
 import { companiesApi } from '@/lib/companies';
 import { inventoryApi } from '@/lib/inventory';
 import { invoicingApi, type CreateSaleLineInput } from '@/lib/invoicing';
@@ -58,6 +59,8 @@ export default function NewInvoiceModal({ onClose }: Props) {
   const [currencyId, setCurrencyId] = useState('');
   const [lines, setLines] = useState<CreateSaleLineInput[]>([{ articleVariantId: '', quantity: 1 }]);
   const [error, setError] = useState('');
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
+  const [creatingBranch, setCreatingBranch] = useState(false);
 
   const ready = !customersQuery.isLoading && !branchesQuery.isLoading && !warehousesQuery.isLoading;
 
@@ -118,8 +121,10 @@ export default function NewInvoiceModal({ onClose }: Props) {
     mutation.mutate();
   }
 
-  const missingData =
-    ready && (customers.length === 0 || branches.length === 0 || warehouses.length === 0);
+  // Clientes/sucursales ahora se pueden crear sin salir de este modal (ver
+  // "+ nuevo cliente"/"+ nueva sucursal" arriba), así que sólo bloquea la
+  // falta de depósito, que no tiene un atajo inline todavía.
+  const missingData = ready && warehouses.length === 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -135,13 +140,24 @@ export default function NewInvoiceModal({ onClose }: Props) {
           <div className="py-10 text-center text-slate-500">Cargando...</div>
         ) : missingData ? (
           <p className="text-sm text-amber-600 dark:text-amber-400">
-            Hace falta al menos un cliente (empresa con rol CUSTOMER), una sucursal (rol BRANCH) y un
-            depósito antes de poder facturar.
+            Hace falta al menos un depósito antes de poder facturar (cliente y sucursal se pueden
+            crear desde este mismo formulario).
           </p>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Cliente">
+              <Field
+                label="Cliente"
+                action={
+                  <button
+                    type="button"
+                    onClick={() => setCreatingCustomer(true)}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                  >
+                    + nuevo cliente
+                  </button>
+                }
+              >
                 <select
                   className={inputClass}
                   value={customerId}
@@ -154,7 +170,18 @@ export default function NewInvoiceModal({ onClose }: Props) {
                   ))}
                 </select>
               </Field>
-              <Field label="Sucursal / punto de venta">
+              <Field
+                label="Sucursal / punto de venta"
+                action={
+                  <button
+                    type="button"
+                    onClick={() => setCreatingBranch(true)}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                  >
+                    + nueva sucursal
+                  </button>
+                }
+              >
                 <select
                   className={inputClass}
                   value={branchId}
@@ -275,14 +302,40 @@ export default function NewInvoiceModal({ onClose }: Props) {
           </form>
         )}
       </div>
+
+      {creatingCustomer && (
+        <CompanyFormModal
+          defaultRoles={['CUSTOMER']}
+          onClose={() => setCreatingCustomer(false)}
+          onSaved={(c) => setCustomerId(c.id)}
+        />
+      )}
+      {creatingBranch && (
+        <CompanyFormModal
+          defaultRoles={['BRANCH']}
+          onClose={() => setCreatingBranch(false)}
+          onSaved={(c) => setBranchId(c.id)}
+        />
+      )}
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  action,
+  children,
+}: {
+  label: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-sm text-slate-600 dark:text-slate-400">{label}</label>
+      <div className="flex items-center justify-between">
+        <label className="text-sm text-slate-600 dark:text-slate-400">{label}</label>
+        {action}
+      </div>
       {children}
     </div>
   );
