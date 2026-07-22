@@ -79,25 +79,44 @@ export class SalesService {
   }
 
   /**
-   * Composes InvoicingService.createCreditNote + the matching GL reversal,
-   * same transaction/atomicity story as createSale(). This is the only
-   * place a credit note gets created (InvoicingController no longer
-   * exposes its own POST /invoicing/credit-notes) specifically so there's
-   * no path that credits an invoice without also reversing its journal
-   * entry - see the recordMovement() doc comment in InventoryService for
-   * why the analogous "SALE_OUT without an invoice" gap was left as a
-   * manual accounting step instead: there, the caller has no journal
-   * entry id to reverse in the first place. Here it does, so there's no
-   * excuse not to close the loop.
+   * Composes InvoicingService.createCreditNote + the matching GL reversal
+   * + a stock restock, same transaction/atomicity story as createSale().
+   * This is the only place a credit note gets created (InvoicingController
+   * no longer exposes its own POST /invoicing/credit-notes) specifically
+   * so there's no path that credits an invoice without also reversing its
+   * journal entry and restocking - see the recordMovement() doc comment in
+   * InventoryService for why the analogous "SALE_OUT without an invoice"
+   * gap was left as a manual step instead: there, the caller has no
+   * journal entry/stock movement to reverse in the first place. Here it
+   * does, so there's no excuse not to close the loop.
    *
-   * Does not touch stock - a returned invoice's stock isn't reversed by
-   * this yet, matching how createSale() -> createCreditNote() already
-   * didn't do that before this method existed. Out of scope for the
-   * accounting gap this closes; flag if returns should restock too.
+   * Restock reads back the original SALE_OUT StockMovement rows for this
+   * invoice (warehouseId + quantity per line) instead of re-deriving them
+   * from the invoice lines, since the invoice itself doesn't know which
+   * warehouse each line came out of - only the movement does. A RETURN
+   * per original SALE_OUT keeps the ledger symmetric with how the sale
+   * removed it. CreateCreditNoteDto is "full reversal only" (v1), so this
+   * always restocks every line of the invoice, never a partial return.
    */
   async voidSale(dto: CreateCreditNoteDto) {
     const creditNote = await this.invoicingService.createCreditNote(dto);
     await this.accountingService.reverseInvoiceJournalEntry(dto.invoiceId);
+
+    const saleMovements = await getTenantDb().stockMovement.findMany({
+      where: { invoiceId: dto.invoiceId, type: 'SALE_OUT' },
+    });
+    for (const movement of saleMovements) {
+      await this.inventoryService.recordMovement({
+        warehouseId: movement.warehouseId,
+        articleVariantId: movement.articleVariantId,
+        type: 'RETURN',
+        quantity: movement.quantity.toNumber(),
+        invoiceId: dto.invoiceId,
+        sourceType: 'CREDIT_NOTE',
+        sourceId: creditNote.id,
+      });
+    }
+
     return creditNote;
   }
 }

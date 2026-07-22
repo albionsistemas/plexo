@@ -225,23 +225,59 @@ describe('SalesService.createSale', () => {
 });
 
 describe('SalesService.voidSale', () => {
-  it('creates the credit note then reverses the invoice journal entry', async () => {
+  it('creates the credit note, reverses the invoice journal entry, then restocks each original sale movement', async () => {
     const creditNote = { id: 'credit-note-1', invoiceId: 'invoice-1' };
     const invoicingService = {
       createCreditNote: jest.fn().mockResolvedValue(creditNote),
     } as unknown as InvoicingService;
-    const inventoryService = {} as unknown as InventoryService;
+    const inventoryService = {
+      recordMovement: jest.fn().mockResolvedValue({}),
+    } as unknown as InventoryService;
     const accountingService = {
       reverseInvoiceJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-2', lines: [] }),
     } as unknown as AccountingService;
+    const saleMovements = [
+      {
+        warehouseId: 'warehouse-1',
+        articleVariantId: 'variant-1',
+        quantity: new Prisma.Decimal(3),
+      },
+      {
+        warehouseId: 'warehouse-1',
+        articleVariantId: 'variant-2',
+        quantity: new Prisma.Decimal(1),
+      },
+    ];
+    const db = { stockMovement: { findMany: jest.fn().mockResolvedValue(saleMovements) } };
 
     const service = new SalesService(invoicingService, inventoryService, accountingService);
     const dto = { invoiceId: 'invoice-1', reason: 'Devolución de mercadería' };
 
-    const result = await service.voidSale(dto);
+    const result = await runInTenant(db, () => service.voidSale(dto));
 
     expect(invoicingService.createCreditNote).toHaveBeenCalledWith(dto);
     expect(accountingService.reverseInvoiceJournalEntry).toHaveBeenCalledWith('invoice-1');
+    expect(db.stockMovement.findMany).toHaveBeenCalledWith({
+      where: { invoiceId: 'invoice-1', type: 'SALE_OUT' },
+    });
+    expect(inventoryService.recordMovement).toHaveBeenNthCalledWith(1, {
+      warehouseId: 'warehouse-1',
+      articleVariantId: 'variant-1',
+      type: 'RETURN',
+      quantity: 3,
+      invoiceId: 'invoice-1',
+      sourceType: 'CREDIT_NOTE',
+      sourceId: 'credit-note-1',
+    });
+    expect(inventoryService.recordMovement).toHaveBeenNthCalledWith(2, {
+      warehouseId: 'warehouse-1',
+      articleVariantId: 'variant-2',
+      type: 'RETURN',
+      quantity: 1,
+      invoiceId: 'invoice-1',
+      sourceType: 'CREDIT_NOTE',
+      sourceId: 'credit-note-1',
+    });
     expect(result).toBe(creditNote);
   });
 
