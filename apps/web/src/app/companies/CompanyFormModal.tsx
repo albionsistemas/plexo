@@ -32,6 +32,25 @@ export default function CompanyFormModal({ company, onClose }: Props) {
     company?.roles.map((r) => r.role) ?? ['CUSTOMER'],
   );
   const [error, setError] = useState('');
+  const [afipMessage, setAfipMessage] = useState('');
+  const [afipError, setAfipError] = useState('');
+
+  const afipLookup = useMutation({
+    mutationFn: () => companiesApi.lookupAfip(taxId),
+    onSuccess: (data) => {
+      setName(data.name);
+      setAfipError('');
+      setAfipMessage(
+        [data.taxCondition, data.fiscalAddress].filter(Boolean).join(' · ') ||
+          'Datos encontrados en AFIP',
+      );
+    },
+    onError: (err: AxiosError<{ message?: string | string[] }>) => {
+      setAfipMessage('');
+      const message = err.response?.data?.message ?? 'No se pudo consultar AFIP';
+      setAfipError(Array.isArray(message) ? message.join(', ') : message);
+    },
+  });
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -96,6 +115,16 @@ export default function CompanyFormModal({ company, onClose }: Props) {
           <div className="grid grid-cols-2 gap-4">
             <Field label="CUIT / Tax ID">
               <input className={inputClass} value={taxId} onChange={(e) => setTaxId(e.target.value)} />
+              <button
+                type="button"
+                onClick={() => afipLookup.mutate()}
+                disabled={afipLookup.isPending || !taxId.trim()}
+                className="self-start text-xs text-indigo-600 dark:text-indigo-400 transition hover:text-indigo-800 dark:hover:text-indigo-300 disabled:opacity-50"
+              >
+                {afipLookup.isPending ? 'Consultando AFIP...' : 'Buscar en AFIP'}
+              </button>
+              {afipMessage && <p className="text-xs text-slate-600 dark:text-slate-400">{afipMessage}</p>}
+              {afipError && <p className="text-xs text-red-600 dark:text-red-400">{afipError}</p>}
             </Field>
             <Field label="Email">
               <input

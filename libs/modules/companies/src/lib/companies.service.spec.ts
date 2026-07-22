@@ -1,16 +1,19 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { tenantContextStorage } from '@plexo/database';
+import { AfipLookupError, AfipNotConfiguredError, type AfipPadronPort } from './afip-padron.port.js';
 import { CompaniesService } from './companies.service.js';
 
 function runInTenant<T>(db: Record<string, unknown>, fn: () => T): T {
   return tenantContextStorage.run({ tenantId: 'tenant-1', userId: 'user-1', tx: db as never }, fn);
 }
 
+const stubAfipPadron: AfipPadronPort = { lookup: jest.fn() };
+
 describe('CompaniesService.createCompany', () => {
   it('creates the company with a role row per requested role', async () => {
     const create = jest.fn().mockResolvedValue({ id: 'company-1', roles: [{ role: 'CUSTOMER' }] });
     const db = { company: { create } };
-    const service = new CompaniesService();
+    const service = new CompaniesService(stubAfipPadron);
 
     await runInTenant(db, () =>
       service.createCompany({ name: 'Acme', roles: ['CUSTOMER', 'SUPPLIER'] }),
@@ -28,7 +31,7 @@ describe('CompaniesService.createCompany', () => {
 describe('CompaniesService.updateCompany', () => {
   it('throws when the company does not exist', async () => {
     const db = { company: { findUnique: jest.fn().mockResolvedValue(null) } };
-    const service = new CompaniesService();
+    const service = new CompaniesService(stubAfipPadron);
 
     await expect(
       runInTenant(db, () => service.updateCompany('missing', { name: 'x' })),
@@ -46,7 +49,7 @@ describe('CompaniesService.updateCompany', () => {
         createMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
-    const service = new CompaniesService();
+    const service = new CompaniesService(stubAfipPadron);
 
     await runInTenant(db, () => service.updateCompany('company-1', { roles: ['BRANCH'] }));
 
@@ -64,7 +67,7 @@ describe('CompaniesService.updateCompany', () => {
       },
       companyRole: { deleteMany: jest.fn(), createMany: jest.fn() },
     };
-    const service = new CompaniesService();
+    const service = new CompaniesService(stubAfipPadron);
 
     await runInTenant(db, () => service.updateCompany('company-1', { name: 'New name' }));
 
@@ -76,7 +79,7 @@ describe('CompaniesService.updateCompany', () => {
 describe('CompaniesService.createPerson', () => {
   it('throws when the company does not exist', async () => {
     const db = { company: { findUnique: jest.fn().mockResolvedValue(null) } };
-    const service = new CompaniesService();
+    const service = new CompaniesService(stubAfipPadron);
 
     await expect(
       runInTenant(db, () =>
@@ -91,7 +94,7 @@ describe('CompaniesService.createPerson', () => {
         findUnique: jest.fn().mockResolvedValue({ id: 'company-1', roles: [{ role: 'BRANCH' }] }),
       },
     };
-    const service = new CompaniesService();
+    const service = new CompaniesService(stubAfipPadron);
 
     await expect(
       runInTenant(db, () =>
@@ -108,7 +111,7 @@ describe('CompaniesService.createPerson', () => {
       },
       person: { create },
     };
-    const service = new CompaniesService();
+    const service = new CompaniesService(stubAfipPadron);
 
     await runInTenant(db, () =>
       service.createPerson({ companyId: 'company-1', firstName: 'Ana', lastName: 'García' }),
@@ -122,5 +125,54 @@ describe('CompaniesService.createPerson', () => {
         lastName: 'García',
       }),
     });
+  });
+});
+
+describe('CompaniesService.lookupAfip', () => {
+  beforeEach(() => {
+    (stubAfipPadron.lookup as jest.Mock).mockReset();
+  });
+
+  it('rejects an invalid CUIT without calling AFIP', async () => {
+    const service = new CompaniesService(stubAfipPadron);
+
+    await expect(service.lookupAfip('20123456780')).rejects.toThrow(BadRequestException);
+    expect(stubAfipPadron.lookup).not.toHaveBeenCalled();
+  });
+
+  it('maps AfipNotConfiguredError to a 400 with a clear message', async () => {
+    (stubAfipPadron.lookup as jest.Mock).mockRejectedValue(new AfipNotConfiguredError());
+    const service = new CompaniesService(stubAfipPadron);
+
+    await expect(service.lookupAfip('20123456786')).rejects.toThrow(BadRequestException);
+  });
+
+  it('maps AfipLookupError (AFIP unreachable/erroring) to a 502', async () => {
+    (stubAfipPadron.lookup as jest.Mock).mockRejectedValue(new AfipLookupError('AFIP no responde'));
+    const service = new CompaniesService(stubAfipPadron);
+
+    await expect(service.lookupAfip('20123456786')).rejects.toThrow(BadGatewayException);
+  });
+
+  it('maps a null result (AFIP has no record) to a 404', async () => {
+    (stubAfipPadron.lookup as jest.Mock).mockResolvedValue(null);
+    const service = new CompaniesService(stubAfipPadron);
+
+    await expect(service.lookupAfip('20123456786')).rejects.toThrow(NotFoundException);
+  });
+
+  it('returns the padrón data on success, normalizing the CUIT first', async () => {
+    const data = {
+      cuit: '20123456786',
+      personType: 'JURIDICA' as const,
+      name: 'Acme SA',
+      taxCondition: 'Responsable Inscripto',
+      fiscalAddress: 'Av. Siempreviva 742, CABA',
+    };
+    (stubAfipPadron.lookup as jest.Mock).mockResolvedValue(data);
+    const service = new CompaniesService(stubAfipPadron);
+
+    await expect(service.lookupAfip('20-12345678-6')).resolves.toEqual(data);
+    expect(stubAfipPadron.lookup).toHaveBeenCalledWith('20123456786');
   });
 });

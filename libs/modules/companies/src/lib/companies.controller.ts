@@ -36,6 +36,11 @@ export class CompaniesController {
     return this.companiesService.updatePerson(id, dto);
   }
 
+  @Get('afip/:cuit')
+  lookupAfip(@Param('cuit') cuit: string) {
+    return this.companiesService.lookupAfip(cuit);
+  }
+
   @Get(':id')
   getCompany(@Param('id', ParseUUIDPipe) id: string) {
     return this.companiesService.getCompany(id);

@@ -1,0 +1,126 @@
+import forge from 'node-forge';
+import { XMLParser } from 'fast-xml-parser';
+
+export interface AfipCredentials {
+  certPem: string;
+  keyPem: string;
+  env: 'homologacion' | 'produccion';
+}
+
+interface WsaaTicket {
+  token: string;
+  sign: string;
+  expiresAt: Date;
+}
+
+const WSAA_URL: Record<AfipCredentials['env'], string> = {
+  homologacion: 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms',
+  produccion: 'https://wsaa.afip.gov.ar/ws/services/LoginCms',
+};
+
+const xmlParser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true });
+
+/**
+ * AFIP's WSAA (Web Service de Autenticación y Autorización): every other
+ * AFIP web service (padrón, WSFE, ...) needs a token+sign pair from here
+ * first, obtained by CMS-signing a short-lived XML request with the
+ * tenant's own AFIP certificate/key. Tickets are valid ~12h and AFIP asks
+ * integrators not to request a new one on every call, hence the cache.
+ */
+export class AfipWsaaClient {
+  private readonly ticketCache = new Map<string, WsaaTicket>();
+
+  constructor(private readonly credentials: AfipCredentials) {}
+
+  async getTicket(service: string): Promise<WsaaTicket> {
+    const cached = this.ticketCache.get(service);
+    // Refreshed 5 minutes before expiry rather than exactly at expiry, so
+    // an in-flight request doesn't race the ticket going stale mid-call.
+    if (cached && cached.expiresAt.getTime() - Date.now() > 5 * 60_000) {
+      return cached;
+    }
+
+    const cms = this.signLoginRequest(service);
+    const soapBody = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wsaa="http://wsaa.view.sua.dvadac.desein.afip.gov">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <wsaa:loginCms>
+      <wsaa:in0>${cms}</wsaa:in0>
+    </wsaa:loginCms>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    const response = await fetch(WSAA_URL[this.credentials.env], {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '' },
+      body: soapBody,
+    });
+    const responseText = await response.text();
+    if (!response.ok) {
+      throw new Error(`AFIP WSAA respondió ${response.status}: ${responseText.slice(0, 300)}`);
+    }
+
+    const envelope = xmlParser.parse(responseText);
+    const loginCmsReturn: string | undefined =
+      envelope?.Envelope?.Body?.loginCmsResponse?.loginCmsReturn;
+    if (!loginCmsReturn) {
+      throw new Error(`Respuesta de AFIP WSAA sin loginCmsReturn: ${responseText.slice(0, 300)}`);
+    }
+
+    const ticketXml = xmlParser.parse(loginCmsReturn);
+    const header = ticketXml?.loginTicketResponse?.header;
+    const ticketCredentials = ticketXml?.loginTicketResponse?.credentials;
+    if (!header?.expirationTime || !ticketCredentials?.token || !ticketCredentials?.sign) {
+      throw new Error(`No se pudo leer el ticket de AFIP WSAA: ${loginCmsReturn.slice(0, 300)}`);
+    }
+
+    const ticket: WsaaTicket = {
+      token: ticketCredentials.token,
+      sign: ticketCredentials.sign,
+      expiresAt: new Date(header.expirationTime),
+    };
+    this.ticketCache.set(service, ticket);
+    return ticket;
+  }
+
+  /** CMS/PKCS#7-signs the loginTicketRequest AFIP expects - the Node
+   * equivalent of `openssl smime -sign`, done with node-forge instead of
+   * shelling out so this works the same on any host without an openssl
+   * binary on PATH. */
+  private signLoginRequest(service: string): string {
+    const now = new Date();
+    const generationTime = new Date(now.getTime() - 10 * 60_000);
+    const expirationTime = new Date(now.getTime() + 10 * 60_000);
+
+    const loginTicketRequest = `<?xml version="1.0" encoding="UTF-8"?>
+<loginTicketRequest version="1.0">
+  <header>
+    <uniqueId>${Math.floor(now.getTime() / 1000)}</uniqueId>
+    <generationTime>${generationTime.toISOString()}</generationTime>
+    <expirationTime>${expirationTime.toISOString()}</expirationTime>
+  </header>
+  <service>${service}</service>
+</loginTicketRequest>`;
+
+    const certificate = forge.pki.certificateFromPem(this.credentials.certPem);
+    const privateKey = forge.pki.privateKeyFromPem(this.credentials.keyPem);
+
+    const p7 = forge.pkcs7.createSignedData();
+    p7.content = forge.util.createBuffer(loginTicketRequest, 'utf8');
+    p7.addCertificate(certificate);
+    p7.addSigner({
+      key: privateKey,
+      certificate,
+      digestAlgorithm: forge.pki.oids.sha256,
+      authenticatedAttributes: [
+        { type: forge.pki.oids.contentType, value: forge.pki.oids.data },
+        { type: forge.pki.oids.messageDigest },
+      ],
+    });
+    p7.sign({ detached: false });
+
+    const der = forge.asn1.toDer(p7.toAsn1()).getBytes();
+    return forge.util.encode64(der);
+  }
+}

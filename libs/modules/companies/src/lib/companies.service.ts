@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   getTenantDb,
   getTenantId,
@@ -6,6 +6,14 @@ import {
   type CompanyRoleType,
   type Person,
 } from '@plexo/database';
+import {
+  AFIP_PADRON,
+  AfipLookupError,
+  AfipNotConfiguredError,
+  type AfipPadronData,
+  type AfipPadronPort,
+} from './afip-padron.port.js';
+import { isValidCuit } from './cuit.js';
 import type { CreateCompanyDto } from './dto/create-company.dto.js';
 import type { CreatePersonDto } from './dto/create-person.dto.js';
 import type { UpdateCompanyDto } from './dto/update-company.dto.js';
@@ -15,6 +23,8 @@ export type CompanyWithRoles = Company & { roles: { role: CompanyRoleType }[] };
 
 @Injectable()
 export class CompaniesService {
+  constructor(@Inject(AFIP_PADRON) private readonly afipPadron: AfipPadronPort) {}
+
   async createCompany(dto: CreateCompanyDto): Promise<CompanyWithRoles> {
     const tenantId = getTenantId();
     return getTenantDb().company.create({
@@ -132,5 +142,33 @@ export class CompaniesService {
       throw new NotFoundException('Person not found');
     }
     return getTenantDb().person.update({ where: { id }, data: { ...dto } });
+  }
+
+  /** User-initiated (a "Buscar en AFIP" button), so failures surface as
+   * real HTTP errors instead of being swallowed - see AfipPadronPort. */
+  async lookupAfip(rawCuit: string): Promise<AfipPadronData> {
+    if (!isValidCuit(rawCuit)) {
+      throw new BadRequestException('CUIT inválido');
+    }
+
+    let result: AfipPadronData | null;
+    try {
+      result = await this.afipPadron.lookup(rawCuit.replace(/\D/g, ''));
+    } catch (err) {
+      if (err instanceof AfipNotConfiguredError) {
+        throw new BadRequestException(
+          'La consulta a AFIP no está configurada en este servidor',
+        );
+      }
+      if (err instanceof AfipLookupError) {
+        throw new BadGatewayException(err.message);
+      }
+      throw err;
+    }
+
+    if (!result) {
+      throw new NotFoundException('AFIP no tiene datos para ese CUIT');
+    }
+    return result;
   }
 }

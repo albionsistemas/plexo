@@ -1,6 +1,7 @@
 export * from './lib/companies.module.js';
 export * from './lib/companies.service.js';
 export * from './lib/companies.controller.js';
+export * from './lib/afip-padron.port.js';
 export * from './lib/dto/create-company.dto.js';
 export * from './lib/dto/update-company.dto.js';
 export * from './lib/dto/create-person.dto.js';

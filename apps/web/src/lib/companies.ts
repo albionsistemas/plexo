@@ -54,6 +54,14 @@ export interface CreatePersonInput {
   jobTitle?: string;
 }
 
+export interface AfipPadronData {
+  cuit: string;
+  personType: 'FISICA' | 'JURIDICA';
+  name: string;
+  taxCondition: string | null;
+  fiscalAddress: string | null;
+}
+
 export const companiesApi = {
   list: (role?: CompanyRoleType) =>
     api
@@ -66,4 +74,6 @@ export const companiesApi = {
   listPeople: (companyId: string) =>
     api.get<Person[]>(`/companies/${companyId}/people`).then((r) => r.data),
   createPerson: (dto: CreatePersonInput) => api.post<Person>('/companies/people', dto).then((r) => r.data),
+  lookupAfip: (cuit: string) =>
+    api.get<AfipPadronData>(`/companies/afip/${encodeURIComponent(cuit)}`).then((r) => r.data),
 };

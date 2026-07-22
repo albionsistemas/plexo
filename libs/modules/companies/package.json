@@ -20,6 +20,8 @@
     "@plexo/auth": "^0.0.1",
     "@plexo/database": "^0.0.1",
     "class-validator": "^0.15.1",
+    "fast-xml-parser": "^5.10.1",
+    "node-forge": "^1.4.0",
     "tslib": "^2.3.0"
   }
 }
