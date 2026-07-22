@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma, tenantContextStorage } from '@plexo/database';
 import { InventoryService } from './inventory.service.js';
 
@@ -9,14 +10,19 @@ function runInTenant<T>(db: Record<string, unknown>, fn: () => T): T {
   );
 }
 
+function makeEventEmitter(): EventEmitter2 {
+  return { emit: jest.fn() } as unknown as EventEmitter2;
+}
+
 describe('InventoryService.recordMovement', () => {
   it('decrements the ledger and records the movement for a SALE_OUT with enough stock', async () => {
     const updateMany = jest.fn().mockResolvedValue({ count: 1 });
     const create = jest.fn().mockResolvedValue({ id: 'movement-1' });
-    const service = new InventoryService();
+    const findUnique = jest.fn().mockResolvedValue({ quantity: new Prisma.Decimal(15) });
+    const service = new InventoryService(makeEventEmitter());
 
     const result = await runInTenant(
-      { stockLedger: { updateMany }, stockMovement: { create } },
+      { stockLedger: { updateMany, findUnique }, stockMovement: { create } },
       () =>
         service.recordMovement({
           warehouseId: 'wh-1',
@@ -45,7 +51,7 @@ describe('InventoryService.recordMovement', () => {
   it('rejects a SALE_OUT when the atomic decrement matches zero rows (insufficient stock)', async () => {
     const updateMany = jest.fn().mockResolvedValue({ count: 0 });
     const create = jest.fn();
-    const service = new InventoryService();
+    const service = new InventoryService(makeEventEmitter());
 
     await expect(
       runInTenant({ stockLedger: { updateMany }, stockMovement: { create } }, () =>
@@ -64,9 +70,10 @@ describe('InventoryService.recordMovement', () => {
   it('upserts the ledger for a PURCHASE_IN without checking existing stock', async () => {
     const upsert = jest.fn().mockResolvedValue({});
     const create = jest.fn().mockResolvedValue({ id: 'movement-2' });
-    const service = new InventoryService();
+    const findUnique = jest.fn().mockResolvedValue({ quantity: new Prisma.Decimal(20) });
+    const service = new InventoryService(makeEventEmitter());
 
-    await runInTenant({ stockLedger: { upsert }, stockMovement: { create } }, () =>
+    await runInTenant({ stockLedger: { upsert, findUnique }, stockMovement: { create } }, () =>
       service.recordMovement({
         warehouseId: 'wh-1',
         articleVariantId: 'variant-1',
@@ -84,7 +91,7 @@ describe('InventoryService.recordMovement', () => {
   });
 
   it('rejects a zero-quantity ADJUSTMENT before touching the database', async () => {
-    const service = new InventoryService();
+    const service = new InventoryService(makeEventEmitter());
     const updateMany = jest.fn();
 
     await expect(
@@ -102,7 +109,7 @@ describe('InventoryService.recordMovement', () => {
   });
 
   it('rejects a non-positive quantity for PURCHASE_IN/SALE_OUT/RETURN', async () => {
-    const service = new InventoryService();
+    const service = new InventoryService(makeEventEmitter());
 
     await expect(
       runInTenant({}, () =>
@@ -120,7 +127,7 @@ describe('InventoryService.recordMovement', () => {
 describe('InventoryService.getConsolidatedStock', () => {
   it('sums stock across warehouses', async () => {
     const aggregate = jest.fn().mockResolvedValue({ _sum: { quantity: new Prisma.Decimal(42) } });
-    const service = new InventoryService();
+    const service = new InventoryService(makeEventEmitter());
 
     const result = await runInTenant({ stockLedger: { aggregate } }, () =>
       service.getConsolidatedStock('variant-1'),
@@ -131,7 +138,7 @@ describe('InventoryService.getConsolidatedStock', () => {
 
   it('returns zero when there is no ledger row at all', async () => {
     const aggregate = jest.fn().mockResolvedValue({ _sum: { quantity: null } });
-    const service = new InventoryService();
+    const service = new InventoryService(makeEventEmitter());
 
     const result = await runInTenant({ stockLedger: { aggregate } }, () =>
       service.getConsolidatedStock('variant-1'),
@@ -151,7 +158,7 @@ describe('InventoryService.listReorderSuggestions', () => {
       { warehouseId: 'wh-1', articleVariantId: 'v-1', quantity: new Prisma.Decimal(3) },
       { warehouseId: 'wh-1', articleVariantId: 'v-2', quantity: new Prisma.Decimal(50) },
     ]);
-    const service = new InventoryService();
+    const service = new InventoryService(makeEventEmitter());
 
     const result = await runInTenant(
       {
@@ -168,7 +175,7 @@ describe('InventoryService.listReorderSuggestions', () => {
   it('returns an empty list without querying the ledger when there are no minimums configured', async () => {
     const findManyMinimums = jest.fn().mockResolvedValue([]);
     const findManyLedger = jest.fn();
-    const service = new InventoryService();
+    const service = new InventoryService(makeEventEmitter());
 
     const result = await runInTenant(
       {

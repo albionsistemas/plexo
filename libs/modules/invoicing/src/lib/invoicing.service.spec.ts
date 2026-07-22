@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import type { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma, tenantContextStorage } from '@plexo/database';
 import type { EmailSender } from './email-sender.port.js';
 import type { ElectronicInvoicingPort } from './electronic-invoicing.port.js';
@@ -27,6 +28,10 @@ function makeElectronicInvoicing(): ElectronicInvoicingPort {
   };
 }
 
+function makeEventEmitter(): EventEmitter2 {
+  return { emit: jest.fn() } as unknown as EventEmitter2;
+}
+
 const baseDto = {
   customerId: 'customer-1',
   documentLetter: 'B' as const,
@@ -37,7 +42,7 @@ const baseDto = {
 
 describe('InvoicingService.createInvoice', () => {
   it('throws when there is no authenticated user in context', async () => {
-    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
     await expect(runWithoutUser({}, () => service.createInvoice(baseDto))).rejects.toThrow(
       BadRequestException,
     );
@@ -45,7 +50,7 @@ describe('InvoicingService.createInvoice', () => {
 
   it('throws when the customer does not exist', async () => {
     const db = { company: { findUnique: jest.fn().mockResolvedValue(null) } };
-    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
 
     await expect(runInTenant(db, () => service.createInvoice(baseDto))).rejects.toThrow(
       NotFoundException,
@@ -58,7 +63,7 @@ describe('InvoicingService.createInvoice', () => {
         findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', email: null, roles: [{ role: 'SUPPLIER' }] }),
       },
     };
-    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
 
     await expect(runInTenant(db, () => service.createInvoice(baseDto))).rejects.toThrow(
       BadRequestException,
@@ -72,7 +77,7 @@ describe('InvoicingService.createInvoice', () => {
       },
       currency: { findUnique: jest.fn().mockResolvedValue(null) },
     };
-    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
 
     await expect(runInTenant(db, () => service.createInvoice(baseDto))).rejects.toThrow(
       NotFoundException,
@@ -89,7 +94,7 @@ describe('InvoicingService.createInvoice', () => {
       },
       exchangeRateHistory: { findFirst: jest.fn().mockResolvedValue(null) },
     };
-    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
 
     await expect(runInTenant(db, () => service.createInvoice(baseDto))).rejects.toThrow(
       BadRequestException,
@@ -104,7 +109,7 @@ describe('InvoicingService.createInvoice', () => {
       currency: { findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', isBase: true }) },
       articleVariant: { findUnique: jest.fn().mockResolvedValue(null) },
     };
-    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
 
     await expect(runInTenant(db, () => service.createInvoice(baseDto))).rejects.toThrow(
       NotFoundException,
@@ -114,7 +119,7 @@ describe('InvoicingService.createInvoice', () => {
   it('runs the strict calculation chain: convert->line discount->subtotal->global discount->tax, distributed proportionally across lines with different rates', async () => {
     const emailSender = makeEmailSender();
     const electronicInvoicing = makeElectronicInvoicing();
-    const service = new InvoicingService(emailSender, electronicInvoicing);
+    const service = new InvoicingService(emailSender, electronicInvoicing, makeEventEmitter());
 
     const dto = {
       customerId: 'customer-1',
@@ -141,7 +146,16 @@ describe('InvoicingService.createInvoice', () => {
       },
     };
 
-    const createdInvoice = { id: 'invoice-1', number: '00000001', total: new Prisma.Decimal(358.02), lines: [] };
+    const createdInvoice = {
+      id: 'invoice-1',
+      tenantId: 'tenant-1',
+      number: '00000001',
+      customerName: 'Acme',
+      status: 'ISSUED',
+      issueDate: new Date('2026-01-01'),
+      total: new Prisma.Decimal(358.02),
+      lines: [],
+    };
     const db = {
       company: {
         findUnique: jest.fn().mockResolvedValue({
@@ -208,7 +222,7 @@ describe('InvoicingService.createInvoice', () => {
         }),
       },
     };
-    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
 
     await expect(runInTenant(db, () => service.createInvoice(baseDto))).rejects.toThrow(
       BadRequestException,
@@ -219,7 +233,7 @@ describe('InvoicingService.createInvoice', () => {
 describe('InvoicingService.createCreditNote', () => {
   it('throws when the invoice does not exist', async () => {
     const db = { invoice: { findUnique: jest.fn().mockResolvedValue(null) } };
-    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
 
     await expect(
       runInTenant(db, () => service.createCreditNote({ invoiceId: 'missing', reason: 'x' })),
@@ -230,7 +244,7 @@ describe('InvoicingService.createCreditNote', () => {
     const db = {
       invoice: { findUnique: jest.fn().mockResolvedValue({ id: 'invoice-1', afipCae: null }) },
     };
-    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
 
     await expect(
       runInTenant(db, () => service.createCreditNote({ invoiceId: 'invoice-1', reason: 'x' })),
@@ -259,7 +273,7 @@ describe('InvoicingService.createCreditNote', () => {
         update: jest.fn().mockResolvedValue(createdCreditNote),
       },
     };
-    const service = new InvoicingService(makeEmailSender(), electronicInvoicing);
+    const service = new InvoicingService(makeEmailSender(), electronicInvoicing, makeEventEmitter());
 
     await runInTenant(db, () =>
       service.createCreditNote({ invoiceId: 'invoice-1', reason: 'return' }),
@@ -280,7 +294,7 @@ describe('InvoicingService.createCreditNote', () => {
 
 describe('InvoicingService.recordReceipt', () => {
   it('marks the invoice PARTIALLY_PAID when the receipt does not cover the full balance', async () => {
-    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
     const db = {
       invoice: {
         findUnique: jest.fn().mockResolvedValue({ id: 'invoice-1', balanceDue: new Prisma.Decimal(100) }),
@@ -299,7 +313,7 @@ describe('InvoicingService.recordReceipt', () => {
   });
 
   it('keeps the invoice OVERDUE (not PARTIALLY_PAID) when a partial payment still leaves it past due', async () => {
-    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
     const pastDueDate = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
     const db = {
       invoice: {
@@ -319,7 +333,7 @@ describe('InvoicingService.recordReceipt', () => {
   });
 
   it('marks the invoice PAID when the receipt covers the full balance', async () => {
-    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
     const db = {
       invoice: {
         findUnique: jest.fn().mockResolvedValue({ id: 'invoice-1', balanceDue: new Prisma.Decimal(100) }),
@@ -336,7 +350,7 @@ describe('InvoicingService.recordReceipt', () => {
   });
 
   it('rejects a receipt larger than the balance due', async () => {
-    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing());
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
     const db = {
       invoice: {
         findUnique: jest.fn().mockResolvedValue({ id: 'invoice-1', balanceDue: new Prisma.Decimal(50) }),
@@ -354,7 +368,7 @@ describe('InvoicingService.recordReceipt', () => {
 describe('InvoicingService.sendOverdueInvoiceAlert', () => {
   it('formats the invoice number/balance/due date and forwards them to the email sender', async () => {
     const emailSender = makeEmailSender();
-    const service = new InvoicingService(emailSender, makeElectronicInvoicing());
+    const service = new InvoicingService(emailSender, makeElectronicInvoicing(), makeEventEmitter());
     const invoice = {
       documentLetter: 'B' as const,
       number: '00000042',
