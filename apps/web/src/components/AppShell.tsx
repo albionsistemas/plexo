@@ -105,14 +105,69 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function OnlineColleagues({ users }: { users: PresenceUser[] }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
+
+  // Closing this if the list empties out (last colleague went offline
+  // mid-dropdown) avoids leaving an open panel with nothing in it.
+  useEffect(() => {
+    if (users.length === 0) setOpen(false);
+  }, [users.length]);
+
   if (users.length === 0) {
     return null;
   }
-  const names = users.map((u) => u.name || u.email).join(', ');
+
   return (
-    <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400" title={names}>
-      <span className="h-2 w-2 rounded-full bg-green-500" />
-      {users.length} compañero{users.length !== 1 ? 's' : ''} en línea
+    <div className="relative" ref={menuRef}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 transition hover:text-slate-800 dark:hover:text-slate-200"
+      >
+        <span className="h-2 w-2 rounded-full bg-green-500" />
+        {users.length} compañero{users.length !== 1 ? 's' : ''} en línea
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-2 shadow-xl">
+          <p className="px-4 pb-2 text-xs font-medium text-slate-500 dark:text-slate-500">
+            En línea ahora
+          </p>
+          {users.map((u) => (
+            <div key={u.userId} className="flex items-center gap-3 px-4 py-2">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-semibold text-white">
+                {initials(u.name, u.email)}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm text-slate-800 dark:text-slate-200">
+                  {u.name || u.email}
+                </p>
+                {u.name && (
+                  <p className="truncate text-xs text-slate-500">{u.email}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
