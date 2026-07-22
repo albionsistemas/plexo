@@ -49,9 +49,9 @@ export default function FinancialTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-300">Cuentas financieras</h2>
+          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Cuentas financieras</h2>
           <button
             onClick={() => setNewAccountOpen(true)}
             className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
@@ -62,11 +62,11 @@ export default function FinancialTab() {
         {accountsQuery.isLoading ? (
           <div className="flex h-24 items-center justify-center text-slate-500">Cargando...</div>
         ) : accounts.length === 0 ? (
-          <p className="text-sm text-slate-600">Sin cuentas financieras creadas</p>
+          <p className="text-sm text-slate-400 dark:text-slate-600">Sin cuentas financieras creadas</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-left text-xs text-slate-500">
+              <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs text-slate-500">
                 <th className="pb-2 pr-4">Nombre</th>
                 <th className="pb-2 pr-4">Proveedor</th>
                 <th className="pb-2 text-right">Saldo</th>
@@ -77,13 +77,13 @@ export default function FinancialTab() {
                 <tr
                   key={acc.id}
                   onClick={() => setSelectedId(acc.id)}
-                  className={`cursor-pointer border-b border-slate-800/50 hover:bg-slate-800/40 ${
-                    selectedId === acc.id ? 'bg-slate-800/60' : ''
+                  className={`cursor-pointer border-b border-slate-200/50 dark:border-slate-800/50 hover:bg-slate-200/40 dark:hover:bg-slate-800/40 ${
+                    selectedId === acc.id ? 'bg-slate-200/60 dark:bg-slate-800/60' : ''
                   }`}
                 >
-                  <td className="py-2 pr-4 text-slate-200">{acc.name}</td>
-                  <td className="py-2 pr-4 text-slate-400">{PROVIDER_LABELS[acc.provider]}</td>
-                  <td className="py-2 text-right font-medium text-slate-100">
+                  <td className="py-2 pr-4 text-slate-800 dark:text-slate-200">{acc.name}</td>
+                  <td className="py-2 pr-4 text-slate-600 dark:text-slate-400">{PROVIDER_LABELS[acc.provider]}</td>
+                  <td className="py-2 text-right font-medium text-slate-900 dark:text-slate-100">
                     ${Number(acc.currentBalance).toFixed(2)}
                   </td>
                 </tr>
@@ -94,9 +94,9 @@ export default function FinancialTab() {
       </div>
 
       {selectedId && (
-        <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-300">
+            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
               Conciliación — {summary?.accountName ?? '...'}
             </h2>
             <button
@@ -111,25 +111,25 @@ export default function FinancialTab() {
             <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
               <div>
                 <p className="text-xs text-slate-500">Saldo contable</p>
-                <p className="text-sm font-semibold text-slate-100">
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                   ${Number(summary.bookBalance).toFixed(2)}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Conciliado</p>
-                <p className="text-sm font-semibold text-emerald-400">
+                <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
                   ${Number(summary.reconciledTotal).toFixed(2)}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Sin conciliar</p>
-                <p className="text-sm font-semibold text-amber-400">
+                <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">
                   ${Number(summary.unreconciledTotal).toFixed(2)}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Pendiente de conciliación</p>
-                <p className="text-sm font-semibold text-slate-100">
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                   ${Number(summary.pendingReconciliation).toFixed(2)}
                 </p>
               </div>
@@ -140,11 +140,11 @@ export default function FinancialTab() {
           {unreconciledQuery.isLoading ? (
             <div className="flex h-20 items-center justify-center text-slate-500">Cargando...</div>
           ) : unreconciled.length === 0 ? (
-            <p className="text-sm text-slate-600">No hay movimientos pendientes de conciliación</p>
+            <p className="text-sm text-slate-400 dark:text-slate-600">No hay movimientos pendientes de conciliación</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-800 text-left text-xs text-slate-500">
+                <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs text-slate-500">
                   <th className="pb-2 pr-4">Fecha</th>
                   <th className="pb-2 pr-4">Referencia</th>
                   <th className="pb-2 pr-4 text-right">Importe</th>
@@ -153,14 +153,14 @@ export default function FinancialTab() {
               </thead>
               <tbody>
                 {unreconciled.map((tx) => (
-                  <tr key={tx.id} className="border-b border-slate-800/50">
-                    <td className="py-2 pr-4 text-slate-400">
+                  <tr key={tx.id} className="border-b border-slate-200/50 dark:border-slate-800/50">
+                    <td className="py-2 pr-4 text-slate-600 dark:text-slate-400">
                       {new Date(tx.occurredAt).toLocaleDateString('es-AR')}
                     </td>
-                    <td className="py-2 pr-4 text-slate-300">{tx.externalRef ?? '—'}</td>
+                    <td className="py-2 pr-4 text-slate-700 dark:text-slate-300">{tx.externalRef ?? '—'}</td>
                     <td
                       className={`py-2 pr-4 text-right font-medium ${
-                        Number(tx.amount) < 0 ? 'text-red-400' : 'text-slate-100'
+                        Number(tx.amount) < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'
                       }`}
                     >
                       ${Number(tx.amount).toFixed(2)}
@@ -169,7 +169,7 @@ export default function FinancialTab() {
                       <button
                         onClick={() => reconcileMutation.mutate(tx.id)}
                         disabled={reconcileMutation.isPending}
-                        className="text-xs font-medium text-indigo-400 transition hover:text-indigo-300 disabled:opacity-50"
+                        className="text-xs font-medium text-indigo-600 dark:text-indigo-400 transition hover:text-indigo-700 dark:hover:text-indigo-300 disabled:opacity-50"
                       >
                         Conciliar
                       </button>

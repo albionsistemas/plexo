@@ -32,19 +32,19 @@ export default function AccountsTab() {
         </button>
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-4">
         {isLoading ? (
           <div className="flex h-32 items-center justify-center text-slate-500">Cargando...</div>
         ) : error ? (
-          <div className="flex h-32 items-center justify-center text-red-400">
+          <div className="flex h-32 items-center justify-center text-red-600 dark:text-red-400">
             Error al cargar el plan de cuentas
           </div>
         ) : accounts?.length === 0 ? (
-          <p className="text-sm text-slate-600">Sin cuentas creadas</p>
+          <p className="text-sm text-slate-400 dark:text-slate-600">Sin cuentas creadas</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-left text-xs text-slate-500">
+              <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs text-slate-500">
                 <th className="pb-2 pr-4">Código</th>
                 <th className="pb-2 pr-4">Nombre</th>
                 <th className="pb-2">Tipo</th>
@@ -52,10 +52,10 @@ export default function AccountsTab() {
             </thead>
             <tbody>
               {accounts?.map((acc) => (
-                <tr key={acc.id} className="border-b border-slate-800/50 hover:bg-slate-800/40">
-                  <td className="py-2 pr-4 font-mono text-xs text-slate-400">{acc.code}</td>
-                  <td className="py-2 pr-4 text-slate-200">{acc.name}</td>
-                  <td className="py-2 text-slate-400">{TYPE_LABELS[acc.type]}</td>
+                <tr key={acc.id} className="border-b border-slate-200/50 dark:border-slate-800/50 hover:bg-slate-200/40 dark:hover:bg-slate-800/40">
+                  <td className="py-2 pr-4 font-mono text-xs text-slate-600 dark:text-slate-400">{acc.code}</td>
+                  <td className="py-2 pr-4 text-slate-800 dark:text-slate-200">{acc.name}</td>
+                  <td className="py-2 text-slate-600 dark:text-slate-400">{TYPE_LABELS[acc.type]}</td>
                 </tr>
               ))}
             </tbody>

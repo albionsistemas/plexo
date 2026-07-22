@@ -27,3 +27,12 @@ export const profileApi = {
   updateMe: (dto: UpdateProfileInput) => api.patch<UserProfile>('/auth/me', dto).then((r) => r.data),
   changePassword: (dto: ChangePasswordInput) => api.post('/auth/change-password', dto).then((r) => r.data),
 };
+
+export function initials(name: string | null, email: string): string {
+  const source = name?.trim() || email;
+  const [first, second] = source.split(/\s+/).filter(Boolean);
+  if (first && second) {
+    return (first.charAt(0) + second.charAt(0)).toUpperCase();
+  }
+  return source.slice(0, 2).toUpperCase();
+}

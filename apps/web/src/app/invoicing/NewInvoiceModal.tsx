@@ -12,7 +12,7 @@ interface Props {
 }
 
 const inputClass =
-  'rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500';
+  'rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500';
 
 const DOCUMENT_LETTERS = ['A', 'B', 'C', 'M'] as const;
 
@@ -123,10 +123,10 @@ export default function NewInvoiceModal({ onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-100">Nueva factura</h2>
-          <button onClick={onClose} className="text-slate-500 transition hover:text-slate-300">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Nueva factura</h2>
+          <button onClick={onClose} className="text-slate-500 transition hover:text-slate-700 dark:hover:text-slate-300">
             ✕
           </button>
         </div>
@@ -134,7 +134,7 @@ export default function NewInvoiceModal({ onClose }: Props) {
         {!ready ? (
           <div className="py-10 text-center text-slate-500">Cargando...</div>
         ) : missingData ? (
-          <p className="text-sm text-amber-400">
+          <p className="text-sm text-amber-600 dark:text-amber-400">
             Hace falta al menos un cliente (empresa con rol CUSTOMER), una sucursal (rol BRANCH) y un
             depósito antes de poder facturar.
           </p>
@@ -210,11 +210,11 @@ export default function NewInvoiceModal({ onClose }: Props) {
 
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <label className="text-sm text-slate-400">Líneas</label>
+                <label className="text-sm text-slate-600 dark:text-slate-400">Líneas</label>
                 <button
                   type="button"
                   onClick={addLine}
-                  className="text-xs text-indigo-400 hover:text-indigo-300"
+                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
                 >
                   + agregar línea
                 </button>
@@ -245,7 +245,7 @@ export default function NewInvoiceModal({ onClose }: Props) {
                     <button
                       type="button"
                       onClick={() => removeLine(index)}
-                      className="text-slate-500 hover:text-red-400"
+                      className="text-slate-500 hover:text-red-600 dark:hover:text-red-400"
                     >
                       ✕
                     </button>
@@ -254,13 +254,13 @@ export default function NewInvoiceModal({ onClose }: Props) {
               ))}
             </div>
 
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
             <div className="mt-2 flex justify-end gap-3">
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg px-4 py-2 text-sm text-slate-400 transition hover:text-slate-200"
+                className="rounded-lg px-4 py-2 text-sm text-slate-600 dark:text-slate-400 transition hover:text-slate-800 dark:hover:text-slate-200"
               >
                 Cancelar
               </button>
@@ -282,7 +282,7 @@ export default function NewInvoiceModal({ onClose }: Props) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-sm text-slate-400">{label}</label>
+      <label className="text-sm text-slate-600 dark:text-slate-400">{label}</label>
       {children}
     </div>
   );

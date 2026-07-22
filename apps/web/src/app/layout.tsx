@@ -1,16 +1,34 @@
 import './global.css';
 import { QueryProvider } from '@/providers/QueryProvider';
+import { ThemeProvider } from '@/providers/ThemeProvider';
 
 export const metadata = {
   title: 'PLEXO',
   description: 'PLEXO — ERP SaaS',
 };
 
+// Applied before hydration so the correct theme paints on the first frame
+// instead of flashing dark (the default) and then switching to light.
+const NO_FLASH_THEME_SCRIPT = `
+(function () {
+  try {
+    var stored = localStorage.getItem('plexo-theme');
+    var theme = stored || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    if (theme === 'dark') document.documentElement.classList.add('dark');
+  } catch (e) {}
+})();
+`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: NO_FLASH_THEME_SCRIPT }} />
+      </head>
       <body>
-        <QueryProvider>{children}</QueryProvider>
+        <ThemeProvider>
+          <QueryProvider>{children}</QueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

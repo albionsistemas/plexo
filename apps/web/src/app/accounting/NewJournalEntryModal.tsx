@@ -16,7 +16,7 @@ interface LineForm {
 }
 
 const inputClass =
-  'rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500';
+  'rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500';
 
 export default function NewJournalEntryModal({ onClose }: Props) {
   const queryClient = useQueryClient();
@@ -94,17 +94,17 @@ export default function NewJournalEntryModal({ onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+      <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-100">Nuevo asiento manual</h2>
-          <button onClick={onClose} className="text-slate-500 transition hover:text-slate-300">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Nuevo asiento manual</h2>
+          <button onClick={onClose} className="text-slate-500 transition hover:text-slate-700 dark:hover:text-slate-300">
             ✕
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
-            <label className="text-sm text-slate-400">Descripción</label>
+            <label className="text-sm text-slate-600 dark:text-slate-400">Descripción</label>
             <input
               className={inputClass}
               value={description}
@@ -115,11 +115,11 @@ export default function NewJournalEntryModal({ onClose }: Props) {
 
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm text-slate-400">Líneas</label>
+              <label className="text-sm text-slate-600 dark:text-slate-400">Líneas</label>
               <button
                 type="button"
                 onClick={addLine}
-                className="text-xs text-indigo-400 hover:text-indigo-300"
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
               >
                 + agregar línea
               </button>
@@ -160,7 +160,7 @@ export default function NewJournalEntryModal({ onClose }: Props) {
                   <button
                     type="button"
                     onClick={() => removeLine(index)}
-                    className="text-slate-500 hover:text-red-400"
+                    className="text-slate-500 hover:text-red-600 dark:hover:text-red-400"
                   >
                     ✕
                   </button>
@@ -172,21 +172,21 @@ export default function NewJournalEntryModal({ onClose }: Props) {
           <div
             className={`rounded-lg border p-3 text-sm ${
               isBalanced
-                ? 'border-green-800 bg-green-950 text-green-300'
-                : 'border-slate-700 bg-slate-800 text-slate-400'
+                ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300'
+                : 'border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
             }`}
           >
             Debe: ${debitTotal.toFixed(2)} · Haber: ${creditTotal.toFixed(2)}
             {isBalanced ? ' · Balanceado ✓' : ''}
           </div>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
           <div className="mt-2 flex justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm text-slate-400 transition hover:text-slate-200"
+              className="rounded-lg px-4 py-2 text-sm text-slate-600 dark:text-slate-400 transition hover:text-slate-800 dark:hover:text-slate-200"
             >
               Cancelar
             </button>

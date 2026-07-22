@@ -89,7 +89,7 @@ export default function InventoryPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">Inventario</h1>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Inventario</h1>
           <p className="mt-1 text-xs text-slate-500">
             {rows.length} variante{rows.length !== 1 ? 's' : ''} · {warehouses.length} depósito
             {warehouses.length !== 1 ? 's' : ''}
@@ -108,12 +108,12 @@ export default function InventoryPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar por artículo o SKU..."
-          className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500 sm:max-w-sm"
+          className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500 sm:max-w-sm"
         />
         <select
           value={categoryId}
           onChange={(e) => setCategoryId(e.target.value)}
-          className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500"
+          className="rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500"
         >
           <option value="">Todas las categorías</option>
           {categories.map((c) => (
@@ -124,24 +124,24 @@ export default function InventoryPage() {
         </select>
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-4">
         {isLoading ? (
           <div className="flex h-40 items-center justify-center text-slate-500">
             Cargando inventario...
           </div>
         ) : articlesQuery.error ? (
-          <div className="flex h-40 items-center justify-center text-red-400">
+          <div className="flex h-40 items-center justify-center text-red-600 dark:text-red-400">
             Error al cargar el inventario
           </div>
         ) : rows.length === 0 ? (
-          <div className="flex h-40 items-center justify-center text-slate-600">
+          <div className="flex h-40 items-center justify-center text-slate-400 dark:text-slate-600">
             Sin artículos que coincidan con la búsqueda
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-800 text-left text-xs text-slate-500">
+                <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs text-slate-500">
                   <th className="pb-2 pr-4">Artículo</th>
                   <th className="pb-2 pr-4">SKU</th>
                   <th className="pb-2 pr-4">Categoría</th>
@@ -158,25 +158,25 @@ export default function InventoryPage() {
                 {rows.map((row) => (
                   <tr
                     key={row.variantId}
-                    className="border-b border-slate-800/50 hover:bg-slate-800/40"
+                    className="border-b border-slate-200/50 dark:border-slate-800/50 hover:bg-slate-200/40 dark:hover:bg-slate-800/40"
                   >
                     <td className="py-2 pr-4">
-                      <p className="text-slate-200">{row.articleName}</p>
+                      <p className="text-slate-800 dark:text-slate-200">{row.articleName}</p>
                       {row.variantLabel && (
                         <p className="text-xs text-slate-500">{row.variantLabel}</p>
                       )}
                     </td>
-                    <td className="py-2 pr-4 font-mono text-xs text-slate-400">{row.sku}</td>
-                    <td className="py-2 pr-4 text-slate-400">{row.categoryName ?? '—'}</td>
-                    <td className="py-2 pr-4 text-right text-slate-200">
+                    <td className="py-2 pr-4 font-mono text-xs text-slate-600 dark:text-slate-400">{row.sku}</td>
+                    <td className="py-2 pr-4 text-slate-600 dark:text-slate-400">{row.categoryName ?? '—'}</td>
+                    <td className="py-2 pr-4 text-right text-slate-800 dark:text-slate-200">
                       ${row.unitPrice.toFixed(2)}
                     </td>
                     {warehouses.map((w) => (
-                      <td key={w.id} className="py-2 pr-4 text-right text-slate-300">
+                      <td key={w.id} className="py-2 pr-4 text-right text-slate-700 dark:text-slate-300">
                         {row.stockByWarehouseId[w.id] ?? 0}
                       </td>
                     ))}
-                    <td className="py-2 pr-4 text-right font-semibold text-indigo-400">
+                    <td className="py-2 pr-4 text-right font-semibold text-indigo-600 dark:text-indigo-400">
                       {row.totalStock}
                     </td>
                   </tr>

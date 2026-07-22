@@ -10,7 +10,7 @@ interface Props {
 }
 
 const inputClass =
-  'rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500';
+  'rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500';
 
 const CALC_TYPE_OPTIONS: { value: TaxCalculationType; label: string }[] = [
   { value: 'PERCENTAGE', label: 'Porcentual' },
@@ -62,17 +62,17 @@ export default function NewTaxDefinitionModal({ onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+      <div className="w-full max-w-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-100">Nuevo impuesto</h2>
-          <button onClick={onClose} className="text-slate-500 transition hover:text-slate-300">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Nuevo impuesto</h2>
+          <button onClick={onClose} className="text-slate-500 transition hover:text-slate-700 dark:hover:text-slate-300">
             ✕
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
-            <label className="text-sm text-slate-400">Código</label>
+            <label className="text-sm text-slate-600 dark:text-slate-400">Código</label>
             <input
               className={inputClass}
               value={code}
@@ -81,7 +81,7 @@ export default function NewTaxDefinitionModal({ onClose }: Props) {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-sm text-slate-400">Nombre</label>
+            <label className="text-sm text-slate-600 dark:text-slate-400">Nombre</label>
             <input
               className={inputClass}
               value={name}
@@ -90,7 +90,7 @@ export default function NewTaxDefinitionModal({ onClose }: Props) {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-sm text-slate-400">Tipo de cálculo</label>
+            <label className="text-sm text-slate-600 dark:text-slate-400">Tipo de cálculo</label>
             <select
               className={inputClass}
               value={calculationType}
@@ -105,7 +105,7 @@ export default function NewTaxDefinitionModal({ onClose }: Props) {
           </div>
           {calculationType === 'PERCENTAGE' && (
             <div className="flex flex-col gap-1">
-              <label className="text-sm text-slate-400">Tasa (%)</label>
+              <label className="text-sm text-slate-600 dark:text-slate-400">Tasa (%)</label>
               <input
                 className={inputClass}
                 type="number"
@@ -118,7 +118,7 @@ export default function NewTaxDefinitionModal({ onClose }: Props) {
           )}
           {calculationType === 'FIXED_AMOUNT' && (
             <div className="flex flex-col gap-1">
-              <label className="text-sm text-slate-400">Monto fijo</label>
+              <label className="text-sm text-slate-600 dark:text-slate-400">Monto fijo</label>
               <input
                 className={inputClass}
                 type="number"
@@ -131,7 +131,7 @@ export default function NewTaxDefinitionModal({ onClose }: Props) {
           )}
           {calculationType === 'FORMULA' && (
             <div className="flex flex-col gap-1">
-              <label className="text-sm text-slate-400">Fórmula</label>
+              <label className="text-sm text-slate-600 dark:text-slate-400">Fórmula</label>
               <input
                 className={inputClass}
                 value={formula}
@@ -140,21 +140,21 @@ export default function NewTaxDefinitionModal({ onClose }: Props) {
               />
             </div>
           )}
-          <label className="flex items-center gap-2 text-sm text-slate-400">
+          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
             <input
               type="checkbox"
               checked={managedByAccountant}
               onChange={(e) => setManagedByAccountant(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-700 bg-slate-800"
+              className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800"
             />
             Delegado al contador (puede revisar la tasa sin ser OWNER/ADMIN)
           </label>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           <div className="mt-2 flex justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm text-slate-400 transition hover:text-slate-200"
+              className="rounded-lg px-4 py-2 text-sm text-slate-600 dark:text-slate-400 transition hover:text-slate-800 dark:hover:text-slate-200"
             >
               Cancelar
             </button>

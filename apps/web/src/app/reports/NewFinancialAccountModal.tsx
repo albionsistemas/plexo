@@ -10,7 +10,7 @@ interface Props {
 }
 
 const inputClass =
-  'rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500';
+  'rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500';
 
 const PROVIDER_OPTIONS: { value: FinancialAccountProvider; label: string }[] = [
   { value: 'BANK', label: 'Banco' },
@@ -55,17 +55,17 @@ export default function NewFinancialAccountModal({ onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+      <div className="w-full max-w-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-100">Nueva cuenta financiera</h2>
-          <button onClick={onClose} className="text-slate-500 transition hover:text-slate-300">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Nueva cuenta financiera</h2>
+          <button onClick={onClose} className="text-slate-500 transition hover:text-slate-700 dark:hover:text-slate-300">
             ✕
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
-            <label className="text-sm text-slate-400">Nombre</label>
+            <label className="text-sm text-slate-600 dark:text-slate-400">Nombre</label>
             <input
               className={inputClass}
               value={name}
@@ -74,7 +74,7 @@ export default function NewFinancialAccountModal({ onClose }: Props) {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-sm text-slate-400">Proveedor</label>
+            <label className="text-sm text-slate-600 dark:text-slate-400">Proveedor</label>
             <select
               className={inputClass}
               value={provider}
@@ -88,7 +88,7 @@ export default function NewFinancialAccountModal({ onClose }: Props) {
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-sm text-slate-400">Saldo inicial (opcional)</label>
+            <label className="text-sm text-slate-600 dark:text-slate-400">Saldo inicial (opcional)</label>
             <input
               className={inputClass}
               type="number"
@@ -98,12 +98,12 @@ export default function NewFinancialAccountModal({ onClose }: Props) {
               placeholder="0.00"
             />
           </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           <div className="mt-2 flex justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm text-slate-400 transition hover:text-slate-200"
+              className="rounded-lg px-4 py-2 text-sm text-slate-600 dark:text-slate-400 transition hover:text-slate-800 dark:hover:text-slate-200"
             >
               Cancelar
             </button>

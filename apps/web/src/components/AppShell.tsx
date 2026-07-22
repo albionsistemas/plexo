@@ -1,9 +1,12 @@
 'use client';
 
+import { initials, profileApi } from '@/lib/profile';
 import { disconnectSocket, getSocket } from '@/lib/socket';
+import { useTheme } from '@/providers/ThemeProvider';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Tablero' },
@@ -14,7 +17,6 @@ const NAV_LINKS = [
   { href: '/accounting', label: 'Contabilidad' },
   { href: '/taxes', label: 'Impuestos' },
   { href: '/reports', label: 'Reportes' },
-  { href: '/profile', label: 'Perfil' },
 ];
 
 interface PresenceUser {
@@ -70,18 +72,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [router]);
 
-  function handleLogout() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('tenantId');
-    disconnectSocket();
-    router.replace('/login');
-  }
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="flex items-center justify-between border-b border-slate-800 px-6 py-3">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+      <header className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-6 py-3">
         <div className="flex items-center gap-6">
-          <span className="text-lg font-bold tracking-tight text-indigo-400">PLEXO</span>
+          <span className="text-lg font-bold tracking-tight text-indigo-600 dark:text-indigo-400">PLEXO</span>
           <nav className="flex items-center gap-4">
             {NAV_LINKS.map((link) => (
               <Link
@@ -89,8 +84,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 href={link.href}
                 className={`text-sm transition ${
                   pathname?.startsWith(link.href)
-                    ? 'font-medium text-slate-100'
-                    : 'text-slate-400 hover:text-slate-100'
+                    ? 'font-medium text-slate-900 dark:text-slate-100'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                 }`}
               >
                 {link.label}
@@ -100,12 +95,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <div className="flex items-center gap-5">
           <OnlineColleagues users={online} />
-          <button
-            onClick={handleLogout}
-            className="text-sm text-slate-400 hover:text-slate-100 transition"
-          >
-            Cerrar sesión
-          </button>
+          <UserMenu />
         </div>
       </header>
       <main className="p-6">{children}</main>
@@ -119,9 +109,124 @@ function OnlineColleagues({ users }: { users: PresenceUser[] }) {
   }
   const names = users.map((u) => u.name || u.email).join(', ');
   return (
-    <div className="flex items-center gap-2 text-xs text-slate-400" title={names}>
+    <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400" title={names}>
       <span className="h-2 w-2 rounded-full bg-green-500" />
       {users.length} compañero{users.length !== 1 ? 's' : ''} en línea
+    </div>
+  );
+}
+
+function UserMenu() {
+  const router = useRouter();
+  const { theme, setTheme } = useTheme();
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const { data: profile } = useQuery({
+    queryKey: ['profile-me'],
+    queryFn: profileApi.getMe,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
+
+  function handleLogout() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('tenantId');
+    disconnectSocket();
+    router.replace('/login');
+  }
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-9 w-9 items-center justify-center rounded-full ring-2 ring-transparent transition hover:ring-indigo-500/50"
+        aria-label="Menú de usuario"
+      >
+        {profile?.avatarUrl ? (
+          <img
+            src={profile.avatarUrl}
+            alt=""
+            className="h-9 w-9 rounded-full object-cover"
+          />
+        ) : (
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white">
+            {profile ? initials(profile.name, profile.email) : '·'}
+          </div>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-2 shadow-xl">
+          {profile && (
+            <div className="border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+              <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                {profile.name || profile.email}
+              </p>
+              <p className="truncate text-xs text-slate-600 dark:text-slate-400">{profile.email}</p>
+            </div>
+          )}
+
+          <Link
+            href="/profile"
+            onClick={() => setOpen(false)}
+            className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            Perfil
+          </Link>
+
+          <div className="px-4 py-2">
+            <p className="mb-1.5 text-xs text-slate-600 dark:text-slate-400">Apariencia</p>
+            <div className="flex rounded-lg border border-slate-200 dark:border-slate-800 p-0.5">
+              <button
+                onClick={() => setTheme('light')}
+                className={`flex-1 rounded-md px-2 py-1 text-xs transition ${
+                  theme === 'light'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                }`}
+              >
+                Claro
+              </button>
+              <button
+                onClick={() => setTheme('dark')}
+                className={`flex-1 rounded-md px-2 py-1 text-xs transition ${
+                  theme === 'dark'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                }`}
+              >
+                Oscuro
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-1 border-t border-slate-200 dark:border-slate-800 pt-1">
+            <button
+              onClick={handleLogout}
+              className="block w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Cerrar sesión
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

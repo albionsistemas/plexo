@@ -11,7 +11,7 @@ interface Props {
 }
 
 const inputClass =
-  'rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500';
+  'rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500';
 
 export default function NewFinancialTransactionModal({ financialAccountId, onClose }: Props) {
   const queryClient = useQueryClient();
@@ -52,10 +52,10 @@ export default function NewFinancialTransactionModal({ financialAccountId, onClo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+      <div className="w-full max-w-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-100">Nuevo movimiento</h2>
-          <button onClick={onClose} className="text-slate-500 transition hover:text-slate-300">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Nuevo movimiento</h2>
+          <button onClick={onClose} className="text-slate-500 transition hover:text-slate-700 dark:hover:text-slate-300">
             ✕
           </button>
         </div>
@@ -65,7 +65,7 @@ export default function NewFinancialTransactionModal({ financialAccountId, onClo
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
-            <label className="text-sm text-slate-400">Importe</label>
+            <label className="text-sm text-slate-600 dark:text-slate-400">Importe</label>
             <input
               className={inputClass}
               type="number"
@@ -76,7 +76,7 @@ export default function NewFinancialTransactionModal({ financialAccountId, onClo
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-sm text-slate-400">Fecha (opcional, por defecto ahora)</label>
+            <label className="text-sm text-slate-600 dark:text-slate-400">Fecha (opcional, por defecto ahora)</label>
             <input
               className={inputClass}
               type="date"
@@ -85,7 +85,7 @@ export default function NewFinancialTransactionModal({ financialAccountId, onClo
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-sm text-slate-400">Referencia externa (opcional)</label>
+            <label className="text-sm text-slate-600 dark:text-slate-400">Referencia externa (opcional)</label>
             <input
               className={inputClass}
               value={externalRef}
@@ -93,12 +93,12 @@ export default function NewFinancialTransactionModal({ financialAccountId, onClo
               placeholder="N° de comprobante bancario"
             />
           </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           <div className="mt-2 flex justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm text-slate-400 transition hover:text-slate-200"
+              className="rounded-lg px-4 py-2 text-sm text-slate-600 dark:text-slate-400 transition hover:text-slate-800 dark:hover:text-slate-200"
             >
               Cancelar
             </button>

@@ -18,7 +18,7 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const inputClass =
-  'rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500';
+  'rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500';
 
 export default function CompanyDetailModal({ company, onClose, onEdit }: Props) {
   const canHaveContacts = company.roles.some(
@@ -32,10 +32,10 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+      <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
         <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-100">{company.name}</h2>
-          <button onClick={onClose} className="text-slate-500 transition hover:text-slate-300">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{company.name}</h2>
+          <button onClick={onClose} className="text-slate-500 transition hover:text-slate-700 dark:hover:text-slate-300">
             ✕
           </button>
         </div>
@@ -43,7 +43,7 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
           {company.roles.map((r) => (
             <span
               key={r.role}
-              className="rounded bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-300"
+              className="rounded bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-700 dark:text-slate-300"
             >
               {ROLE_LABELS[r.role] ?? r.role}
             </span>
@@ -53,46 +53,46 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
         <div className="mb-6 grid grid-cols-2 gap-4 text-sm">
           <div>
             <p className="text-xs text-slate-500">CUIT / Tax ID</p>
-            <p className="text-slate-300">{company.taxId ?? '—'}</p>
+            <p className="text-slate-700 dark:text-slate-300">{company.taxId ?? '—'}</p>
           </div>
           <div>
             <p className="text-xs text-slate-500">Email</p>
-            <p className="text-slate-300">{company.email ?? '—'}</p>
+            <p className="text-slate-700 dark:text-slate-300">{company.email ?? '—'}</p>
           </div>
           {company.roles.some((r) => r.role === 'CUSTOMER') && (
             <div>
               <p className="text-xs text-slate-500">Límite de crédito</p>
-              <p className="text-slate-300">${Number(company.creditLimit).toFixed(2)}</p>
+              <p className="text-slate-700 dark:text-slate-300">${Number(company.creditLimit).toFixed(2)}</p>
             </div>
           )}
           {company.roles.some((r) => r.role === 'BRANCH') && (
             <div>
               <p className="text-xs text-slate-500">Punto de venta</p>
-              <p className="text-slate-300">{company.pointOfSaleNumber ?? '—'}</p>
+              <p className="text-slate-700 dark:text-slate-300">{company.pointOfSaleNumber ?? '—'}</p>
             </div>
           )}
         </div>
 
         <button
           onClick={onEdit}
-          className="mb-6 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:bg-slate-800"
+          className="mb-6 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800"
         >
           Editar empresa
         </button>
 
         {canHaveContacts && (
           <>
-            <h3 className="mb-3 text-sm font-medium text-slate-400">Contactos</h3>
+            <h3 className="mb-3 text-sm font-medium text-slate-600 dark:text-slate-400">Contactos</h3>
             <div className="mb-4 flex flex-col gap-2">
               {(detail?.people ?? []).length === 0 ? (
-                <p className="text-sm text-slate-600">Sin contactos cargados</p>
+                <p className="text-sm text-slate-400 dark:text-slate-600">Sin contactos cargados</p>
               ) : (
                 detail?.people.map((person) => (
                   <div
                     key={person.id}
-                    className="rounded-lg border border-slate-800 bg-slate-800/50 p-3 text-sm"
+                    className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-200/50 dark:bg-slate-800/50 p-3 text-sm"
                   >
-                    <p className="text-slate-200">
+                    <p className="text-slate-800 dark:text-slate-200">
                       {person.firstName} {person.lastName}
                       {person.nickname && (
                         <span className="text-slate-500"> ({person.nickname})</span>
@@ -158,7 +158,7 @@ function NewPersonForm({ companyId }: { companyId: string }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-2 border-t border-slate-800 pt-4">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
       <p className="text-xs text-slate-500">Agregar contacto</p>
       <div className="grid grid-cols-2 gap-2">
         <input
@@ -192,7 +192,7 @@ function NewPersonForm({ companyId }: { companyId: string }) {
           onChange={(e) => setWhatsapp(e.target.value)}
         />
       </div>
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
       <button
         type="submit"
         disabled={mutation.isPending}
