@@ -27,6 +27,11 @@ export class AuthController {
     return this.authService.updateProfile(user.sub, dto);
   }
 
+  @Get('me/activity')
+  getMyActivity(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.getMyActivity(user.sub);
+  }
+
   @Post('change-password')
   changePassword(@CurrentUser() user: AuthenticatedUser, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(user.sub, dto);

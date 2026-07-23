@@ -1,7 +1,12 @@
+import type { ReminderTone } from '@plexo/database';
+
 export interface InvoiceEmailPayload {
   to: string;
   invoiceNumber: string;
   total: string;
+  /** Per-tenant custom sender (see resolveEmailFrom in @plexo/tenant-settings)
+   * - undefined means "use this sender's own default (global EMAIL_FROM)". */
+  from?: string;
 }
 
 export interface OverdueAlertEmailPayload {
@@ -9,6 +14,14 @@ export interface OverdueAlertEmailPayload {
   invoiceNumber: string;
   balanceDue: string;
   dueDate: string;
+  /** Per-tenant custom sender, same meaning as InvoiceEmailPayload.from. */
+  from?: string;
+  /** Which of the 3 preset wordings to use - undefined defaults to NEUTRAL,
+   * see buildOverdueEmailCopy in overdue-email-templates.ts. */
+  tone?: ReminderTone;
+  /** Internal mailbox to CC on the reminder (e.g. cobranzas@empresa.com) -
+   * works with the shared sender, no custom domain needed. */
+  cc?: string;
 }
 
 /**

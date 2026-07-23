@@ -1,5 +1,6 @@
 'use client';
 
+import { activityLogApi } from '@/lib/activityLog';
 import { initials, profileApi, type UserProfile } from '@/lib/profile';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
@@ -33,7 +34,48 @@ export default function ProfilePage() {
             onSaved={() => void queryClient.invalidateQueries({ queryKey: ['profile-me'] })}
           />
           <PasswordCard />
+          <ActivityCard />
         </>
+      )}
+    </div>
+  );
+}
+
+/** Formats a small set of relative-time buckets ("hace 2 horas") without
+ * pulling in a date library for a handful of cases. */
+function formatRelative(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return 'recién';
+  if (minutes < 60) return `hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `hace ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `hace ${days} día${days === 1 ? '' : 's'}`;
+}
+
+function ActivityCard() {
+  const { data: entries, isLoading } = useQuery({
+    queryKey: ['profile-activity'],
+    queryFn: activityLogApi.getMine,
+  });
+
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6">
+      <h2 className="mb-4 text-sm font-medium text-slate-600 dark:text-slate-400">Últimas acciones</h2>
+      {isLoading || !entries ? (
+        <p className="text-sm text-slate-500">Cargando...</p>
+      ) : entries.length === 0 ? (
+        <p className="text-sm text-slate-500">Todavía no hay actividad registrada.</p>
+      ) : (
+        <ul className="flex flex-col gap-2 text-sm">
+          {entries.map((entry) => (
+            <li key={entry.id} className="flex items-center justify-between gap-4">
+              <span className="text-slate-700 dark:text-slate-300">{entry.action}</span>
+              <span className="whitespace-nowrap text-xs text-slate-500">{formatRelative(entry.occurredAt)}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AccountingModule } from '@plexo/accounting';
+import { ActivityLogModule } from '@plexo/activity-log';
 import { JwtAuthGuard, ModuleAccessGuard, RolesGuard } from '@plexo/auth';
 import { CompaniesModule } from '@plexo/companies';
 import { DatabaseModule } from '@plexo/database';
@@ -40,6 +41,7 @@ import { SchedulerModule } from './scheduler/scheduler.module.js';
     DashboardModule,
     SchedulerModule,
     TenantSettingsModule,
+    ActivityLogModule,
   ],
   controllers: [AppController],
   providers: [

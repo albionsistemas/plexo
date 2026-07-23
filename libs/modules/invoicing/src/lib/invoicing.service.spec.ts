@@ -390,13 +390,38 @@ describe('InvoicingService.sendOverdueInvoiceAlert', () => {
       dueDate: new Date('2026-07-01T00:00:00.000Z'),
     };
 
-    await service.sendOverdueInvoiceAlert(invoice, 'cliente@demo.com');
+    await service.sendOverdueInvoiceAlert(invoice, 'cliente@demo.com', {
+      from: undefined,
+      tone: 'NEUTRAL',
+    });
 
     expect(emailSender.sendOverdueAlertEmail).toHaveBeenCalledWith({
       to: 'cliente@demo.com',
       invoiceNumber: 'B-00000042',
       balanceDue: '1210.50',
       dueDate: invoice.dueDate.toLocaleDateString('es-AR'),
+      from: undefined,
+      tone: 'NEUTRAL',
     });
+  });
+
+  it('forwards the CC mailbox when the sender identity includes one', async () => {
+    const emailSender = makeEmailSender();
+    const service = new InvoicingService(emailSender, makeElectronicInvoicing(), makeEventEmitter());
+    const invoice = {
+      documentLetter: 'B' as const,
+      number: '00000042',
+      balanceDue: new Prisma.Decimal(1210.5),
+      dueDate: new Date('2026-07-01T00:00:00.000Z'),
+    };
+
+    await service.sendOverdueInvoiceAlert(invoice, 'cliente@demo.com', {
+      tone: 'NEUTRAL',
+      cc: 'cobranzas@acme.com',
+    });
+
+    expect(emailSender.sendOverdueAlertEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ cc: 'cobranzas@acme.com' }),
+    );
   });
 });

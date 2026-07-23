@@ -3,7 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { getTenantDb, PrismaService, withTenantContext } from '@plexo/database';
 import { InvoicingService } from '@plexo/invoicing';
 import { ReceivablesService } from '@plexo/receivables';
-import { TenantSettingsService } from '@plexo/tenant-settings';
+import { resolveEmailFrom, TenantSettingsService } from '@plexo/tenant-settings';
 
 export interface ReminderSweepResult {
   becomingOverdue: number;
@@ -68,13 +68,26 @@ export class ReceivablesSchedulerService {
    * controller already runs inside). */
   async runReminderSweepForCurrentTenant(): Promise<ReminderSweepResult> {
     const settings = await this.tenantSettingsService.getSettings();
+    // Resolved once per sweep, not per invoice - see resolveEmailFrom in
+    // @plexo/tenant-settings for the fallback rule (undefined -> the
+    // sender's own global default) that keeps a half-verified custom
+    // domain from breaking every send in this loop.
+    const senderIdentity = {
+      from: resolveEmailFrom(settings),
+      tone: settings.reminderTone,
+      cc: settings.reminderCcEmail ?? undefined,
+    };
     const becomingOverdue = await this.receivablesService.listInvoicesBecomingOverdue();
     await this.receivablesService.refreshOverdueStatuses();
 
     const remindedIds: string[] = [];
     for (const invoice of becomingOverdue) {
       if (invoice.customer.email) {
-        await this.invoicingService.sendOverdueInvoiceAlert(invoice, invoice.customer.email);
+        await this.invoicingService.sendOverdueInvoiceAlert(
+          invoice,
+          invoice.customer.email,
+          senderIdentity,
+        );
       }
       remindedIds.push(invoice.id);
     }
@@ -86,7 +99,11 @@ export class ReceivablesSchedulerService {
       );
       for (const invoice of recurring) {
         if (invoice.customer.email) {
-          await this.invoicingService.sendOverdueInvoiceAlert(invoice, invoice.customer.email);
+          await this.invoicingService.sendOverdueInvoiceAlert(
+            invoice,
+            invoice.customer.email,
+            senderIdentity,
+          );
         }
         remindedIds.push(invoice.id);
       }

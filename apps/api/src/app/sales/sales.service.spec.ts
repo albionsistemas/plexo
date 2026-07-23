@@ -2,10 +2,29 @@ import type { AccountingService } from '@plexo/accounting';
 import { Prisma, tenantContextStorage } from '@plexo/database';
 import type { InventoryService } from '@plexo/inventory';
 import type { InvoicingService } from '@plexo/invoicing';
+import type { TenantSettingsService } from '@plexo/tenant-settings';
 import { SalesService } from './sales.service.js';
 
 function runInTenant<T>(db: Record<string, unknown>, fn: () => T): T {
   return tenantContextStorage.run({ tenantId: 'tenant-1', userId: 'user-1', tx: db as never }, fn);
+}
+
+/** Default settings (SHARED mode) resolve to `from: undefined` via
+ * resolveEmailFrom - matches the current global-sender behavior tests
+ * expect unless a test overrides it. */
+function makeTenantSettingsService(): TenantSettingsService {
+  return {
+    getSettings: jest.fn().mockResolvedValue({
+      arReminderIntervalDays: null,
+      emailSenderMode: 'SHARED',
+      emailFromName: null,
+      emailFromLocalPart: null,
+      emailCustomDomain: null,
+      domainStatus: null,
+      reminderTone: 'NEUTRAL',
+      reminderCcEmail: null,
+    }),
+  } as unknown as TenantSettingsService;
 }
 
 function makeBranchDb(branch: unknown = defaultBranch()) {
@@ -44,7 +63,7 @@ describe('SalesService.createSale', () => {
       postInvoiceJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-1', lines: [] }),
     } as unknown as AccountingService;
 
-    const service = new SalesService(invoicingService, inventoryService, accountingService);
+    const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
     const dto = {
       customerId: 'customer-1',
       warehouseId: 'warehouse-1',
@@ -59,15 +78,18 @@ describe('SalesService.createSale', () => {
 
     const result = await runInTenant(makeBranchDb(), () => service.createSale(dto));
 
-    expect(invoicingService.createInvoice).toHaveBeenCalledWith({
-      customerId: dto.customerId,
-      documentLetter: dto.documentLetter,
-      pointOfSale: '0001',
-      currencyId: dto.currencyId,
-      globalDiscountPercent: undefined,
-      dueDate: undefined,
-      lines: dto.lines,
-    });
+    expect(invoicingService.createInvoice).toHaveBeenCalledWith(
+      {
+        customerId: dto.customerId,
+        documentLetter: dto.documentLetter,
+        pointOfSale: '0001',
+        currencyId: dto.currencyId,
+        globalDiscountPercent: undefined,
+        dueDate: undefined,
+        lines: dto.lines,
+      },
+      undefined,
+    );
     expect(accountingService.postInvoiceJournalEntry).toHaveBeenCalledWith({
       invoiceId: 'invoice-1',
       subtotal: invoice.subtotal,
@@ -96,11 +118,58 @@ describe('SalesService.createSale', () => {
     expect(result).toBe(invoice);
   });
 
+  it('passes the resolved custom sender through to createInvoice when the tenant has a verified domain', async () => {
+    const invoice = {
+      id: 'invoice-1',
+      subtotal: new Prisma.Decimal(100),
+      taxTotal: new Prisma.Decimal(21),
+      total: new Prisma.Decimal(121),
+      issueDate: new Date('2026-01-01'),
+      lines: [],
+    };
+    const invoicingService = {
+      createInvoice: jest.fn().mockResolvedValue(invoice),
+    } as unknown as InvoicingService;
+    const inventoryService = { recordMovement: jest.fn().mockResolvedValue({}) } as unknown as InventoryService;
+    const accountingService = {
+      postInvoiceJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-1', lines: [] }),
+    } as unknown as AccountingService;
+    const tenantSettingsService = {
+      getSettings: jest.fn().mockResolvedValue({
+        arReminderIntervalDays: null,
+        emailSenderMode: 'CUSTOM_DOMAIN',
+        emailFromName: 'Facturación Acme',
+        emailFromLocalPart: 'facturas',
+        emailCustomDomain: 'acme.com',
+        domainStatus: 'verified',
+        reminderTone: 'NEUTRAL',
+      }),
+    } as unknown as TenantSettingsService;
+
+    const service = new SalesService(invoicingService, inventoryService, accountingService, tenantSettingsService);
+
+    await runInTenant(makeBranchDb(), () =>
+      service.createSale({
+        customerId: 'customer-1',
+        warehouseId: 'warehouse-1',
+        documentLetter: 'B',
+        branchId: 'branch-1',
+        currencyId: 'currency-1',
+        lines: [],
+      }),
+    );
+
+    expect(invoicingService.createInvoice).toHaveBeenCalledWith(
+      expect.anything(),
+      'Facturación Acme <facturas@acme.com>',
+    );
+  });
+
   it('rejects when the referenced company is not flagged as a BRANCH', async () => {
     const invoicingService = { createInvoice: jest.fn() } as unknown as InvoicingService;
     const inventoryService = {} as unknown as InventoryService;
     const accountingService = {} as unknown as AccountingService;
-    const service = new SalesService(invoicingService, inventoryService, accountingService);
+    const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
     const db = makeBranchDb({
       id: 'branch-1',
       active: true,
@@ -127,7 +196,7 @@ describe('SalesService.createSale', () => {
     const invoicingService = { createInvoice: jest.fn() } as unknown as InvoicingService;
     const inventoryService = {} as unknown as InventoryService;
     const accountingService = {} as unknown as AccountingService;
-    const service = new SalesService(invoicingService, inventoryService, accountingService);
+    const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
     const db = makeBranchDb({
       id: 'branch-1',
       active: false,
@@ -170,7 +239,7 @@ describe('SalesService.createSale', () => {
       postInvoiceJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-1', lines: [] }),
     } as unknown as AccountingService;
 
-    const service = new SalesService(invoicingService, inventoryService, accountingService);
+    const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
 
     await expect(
       runInTenant(makeBranchDb(), () =>
@@ -206,7 +275,7 @@ describe('SalesService.createSale', () => {
       postInvoiceJournalEntry: jest.fn().mockRejectedValue(failure),
     } as unknown as AccountingService;
 
-    const service = new SalesService(invoicingService, inventoryService, accountingService);
+    const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
 
     await expect(
       runInTenant(makeBranchDb(), () =>
@@ -250,7 +319,7 @@ describe('SalesService.voidSale', () => {
     ];
     const db = { stockMovement: { findMany: jest.fn().mockResolvedValue(saleMovements) } };
 
-    const service = new SalesService(invoicingService, inventoryService, accountingService);
+    const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
     const dto = { invoiceId: 'invoice-1', reason: 'Devolución de mercadería' };
 
     const result = await runInTenant(db, () => service.voidSale(dto));
@@ -292,7 +361,7 @@ describe('SalesService.voidSale', () => {
       reverseInvoiceJournalEntry: jest.fn().mockRejectedValue(failure),
     } as unknown as AccountingService;
 
-    const service = new SalesService(invoicingService, inventoryService, accountingService);
+    const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
 
     await expect(
       service.voidSale({ invoiceId: 'invoice-1', reason: 'Devolución de mercadería' }),

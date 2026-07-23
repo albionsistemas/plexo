@@ -31,6 +31,9 @@
       "path": "../../libs/shared/types/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/modules/tenant-settings/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/modules/taxes/tsconfig.lib.json"
     },
     {
@@ -61,10 +64,10 @@
       "path": "../../libs/shared/auth/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/modules/accounting/tsconfig.lib.json"
+      "path": "../../libs/modules/activity-log/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/modules/tenant-settings/tsconfig.lib.json"
+      "path": "../../libs/modules/accounting/tsconfig.lib.json"
     }
   ]
 }

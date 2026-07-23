@@ -11,6 +11,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { Roles } from '@plexo/auth';
+import { AuditEntity } from '@plexo/database';
 import type { CompanyRoleType } from '@plexo/database';
 import { CompaniesService } from './companies.service.js';
 import { CreateCompanyDto } from './dto/create-company.dto.js';
@@ -44,6 +45,7 @@ export class CompaniesController {
     return this.companiesService.createPerson(dto);
   }
 
+  @AuditEntity('person', { labelFields: ['firstName', 'lastName'] })
   @Roles(...WRITE_ROLES)
   @Patch('people/:id')
   updatePerson(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePersonDto) {
@@ -72,6 +74,7 @@ export class CompaniesController {
     return this.companiesService.listPeople(id);
   }
 
+  @AuditEntity('company', { labelFields: ['name'] })
   @Roles(...WRITE_ROLES)
   @Patch(':id')
   updateCompany(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCompanyDto) {

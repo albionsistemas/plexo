@@ -1,5 +1,6 @@
 import { UnauthorizedException } from '@nestjs/common';
 import type { JwtService } from '@nestjs/jwt';
+import type { ActivityLogService } from '@plexo/activity-log';
 import type { PrismaService } from '@plexo/database';
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service.js';
@@ -30,8 +31,12 @@ describe('AuthService', () => {
     } as unknown as JwtService;
   }
 
+  function makeActivityLogService() {
+    return { listForUser: jest.fn() } as unknown as ActivityLogService;
+  }
+
   it('throws when no user exists for that email in the tenant', async () => {
-    const service = new AuthService(makePrisma(null), makeJwt());
+    const service = new AuthService(makePrisma(null), makeJwt(), makeActivityLogService());
     await expect(service.login(dto, '127.0.0.1')).rejects.toThrow(UnauthorizedException);
   });
 
@@ -40,6 +45,7 @@ describe('AuthService', () => {
     const service = new AuthService(
       makePrisma({ id: 'user-1', email: dto.email, role: 'OWNER', passwordHash }),
       makeJwt(),
+      makeActivityLogService(),
     );
     await expect(service.login(dto, '127.0.0.1')).rejects.toThrow(UnauthorizedException);
   });
@@ -53,6 +59,7 @@ describe('AuthService', () => {
         [{ module: 'accounting', canRead: true, canWrite: false }],
       ),
       jwt,
+      makeActivityLogService(),
     );
 
     const result = await service.login(dto, '127.0.0.1');

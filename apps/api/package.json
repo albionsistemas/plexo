@@ -8,6 +8,7 @@
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/platform-fastify": "^11.1.28",
     "@plexo/accounting": "^0.0.1",
+    "@plexo/activity-log": "^0.0.1",
     "@plexo/auth": "^0.0.1",
     "@plexo/companies": "^0.0.1",
     "@plexo/database": "^0.0.1",

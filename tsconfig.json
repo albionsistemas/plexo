@@ -59,6 +59,9 @@
     },
     {
       "path": "./libs/modules/tenant-settings"
+    },
+    {
+      "path": "./libs/modules/activity-log"
     }
   ],
   "compilerOptions": {}

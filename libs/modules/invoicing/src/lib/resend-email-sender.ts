@@ -5,6 +5,7 @@ import type {
   InvoiceEmailPayload,
   OverdueAlertEmailPayload,
 } from './email-sender.port.js';
+import { buildOverdueEmailCopy } from './overdue-email-templates.js';
 
 /**
  * Real sender, wired in only when RESEND_API_KEY is set (see
@@ -26,7 +27,7 @@ export class ResendEmailSender implements EmailSender {
 
   async sendInvoiceEmail(payload: InvoiceEmailPayload): Promise<void> {
     const { error } = await this.resend.emails.send({
-      from: this.from,
+      from: payload.from ?? this.from,
       to: payload.to,
       subject: `Factura ${payload.invoiceNumber}`,
       text: `Se emitió tu factura ${payload.invoiceNumber} por un total de $${payload.total}.`,
@@ -40,11 +41,13 @@ export class ResendEmailSender implements EmailSender {
   }
 
   async sendOverdueAlertEmail(payload: OverdueAlertEmailPayload): Promise<void> {
+    const { subject, text } = buildOverdueEmailCopy(payload.tone, payload);
     const { error } = await this.resend.emails.send({
-      from: this.from,
+      from: payload.from ?? this.from,
       to: payload.to,
-      subject: `Factura ${payload.invoiceNumber} vencida`,
-      text: `Tu factura ${payload.invoiceNumber} está vencida desde el ${payload.dueDate}. Saldo pendiente: $${payload.balanceDue}.`,
+      cc: payload.cc,
+      subject,
+      text,
     });
 
     if (error) {

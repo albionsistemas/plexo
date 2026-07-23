@@ -4,6 +4,7 @@ import type {
   InvoiceEmailPayload,
   OverdueAlertEmailPayload,
 } from './email-sender.port.js';
+import { buildOverdueEmailCopy } from './overdue-email-templates.js';
 
 /** Logs instead of sending. Used when RESEND_API_KEY/EMAIL_FROM aren't set. */
 @Injectable()
@@ -12,13 +13,15 @@ export class ConsoleEmailSender implements EmailSender {
 
   async sendInvoiceEmail(payload: InvoiceEmailPayload): Promise<void> {
     this.logger.log(
-      `[stub] would email invoice ${payload.invoiceNumber} (total ${payload.total}) to ${payload.to}`,
+      `[stub] would email invoice ${payload.invoiceNumber} (total ${payload.total}) to ${payload.to} from ${payload.from ?? '(default sender)'}`,
     );
   }
 
   async sendOverdueAlertEmail(payload: OverdueAlertEmailPayload): Promise<void> {
+    const { subject } = buildOverdueEmailCopy(payload.tone, payload);
+    const ccSuffix = payload.cc ? `, cc ${payload.cc}` : '';
     this.logger.log(
-      `[stub] would email overdue alert for invoice ${payload.invoiceNumber} (balance ${payload.balanceDue}, due ${payload.dueDate}) to ${payload.to}`,
+      `[stub] would email overdue alert "${subject}" for invoice ${payload.invoiceNumber} (balance ${payload.balanceDue}, due ${payload.dueDate}) to ${payload.to}${ccSuffix} from ${payload.from ?? '(default sender)'}`,
     );
   }
 }

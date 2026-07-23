@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ActivityLogService, type MyActivityEntry } from '@plexo/activity-log';
 import { getTenantDb, PrismaService, withTenantContext, type User } from '@plexo/database';
 import type { AuthenticatedUser } from '@plexo/types';
 import * as bcrypt from 'bcryptjs';
@@ -25,6 +26,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly activityLogService: ActivityLogService,
   ) {}
 
   /**
@@ -120,6 +122,12 @@ export class AuthService {
       },
     });
     return toProfile(user);
+  }
+
+  /** Own recent actions, friendly phrasing only - see ActivityLogService
+   * for why this stays deliberately free of IP/diff detail. */
+  getMyActivity(userId: string): Promise<MyActivityEntry[]> {
+    return this.activityLogService.listForUser(userId);
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {

@@ -1,5 +1,7 @@
-import { Body, Controller, Get, Patch } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
 import { Roles } from '@plexo/auth';
+import { AuditEntity } from '@plexo/database';
+import { RegisterDomainDto } from './dto/register-domain.dto.js';
 import { UpdateTenantSettingsDto } from './dto/update-tenant-settings.dto.js';
 import { TenantSettingsService } from './tenant-settings.service.js';
 
@@ -17,9 +19,22 @@ export class TenantSettingsController {
     return this.tenantSettingsService.getSettings();
   }
 
+  @AuditEntity('tenantSettings', { idParam: null })
   @Roles(...WRITE_ROLES)
   @Patch()
   updateSettings(@Body() dto: UpdateTenantSettingsDto) {
     return this.tenantSettingsService.updateSettings(dto);
+  }
+
+  @Roles(...WRITE_ROLES)
+  @Post('email-domain')
+  registerDomain(@Body() dto: RegisterDomainDto) {
+    return this.tenantSettingsService.registerCustomDomain(dto.domain);
+  }
+
+  @Roles(...WRITE_ROLES)
+  @Post('email-domain/verify')
+  verifyDomain() {
+    return this.tenantSettingsService.refreshDomainStatus();
   }
 }

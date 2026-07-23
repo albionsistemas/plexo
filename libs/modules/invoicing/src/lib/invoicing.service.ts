@@ -15,6 +15,7 @@ import {
   type CreditNote,
   type ExchangeRateHistory,
   type Receipt,
+  type ReminderTone,
   type TaxDefinition,
 } from '@plexo/database';
 import type { CreateCreditNoteDto } from './dto/create-credit-note.dto.js';
@@ -130,7 +131,7 @@ export class InvoicingService {
    * Does not touch stock - see SalesService (apps/api) for why that's
    * composed at the app layer instead of being called from here.
    */
-  async createInvoice(dto: CreateInvoiceDto): Promise<InvoiceWithLines> {
+  async createInvoice(dto: CreateInvoiceDto, senderFrom?: string): Promise<InvoiceWithLines> {
     const db = getTenantDb();
     const tenantId = getTenantId();
     const issuedByUserId = getUserId();
@@ -265,6 +266,7 @@ export class InvoicingService {
         to: customer.email,
         invoiceNumber: `${dto.pointOfSale}-${finalInvoice.number}`,
         total: finalInvoice.total.toFixed(2),
+        from: senderFrom,
       });
     }
 
@@ -378,12 +380,16 @@ export class InvoicingService {
   async sendOverdueInvoiceAlert(
     invoice: Pick<Invoice, 'documentLetter' | 'number' | 'balanceDue' | 'dueDate'>,
     customerEmail: string,
+    senderIdentity: { from?: string; tone?: ReminderTone; cc?: string },
   ): Promise<void> {
     await this.emailSender.sendOverdueAlertEmail({
       to: customerEmail,
       invoiceNumber: `${invoice.documentLetter}-${invoice.number}`,
       balanceDue: invoice.balanceDue.toFixed(2),
       dueDate: invoice.dueDate?.toLocaleDateString('es-AR') ?? '',
+      from: senderIdentity.from,
+      tone: senderIdentity.tone,
+      cc: senderIdentity.cc,
     });
   }
 

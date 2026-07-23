@@ -15,9 +15,26 @@ const { withTenantContext, getTenantDb } = jest.requireMock('@plexo/database') a
   getTenantDb: jest.Mock;
 };
 
-function makeTenantSettings(arReminderIntervalDays: number | null = null) {
-  return { getSettings: jest.fn().mockResolvedValue({ arReminderIntervalDays }) } as unknown as TenantSettingsService;
+function makeTenantSettings(
+  arReminderIntervalDays: number | null = null,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    getSettings: jest.fn().mockResolvedValue({
+      arReminderIntervalDays,
+      emailSenderMode: 'SHARED',
+      emailFromName: null,
+      emailFromLocalPart: null,
+      emailCustomDomain: null,
+      domainStatus: null,
+      reminderTone: 'NEUTRAL',
+      reminderCcEmail: null,
+      ...overrides,
+    }),
+  } as unknown as TenantSettingsService;
 }
+
+const defaultSenderIdentity = { from: undefined, tone: 'NEUTRAL', cc: undefined };
 
 describe('ReceivablesSchedulerService.refreshOverdueInvoicesForAllTenants', () => {
   beforeEach(() => {
@@ -61,6 +78,7 @@ describe('ReceivablesSchedulerService.refreshOverdueInvoicesForAllTenants', () =
     expect(invoicingService.sendOverdueInvoiceAlert).toHaveBeenCalledWith(
       invoiceWithEmail,
       'cliente@demo.com',
+      defaultSenderIdentity,
     );
     // Both invoices (even the one with no email) get their clock stamped -
     // an alert not being deliverable doesn't mean it wasn't "handled".
@@ -149,6 +167,99 @@ describe('ReceivablesSchedulerService.runReminderSweepForCurrentTenant', () => {
     // Both batches stamped in the single call at the end, not two separate ones.
     expect(receivablesService.markReminderSent).toHaveBeenCalledTimes(1);
     expect(receivablesService.markReminderSent).toHaveBeenCalledWith(['inv-new', 'inv-recurring']);
+  });
+
+  it('resolves the custom sender + tone once and reuses it for every invoice in the sweep', async () => {
+    const invoice = { id: 'inv-1', customer: { email: 'cliente@demo.com' } };
+    const receivablesService = {
+      listInvoicesBecomingOverdue: jest.fn().mockResolvedValue([invoice]),
+      refreshOverdueStatuses: jest.fn().mockResolvedValue({ updated: 1 }),
+      markReminderSent: jest.fn().mockResolvedValue(undefined),
+    } as unknown as ReceivablesService;
+    const invoicingService = {
+      sendOverdueInvoiceAlert: jest.fn().mockResolvedValue(undefined),
+    } as unknown as InvoicingService;
+    const tenantSettingsService = makeTenantSettings(null, {
+      emailSenderMode: 'CUSTOM_DOMAIN',
+      domainStatus: 'verified',
+      emailCustomDomain: 'acme.com',
+      emailFromLocalPart: 'facturas',
+      emailFromName: 'Facturación Acme',
+      reminderTone: 'FIRM',
+    });
+
+    const scheduler = new ReceivablesSchedulerService(
+      {} as PrismaService,
+      receivablesService,
+      invoicingService,
+      tenantSettingsService,
+    );
+    await scheduler.runReminderSweepForCurrentTenant();
+
+    expect(invoicingService.sendOverdueInvoiceAlert).toHaveBeenCalledWith(invoice, 'cliente@demo.com', {
+      from: 'Facturación Acme <facturas@acme.com>',
+      tone: 'FIRM',
+    });
+  });
+
+  it('falls back to the shared sender while a custom domain is still pending verification', async () => {
+    const invoice = { id: 'inv-1', customer: { email: 'cliente@demo.com' } };
+    const receivablesService = {
+      listInvoicesBecomingOverdue: jest.fn().mockResolvedValue([invoice]),
+      refreshOverdueStatuses: jest.fn().mockResolvedValue({ updated: 1 }),
+      markReminderSent: jest.fn().mockResolvedValue(undefined),
+    } as unknown as ReceivablesService;
+    const invoicingService = {
+      sendOverdueInvoiceAlert: jest.fn().mockResolvedValue(undefined),
+    } as unknown as InvoicingService;
+    const tenantSettingsService = makeTenantSettings(null, {
+      emailSenderMode: 'CUSTOM_DOMAIN',
+      domainStatus: 'pending',
+      emailCustomDomain: 'acme.com',
+      emailFromLocalPart: 'facturas',
+    });
+
+    const scheduler = new ReceivablesSchedulerService(
+      {} as PrismaService,
+      receivablesService,
+      invoicingService,
+      tenantSettingsService,
+    );
+    await scheduler.runReminderSweepForCurrentTenant();
+
+    expect(invoicingService.sendOverdueInvoiceAlert).toHaveBeenCalledWith(invoice, 'cliente@demo.com', {
+      from: undefined,
+      tone: 'NEUTRAL',
+    });
+  });
+
+  it('CCs the configured mailbox on every invoice in the sweep, resolved once', async () => {
+    const invoice = { id: 'inv-1', customer: { email: 'cliente@demo.com' } };
+    const receivablesService = {
+      listInvoicesBecomingOverdue: jest.fn().mockResolvedValue([invoice]),
+      refreshOverdueStatuses: jest.fn().mockResolvedValue({ updated: 1 }),
+      markReminderSent: jest.fn().mockResolvedValue(undefined),
+    } as unknown as ReceivablesService;
+    const invoicingService = {
+      sendOverdueInvoiceAlert: jest.fn().mockResolvedValue(undefined),
+    } as unknown as InvoicingService;
+    const tenantSettingsService = makeTenantSettings(null, {
+      reminderCcEmail: 'cobranzas@acme.com',
+    });
+
+    const scheduler = new ReceivablesSchedulerService(
+      {} as PrismaService,
+      receivablesService,
+      invoicingService,
+      tenantSettingsService,
+    );
+    await scheduler.runReminderSweepForCurrentTenant();
+
+    expect(invoicingService.sendOverdueInvoiceAlert).toHaveBeenCalledWith(
+      invoice,
+      'cliente@demo.com',
+      expect.objectContaining({ cc: 'cobranzas@acme.com' }),
+    );
   });
 });
 

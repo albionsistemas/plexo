@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { ActivityLogModule } from '@plexo/activity-log';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 
 @Module({
   imports: [
+    ActivityLogModule,
     JwtModule.registerAsync({
       global: true,
       useFactory: () => {

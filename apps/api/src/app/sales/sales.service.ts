@@ -3,6 +3,7 @@ import { AccountingService } from '@plexo/accounting';
 import { getTenantDb } from '@plexo/database';
 import { InventoryService } from '@plexo/inventory';
 import { InvoicingService, type CreateCreditNoteDto } from '@plexo/invoicing';
+import { resolveEmailFrom, TenantSettingsService } from '@plexo/tenant-settings';
 import type { CreateSaleDto } from './dto/create-sale.dto.js';
 
 /**
@@ -25,6 +26,7 @@ export class SalesService {
     private readonly invoicingService: InvoicingService,
     private readonly inventoryService: InventoryService,
     private readonly accountingService: AccountingService,
+    private readonly tenantSettingsService: TenantSettingsService,
   ) {}
 
   async createSale(dto: CreateSaleDto) {
@@ -45,15 +47,19 @@ export class SalesService {
       throw new BadRequestException('Branch has no pointOfSaleNumber configured');
     }
 
-    const invoice = await this.invoicingService.createInvoice({
-      customerId: dto.customerId,
-      documentLetter: dto.documentLetter,
-      pointOfSale: branch.pointOfSaleNumber,
-      currencyId: dto.currencyId,
-      globalDiscountPercent: dto.globalDiscountPercent,
-      dueDate: dto.dueDate,
-      lines: dto.lines,
-    });
+    const settings = await this.tenantSettingsService.getSettings();
+    const invoice = await this.invoicingService.createInvoice(
+      {
+        customerId: dto.customerId,
+        documentLetter: dto.documentLetter,
+        pointOfSale: branch.pointOfSaleNumber,
+        currencyId: dto.currencyId,
+        globalDiscountPercent: dto.globalDiscountPercent,
+        dueDate: dto.dueDate,
+        lines: dto.lines,
+      },
+      resolveEmailFrom(settings),
+    );
 
     await this.accountingService.postInvoiceJournalEntry({
       invoiceId: invoice.id,

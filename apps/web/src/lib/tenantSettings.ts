@@ -1,7 +1,17 @@
 import { api } from '@/lib/api';
 
+export type EmailSenderMode = 'SHARED' | 'CUSTOM_DOMAIN';
+export type ReminderTone = 'FRIENDLY' | 'NEUTRAL' | 'FIRM';
+
 export interface TenantSettings {
   arReminderIntervalDays: number | null;
+  emailSenderMode: EmailSenderMode;
+  emailFromName: string | null;
+  emailFromLocalPart: string | null;
+  emailCustomDomain: string | null;
+  domainStatus: string | null;
+  reminderTone: ReminderTone;
+  reminderCcEmail: string | null;
 }
 
 export interface ReminderStatus {
@@ -15,10 +25,39 @@ export interface ReminderSweepResult {
   recurring: number;
 }
 
+export interface DomainRecord {
+  record: string;
+  name: string;
+  value: string;
+  type: string;
+  ttl: string;
+  status: string;
+}
+
+export interface DomainRegistrationResult {
+  status: string;
+  records: DomainRecord[];
+}
+
 export const tenantSettingsApi = {
   get: () => api.get<TenantSettings>('/tenant-settings').then((r) => r.data),
-  update: (dto: { arReminderIntervalDays: number | null }) =>
-    api.patch<TenantSettings>('/tenant-settings', dto).then((r) => r.data),
+  update: (
+    dto: Partial<{
+      arReminderIntervalDays: number | null;
+      emailSenderMode: EmailSenderMode;
+      emailFromName: string;
+      emailFromLocalPart: string;
+      reminderTone: ReminderTone;
+      reminderCcEmail: string | null;
+    }>,
+  ) => api.patch<TenantSettings>('/tenant-settings', dto).then((r) => r.data),
+};
+
+export const emailDomainApi = {
+  register: (domain: string) =>
+    api.post<DomainRegistrationResult>('/tenant-settings/email-domain', { domain }).then((r) => r.data),
+  verify: () =>
+    api.post<DomainRegistrationResult>('/tenant-settings/email-domain/verify').then((r) => r.data),
 };
 
 export const remindersApi = {

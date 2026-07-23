@@ -16,6 +16,17 @@ enum UserRole {
   VIEWER
 }
 
+enum EmailSenderMode {
+  SHARED
+  CUSTOM_DOMAIN
+}
+
+enum ReminderTone {
+  FRIENDLY
+  NEUTRAL
+  FIRM
+}
+
 enum InvoiceStatus {
   DRAFT
   ISSUED
@@ -118,6 +129,34 @@ model TenantSettings {
   // re-sends the same alert every N days while it's still unpaid, via
   // ReceivablesService.sendRecurringReminders.
   arReminderIntervalDays Int?
+
+  // Remitente de emails a clientes (factura emitida + recordatorio de
+  // cobranza): SHARED usa el EMAIL_FROM global de siempre; CUSTOM_DOMAIN
+  // arma "emailFromName <emailFromLocalPart@emailCustomDomain>" pero sólo
+  // una vez que domainStatus === 'verified' (ver resolveEmailFrom en
+  // @plexo/tenant-settings) - si no, cae al remitente compartido sin fallar
+  // el envío.
+  emailSenderMode    EmailSenderMode @default(SHARED)
+  emailFromName      String?
+  emailFromLocalPart String?
+  emailCustomDomain  String?
+  resendDomainId     String?
+  // Espejo del DomainStatus de Resend ('pending'|'verified'|'failed'|...) -
+  // String plano a propósito, es vocabulario de una API externa que no
+  // controlamos.
+  domainStatus String?
+
+  // Sólo afecta el recordatorio de cobranza, no el email de factura
+  // emitida. NEUTRAL por defecto ≈ el texto que ya se mandaba antes de este
+  // campo existir, así un tenant que nunca toca esto no nota cambio.
+  reminderTone ReminderTone @default(NEUTRAL)
+
+  // Copia (CC) del recordatorio de cobranza a un buzón interno del tenant
+  // (ej. cobranzas@empresa.com) - funciona con el mismo remitente
+  // compartido de siempre, sin depender de verificar un dominio propio
+  // (eso requiere un plan/API key de Resend con permiso de dominios, que
+  // hoy no está disponible). null = no mandar copia a nadie.
+  reminderCcEmail String?
 
   updatedAt DateTime @updatedAt
 
@@ -486,9 +525,22 @@ model UserActivityLog {
   ip           String?
   userAgent    String?
   errorMessage String?
-  createdAt    DateTime        @default(now())
+  // Populated only for routes decorated with @AuditEntity (see
+  // audit-entity.decorator.ts) - undecorated routes leave these null and
+  // keep the plain "METHOD /url" action string, exactly as before this
+  // field existed.
+  entityType String? // Prisma model name, e.g. "company" - plain String on
+  // purpose (not an enum): auditing a new entity is a decorator, not a migration.
+  entityId    String?
+  entityLabel String? // display value only (e.g. "Acme S.A."); the verb/noun
+  // phrasing happens at read time (ActivityLogService), not here.
+  changes Json? // {"taxId": {"from": "20-111...", "to": "20-222..."}} - see
+  // computeDiff in audit-diff.ts. Only ever set on outcome SUCCESS.
+  createdAt DateTime @default(now())
 
   @@index([tenantId, createdAt])
+  @@index([tenantId, userId, createdAt])
+  @@index([tenantId, entityType, entityId])
   @@map("user_activity_log")
 }
 
