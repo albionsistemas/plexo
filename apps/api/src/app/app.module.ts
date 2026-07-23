@@ -13,6 +13,7 @@ import { ReportsFinancialModule } from '@plexo/reports-financial';
 import { ReportsPnlModule } from '@plexo/reports-pnl';
 import { ReportsSalesModule } from '@plexo/reports-sales';
 import { TaxesModule } from '@plexo/taxes';
+import { TenantSettingsModule } from '@plexo/tenant-settings';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module.js';
@@ -38,6 +39,7 @@ import { SchedulerModule } from './scheduler/scheduler.module.js';
     SalesModule,
     DashboardModule,
     SchedulerModule,
+    TenantSettingsModule,
   ],
   controllers: [AppController],
   providers: [

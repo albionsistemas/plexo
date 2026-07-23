@@ -95,7 +95,33 @@ model Tenant {
   taxId     String?
   createdAt DateTime @default(now())
 
+  settings TenantSettings?
+
   @@map("tenants")
+}
+
+// Tenant-wide business-policy toggles, as opposed to User (per-person
+// preferences like theme/density, which live in the frontend's localStorage
+// today, not the DB) - this is the first one, deliberately its own table
+// rather than more columns bolted onto Tenant, since "esta seguramente no
+// sería la única" (more of these are expected). One row per tenant, created
+// lazily on first PATCH /tenant-settings - reading before that returns
+// defaults (see TenantSettingsService).
+model TenantSettings {
+  id       String @id @default(uuid())
+  tenantId String @unique
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  // null = the original one-time alert only (an invoice gets emailed once,
+  // the moment it crosses into OVERDUE - see
+  // ReceivablesService.listInvoicesBecomingOverdue). A positive number
+  // re-sends the same alert every N days while it's still unpaid, via
+  // ReceivablesService.sendRecurringReminders.
+  arReminderIntervalDays Int?
+
+  updatedAt DateTime @updatedAt
+
+  @@map("tenant_settings")
 }
 
 model User {
@@ -499,6 +525,14 @@ model Invoice {
   afipCaeExpiry         DateTime?
   issuedByUserId        String
   issuedBy              User           @relation(fields: [issuedByUserId], references: [id])
+  // Last time ReceivablesSchedulerService emailed an overdue alert for this
+  // invoice (the first time it crosses into OVERDUE, and again every
+  // TenantSettings.arReminderIntervalDays if recurring reminders are on -
+  // see ReceivablesService.sendRecurringReminders). Null means "never
+  // reminded yet". Exempted from invoice_fiscal_lock the same way
+  // balanceDue/status are - it has to keep moving on an already-issued
+  // (CAE'd) invoice, since that's exactly when reminders fire.
+  lastOverdueReminderAt DateTime?
 
   lines        InvoiceLine[]
   movements    StockMovement[]

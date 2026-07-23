@@ -146,6 +146,52 @@ describe('ReceivablesService.listInvoicesBecomingOverdue', () => {
   });
 });
 
+describe('ReceivablesService.listInvoicesNeedingRecurringReminder', () => {
+  it('queries already-OVERDUE invoices last reminded at or before the interval cutoff', async () => {
+    const invoices = [{ id: 'inv-1', customer: { name: 'Acme', email: 'acme@example.com' } }];
+    const db = { invoice: { findMany: jest.fn().mockResolvedValue(invoices) } };
+    const service = new ReceivablesService();
+
+    const result = await runInTenant(db, () =>
+      service.listInvoicesNeedingRecurringReminder(7, ASOF),
+    );
+
+    expect(db.invoice.findMany).toHaveBeenCalledWith({
+      where: {
+        balanceDue: { gt: 0 },
+        status: 'OVERDUE',
+        OR: [{ lastOverdueReminderAt: null }, { lastOverdueReminderAt: { lte: daysAgo(7) } }],
+      },
+      include: { customer: true },
+      orderBy: { dueDate: 'asc' },
+    });
+    expect(result).toBe(invoices);
+  });
+});
+
+describe('ReceivablesService.markReminderSent', () => {
+  it('stamps lastOverdueReminderAt on every invoice id given', async () => {
+    const db = { invoice: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) } };
+    const service = new ReceivablesService();
+
+    await runInTenant(db, () => service.markReminderSent(['inv-1', 'inv-2'], ASOF));
+
+    expect(db.invoice.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['inv-1', 'inv-2'] } },
+      data: { lastOverdueReminderAt: ASOF },
+    });
+  });
+
+  it('skips the query entirely for an empty list', async () => {
+    const db = { invoice: { updateMany: jest.fn() } };
+    const service = new ReceivablesService();
+
+    await runInTenant(db, () => service.markReminderSent([]));
+
+    expect(db.invoice.updateMany).not.toHaveBeenCalled();
+  });
+});
+
 describe('ReceivablesService.refreshOverdueStatuses', () => {
   it('marks overdue invoices and reports how many changed', async () => {
     const db = { invoice: { updateMany: jest.fn().mockResolvedValue({ count: 3 }) } };

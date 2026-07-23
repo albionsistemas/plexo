@@ -62,6 +62,9 @@
     },
     {
       "path": "../../libs/modules/accounting/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/modules/tenant-settings/tsconfig.lib.json"
     }
   ]
 }

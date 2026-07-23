@@ -2,11 +2,13 @@
 
 import { useState } from 'react';
 import GestionTab from './GestionTab';
+import RecordatoriosTab from './RecordatoriosTab';
 import ResumenTab from './ResumenTab';
 
 const TABS = [
   { id: 'resumen', label: 'Resumen' },
   { id: 'gestion', label: 'Gestión' },
+  { id: 'recordatorios', label: 'Recordatorios' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -36,6 +38,7 @@ export default function ReceivablesPage() {
 
       {tab === 'resumen' && <ResumenTab />}
       {tab === 'gestion' && <GestionTab />}
+      {tab === 'recordatorios' && <RecordatoriosTab />}
     </div>
   );
 }

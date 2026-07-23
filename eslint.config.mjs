@@ -29,6 +29,7 @@ export default [
             { sourceTag: 'scope:reports-pnl', onlyDependOnLibsWithTags: ['scope:reports-pnl', 'scope:shared'] },
             { sourceTag: 'scope:reports-sales', onlyDependOnLibsWithTags: ['scope:reports-sales', 'scope:shared'] },
             { sourceTag: 'scope:reports-financial', onlyDependOnLibsWithTags: ['scope:reports-financial', 'scope:shared'] },
+            { sourceTag: 'scope:tenant-settings', onlyDependOnLibsWithTags: ['scope:tenant-settings', 'scope:shared'] },
             {
               sourceTag: 'scope:api',
               onlyDependOnLibsWithTags: [
@@ -43,6 +44,7 @@ export default [
                 'scope:reports-pnl',
                 'scope:reports-sales',
                 'scope:reports-financial',
+                'scope:tenant-settings',
               ],
             },
             {
@@ -59,6 +61,7 @@ export default [
                 'scope:reports-pnl',
                 'scope:reports-sales',
                 'scope:reports-financial',
+                'scope:tenant-settings',
               ],
             },
             // type: layering. apps/features can use anything below them,

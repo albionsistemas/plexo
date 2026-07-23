@@ -179,6 +179,46 @@ export class ReceivablesService {
   }
 
   /**
+   * Invoices already OVERDUE (not the ones just crossing into it - see
+   * listInvoicesBecomingOverdue for those) that haven't been reminded in at
+   * least intervalDays. Gated by TenantSettings.arReminderIntervalDays -
+   * only called by ReceivablesSchedulerService when a tenant has opted
+   * into recurring reminders (see runReminderSweepForCurrentTenant there).
+   * Never reminded yet (lastOverdueReminderAt IS NULL) also qualifies -
+   * that shouldn't normally happen (becomingOverdue + markReminderSent
+   * together stamp every invoice the moment it turns OVERDUE), but an
+   * invoice that turned OVERDUE before this feature existed would
+   * otherwise never qualify for a first recurring reminder.
+   */
+  listInvoicesNeedingRecurringReminder(
+    intervalDays: number,
+    asOf: Date = new Date(),
+  ): Promise<(Invoice & { customer: Company })[]> {
+    const cutoff = new Date(asOf.getTime() - intervalDays * DAY_MS);
+    return getTenantDb().invoice.findMany({
+      where: {
+        balanceDue: { gt: 0 },
+        status: 'OVERDUE',
+        OR: [{ lastOverdueReminderAt: null }, { lastOverdueReminderAt: { lte: cutoff } }],
+      },
+      include: { customer: true },
+      orderBy: { dueDate: 'asc' },
+    });
+  }
+
+  /** Stamps "just reminded" on a batch of invoices - called once per sweep
+   * after every alert email in it (initial + recurring) has gone out, so
+   * the same invoice can't qualify for both listInvoicesBecomingOverdue
+   * AND listInvoicesNeedingRecurringReminder on the very next day's run. */
+  async markReminderSent(invoiceIds: string[], asOf: Date = new Date()): Promise<void> {
+    if (invoiceIds.length === 0) return;
+    await getTenantDb().invoice.updateMany({
+      where: { id: { in: invoiceIds } },
+      data: { lastOverdueReminderAt: asOf },
+    });
+  }
+
+  /**
    * Syncs the stored Invoice.status to OVERDUE where it's warranted.
    * Reports above don't depend on this having run; this is only for code
    * elsewhere that filters directly on the status column. Called daily,

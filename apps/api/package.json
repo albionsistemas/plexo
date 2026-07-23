@@ -18,6 +18,7 @@
     "@plexo/reports-pnl": "^0.0.1",
     "@plexo/reports-sales": "^0.0.1",
     "@plexo/taxes": "^0.0.1",
+    "@plexo/tenant-settings": "^0.0.1",
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",

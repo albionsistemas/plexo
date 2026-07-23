@@ -1,0 +1,9 @@
+{
+  "name": "tenant-settings",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/modules/tenant-settings/src",
+  "projectType": "library",
+  "tags": ["scope:tenant-settings", "type:feature"],
+  "// targets": "to see all targets run: nx show project tenant-settings --web",
+  "targets": {}
+}
