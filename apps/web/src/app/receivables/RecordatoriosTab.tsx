@@ -52,13 +52,17 @@ export default function RecordatoriosTab() {
   }
 
   return (
-    <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
+    <div className="flex items-start gap-6">
       {isLoading || !settings ? (
         <div className="text-slate-500">Cargando...</div>
       ) : (
-        <ArReminderCard settings={settings} onSaved={invalidateBoth} />
+        <div className="flex-1">
+          <ArReminderCard settings={settings} onSaved={invalidateBoth} />
+        </div>
       )}
-      <ReminderStatusCard />
+      <div className="flex-1">
+        <ReminderStatusCard />
+      </div>
     </div>
   );
 }
