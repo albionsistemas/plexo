@@ -83,6 +83,18 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
             <p className="text-xs text-slate-500">Email</p>
             <p className="text-slate-700 dark:text-slate-300">{company.email ?? '—'}</p>
           </div>
+          {company.taxCondition && (
+            <div>
+              <p className="text-xs text-slate-500">Condición IVA (AFIP)</p>
+              <p className="text-slate-700 dark:text-slate-300">{company.taxCondition}</p>
+            </div>
+          )}
+          {company.fiscalAddress && (
+            <div>
+              <p className="text-xs text-slate-500">Domicilio fiscal (AFIP)</p>
+              <p className="text-slate-700 dark:text-slate-300">{company.fiscalAddress}</p>
+            </div>
+          )}
           {company.roles.some((r) => r.role === 'CUSTOMER') && (
             <div>
               <p className="text-xs text-slate-500">Límite de crédito</p>

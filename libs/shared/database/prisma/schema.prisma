@@ -160,6 +160,15 @@ model Company {
   email             String?
   creditLimit       Decimal  @default(0) @db.Decimal(14, 2)
   pointOfSaleNumber String?
+  // Best-effort label from AFIP's padrón lookup (ws_sr_padron_a13, see
+  // libs/modules/companies/afip-padron.port.ts), persisted here since
+  // 2026-07-23 - previously shown only at lookup time, lost on refresh.
+  // Not re-validated/refreshed automatically; stays whatever it was the
+  // last time someone hit "Buscar en AFIP" and saved. Not a closed enum
+  // on purpose - AFIP's own categories change over time (see
+  // AfipPadronData.taxCondition for the same reasoning).
+  taxCondition      String?
+  fiscalAddress     String?
   // Soft delete: a Company can be referenced by historical fiscal records
   // (Invoice/Quote have no onDelete cascade on purpose - see the migration
   // for why), so "deleting" one means hiding it from active use, not

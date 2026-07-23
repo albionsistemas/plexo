@@ -9,6 +9,8 @@ export interface Company {
   email: string | null;
   creditLimit: string;
   pointOfSaleNumber: string | null;
+  taxCondition: string | null;
+  fiscalAddress: string | null;
   active: boolean;
   createdAt: string;
   roles: { role: CompanyRoleType }[];
@@ -32,6 +34,8 @@ export interface CreateCompanyInput {
   email?: string;
   creditLimit?: number;
   pointOfSaleNumber?: string;
+  taxCondition?: string;
+  fiscalAddress?: string;
   roles: CompanyRoleType[];
 }
 
@@ -41,6 +45,8 @@ export interface UpdateCompanyInput {
   email?: string;
   creditLimit?: number;
   pointOfSaleNumber?: string;
+  taxCondition?: string;
+  fiscalAddress?: string;
   roles?: CompanyRoleType[];
   active?: boolean;
 }

@@ -41,6 +41,17 @@ export class CreateCompanyDto {
   @IsString()
   pointOfSaleNumber?: string;
 
+  // Best-effort AFIP padrón data (see Company.taxCondition in
+  // schema.prisma) - the frontend fills these from the "Buscar en AFIP"
+  // lookup result, never independently validated here.
+  @IsOptional()
+  @IsString()
+  taxCondition?: string;
+
+  @IsOptional()
+  @IsString()
+  fiscalAddress?: string;
+
   @IsArray()
   @ArrayMinSize(1)
   @ArrayUnique()

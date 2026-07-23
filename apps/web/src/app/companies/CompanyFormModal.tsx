@@ -37,6 +37,8 @@ export default function CompanyFormModal({ company, onClose, defaultRoles, onSav
   const [email, setEmail] = useState(company?.email ?? '');
   const [creditLimit, setCreditLimit] = useState(company?.creditLimit ?? '0');
   const [pointOfSaleNumber, setPointOfSaleNumber] = useState(company?.pointOfSaleNumber ?? '');
+  const [taxCondition, setTaxCondition] = useState(company?.taxCondition ?? '');
+  const [fiscalAddress, setFiscalAddress] = useState(company?.fiscalAddress ?? '');
   const [roles, setRoles] = useState<CompanyRoleType[]>(
     company?.roles.map((r) => r.role) ?? defaultRoles ?? ['CUSTOMER'],
   );
@@ -48,11 +50,10 @@ export default function CompanyFormModal({ company, onClose, defaultRoles, onSav
     mutationFn: () => companiesApi.lookupAfip(taxId),
     onSuccess: (data) => {
       setName(data.name);
+      setTaxCondition(data.taxCondition ?? '');
+      setFiscalAddress(data.fiscalAddress ?? '');
       setAfipError('');
-      setAfipMessage(
-        [data.taxCondition, data.fiscalAddress].filter(Boolean).join(' · ') ||
-          'Datos encontrados en AFIP',
-      );
+      setAfipMessage('Datos encontrados en AFIP');
     },
     onError: (err: AxiosError<{ message?: string | string[] }>) => {
       setAfipMessage('');
@@ -69,6 +70,8 @@ export default function CompanyFormModal({ company, onClose, defaultRoles, onSav
         email: email || undefined,
         creditLimit: Number(creditLimit),
         pointOfSaleNumber: roles.includes('BRANCH') ? pointOfSaleNumber || undefined : undefined,
+        taxCondition: taxCondition || undefined,
+        fiscalAddress: fiscalAddress || undefined,
         roles,
       };
       return company ? companiesApi.update(company.id, dto) : companiesApi.create(dto);
@@ -135,6 +138,11 @@ export default function CompanyFormModal({ company, onClose, defaultRoles, onSav
               </button>
               {afipMessage && <p className="text-xs text-slate-600 dark:text-slate-400">{afipMessage}</p>}
               {afipError && <p className="text-xs text-red-600 dark:text-red-400">{afipError}</p>}
+              {(taxCondition || fiscalAddress) && (
+                <p className="text-xs text-slate-500 dark:text-slate-500">
+                  {[taxCondition, fiscalAddress].filter(Boolean).join(' · ')}
+                </p>
+              )}
             </Field>
             <Field label="Email">
               <input

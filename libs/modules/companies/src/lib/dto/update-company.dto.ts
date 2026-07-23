@@ -41,6 +41,14 @@ export class UpdateCompanyDto {
   pointOfSaleNumber?: string;
 
   @IsOptional()
+  @IsString()
+  taxCondition?: string;
+
+  @IsOptional()
+  @IsString()
+  fiscalAddress?: string;
+
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
   @ArrayUnique()
