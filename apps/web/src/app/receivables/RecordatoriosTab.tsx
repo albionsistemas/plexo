@@ -52,7 +52,7 @@ export default function RecordatoriosTab() {
   }
 
   return (
-    <div className="flex max-w-2xl flex-col gap-6">
+    <div className="mx-auto grid max-w-4xl grid-cols-1 items-start gap-6 md:grid-cols-2">
       {isLoading || !settings ? (
         <div className="text-slate-500">Cargando...</div>
       ) : (
