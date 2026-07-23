@@ -28,6 +28,7 @@ export default function SalesTab() {
         to={to}
         onFromChange={(value) => setRange((r) => ({ ...r, from: value }))}
         onToChange={(value) => setRange((r) => ({ ...r, to: value }))}
+        onPreset={setRange}
       />
 
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-4">

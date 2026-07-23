@@ -36,6 +36,7 @@ export default function ResultsTab() {
         to={to}
         onFromChange={(value) => setRange((r) => ({ ...r, from: value }))}
         onToChange={(value) => setRange((r) => ({ ...r, to: value }))}
+        onPreset={setRange}
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
