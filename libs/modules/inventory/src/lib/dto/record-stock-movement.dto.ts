@@ -17,6 +17,13 @@ export class RecordStockMovementDto {
   @IsNumber()
   quantity!: number;
 
+  // Unit cost for costed movements (see InventoryService.recordMovement for
+  // which types require/accept it) - validated there, not here, same reason
+  // as quantity above.
+  @IsOptional()
+  @IsNumber()
+  unitCost?: number;
+
   @IsOptional()
   @IsString()
   sourceType?: string;

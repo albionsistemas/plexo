@@ -18,7 +18,9 @@ describe('InventoryService.recordMovement', () => {
   it('decrements the ledger and records the movement for a SALE_OUT with enough stock', async () => {
     const updateMany = jest.fn().mockResolvedValue({ count: 1 });
     const create = jest.fn().mockResolvedValue({ id: 'movement-1' });
-    const findUnique = jest.fn().mockResolvedValue({ quantity: new Prisma.Decimal(15) });
+    const findUnique = jest
+      .fn()
+      .mockResolvedValue({ quantity: new Prisma.Decimal(15), avgUnitCost: new Prisma.Decimal(50) });
     const service = new InventoryService(makeEventEmitter());
 
     const result = await runInTenant(
@@ -48,13 +50,43 @@ describe('InventoryService.recordMovement', () => {
     expect(result).toEqual({ id: 'movement-1' });
   });
 
+  it('stamps the SALE_OUT movement with the ledger avg cost without changing it', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const create = jest.fn().mockResolvedValue({ id: 'movement-1' });
+    const findUnique = jest
+      .fn()
+      .mockResolvedValue({ quantity: new Prisma.Decimal(15), avgUnitCost: new Prisma.Decimal(50) });
+    const service = new InventoryService(makeEventEmitter());
+
+    await runInTenant(
+      { stockLedger: { updateMany, findUnique }, stockMovement: { create } },
+      () =>
+        service.recordMovement({
+          warehouseId: 'wh-1',
+          articleVariantId: 'variant-1',
+          type: 'SALE_OUT',
+          quantity: 5,
+        }),
+    );
+
+    const created = create.mock.calls[0][0].data;
+    expect(created.unitCost).toBeInstanceOf(Prisma.Decimal);
+    expect((created.unitCost as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(50);
+    // The average itself is never written to on an outbound movement - only
+    // `updateMany` touches quantity, `avgUnitCost` is left alone.
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { quantity: { increment: -5 } } }),
+    );
+  });
+
   it('rejects a SALE_OUT when the atomic decrement matches zero rows (insufficient stock)', async () => {
     const updateMany = jest.fn().mockResolvedValue({ count: 0 });
     const create = jest.fn();
+    const findUnique = jest.fn().mockResolvedValue(null);
     const service = new InventoryService(makeEventEmitter());
 
     await expect(
-      runInTenant({ stockLedger: { updateMany }, stockMovement: { create } }, () =>
+      runInTenant({ stockLedger: { updateMany, findUnique }, stockMovement: { create } }, () =>
         service.recordMovement({
           warehouseId: 'wh-1',
           articleVariantId: 'variant-1',
@@ -67,10 +99,25 @@ describe('InventoryService.recordMovement', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('rejects a PURCHASE_IN with no unitCost', async () => {
+    const service = new InventoryService(makeEventEmitter());
+
+    await expect(
+      runInTenant({}, () =>
+        service.recordMovement({
+          warehouseId: 'wh-1',
+          articleVariantId: 'variant-1',
+          type: 'PURCHASE_IN',
+          quantity: 20,
+        }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
   it('upserts the ledger for a PURCHASE_IN without checking existing stock', async () => {
     const upsert = jest.fn().mockResolvedValue({});
     const create = jest.fn().mockResolvedValue({ id: 'movement-2' });
-    const findUnique = jest.fn().mockResolvedValue({ quantity: new Prisma.Decimal(20) });
+    const findUnique = jest.fn().mockResolvedValue({ quantity: new Prisma.Decimal(20), avgUnitCost: null });
     const service = new InventoryService(makeEventEmitter());
 
     await runInTenant({ stockLedger: { upsert, findUnique }, stockMovement: { create } }, () =>
@@ -79,15 +126,62 @@ describe('InventoryService.recordMovement', () => {
         articleVariantId: 'variant-1',
         type: 'PURCHASE_IN',
         quantity: 20,
+        unitCost: 100,
       }),
     );
 
-    expect(upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({ quantity: 20 }),
-        update: { quantity: { increment: 20 } },
+    const call = upsert.mock.calls[0][0];
+    expect(call.create.quantity).toBe(20);
+    expect(call.update).toEqual({
+      quantity: { increment: 20 },
+      avgUnitCost: expect.any(Prisma.Decimal),
+    });
+    expect((call.update.avgUnitCost as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(100);
+  });
+
+  it('re-weights the average cost when purchasing on top of existing costed stock', async () => {
+    const upsert = jest.fn().mockResolvedValue({});
+    const create = jest.fn().mockResolvedValue({ id: 'movement-3' });
+    // 10 units @ 100 already in stock; buying 10 more @ 200 -> avg should be 150.
+    const findUnique = jest
+      .fn()
+      .mockResolvedValue({ quantity: new Prisma.Decimal(10), avgUnitCost: new Prisma.Decimal(100) });
+    const service = new InventoryService(makeEventEmitter());
+
+    await runInTenant({ stockLedger: { upsert, findUnique }, stockMovement: { create } }, () =>
+      service.recordMovement({
+        warehouseId: 'wh-1',
+        articleVariantId: 'variant-1',
+        type: 'PURCHASE_IN',
+        quantity: 10,
+        unitCost: 200,
       }),
     );
+
+    const call = upsert.mock.calls[0][0];
+    expect((call.update.avgUnitCost as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(150);
+  });
+
+  it('leaves the average untouched for a RETURN posted without a unitCost', async () => {
+    const upsert = jest.fn().mockResolvedValue({});
+    const create = jest.fn().mockResolvedValue({ id: 'movement-4' });
+    const findUnique = jest
+      .fn()
+      .mockResolvedValue({ quantity: new Prisma.Decimal(10), avgUnitCost: new Prisma.Decimal(100) });
+    const service = new InventoryService(makeEventEmitter());
+
+    await runInTenant({ stockLedger: { upsert, findUnique }, stockMovement: { create } }, () =>
+      service.recordMovement({
+        warehouseId: 'wh-1',
+        articleVariantId: 'variant-1',
+        type: 'RETURN',
+        quantity: 3,
+      }),
+    );
+
+    const call = upsert.mock.calls[0][0];
+    expect(call.update).toEqual({ quantity: { increment: 3 } });
+    expect(create.mock.calls[0][0].data.unitCost).toBeNull();
   });
 
   it('rejects a zero-quantity ADJUSTMENT before touching the database', async () => {

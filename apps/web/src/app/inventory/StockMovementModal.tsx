@@ -35,8 +35,11 @@ export default function StockMovementModal({ articles, warehouses, onClose }: Pr
     warehouseId: warehouses[0]?.id ?? '',
     type: 'PURCHASE_IN' as MovementType,
     quantity: '',
+    unitCost: '',
   });
   const [error, setError] = useState('');
+
+  const needsCost = form.type === 'PURCHASE_IN' || form.type === 'PRODUCTION_IN';
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -45,6 +48,7 @@ export default function StockMovementModal({ articles, warehouses, onClose }: Pr
         warehouseId: form.warehouseId,
         type: form.type,
         quantity: Number(form.quantity),
+        unitCost: needsCost ? Number(form.unitCost) : undefined,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['inventory-articles'] });
@@ -65,6 +69,10 @@ export default function StockMovementModal({ articles, warehouses, onClose }: Pr
     }
     if (Number(form.quantity) === 0) {
       setError('La cantidad no puede ser cero');
+      return;
+    }
+    if (needsCost && !form.unitCost) {
+      setError('Ingresá el costo unitario de la compra');
       return;
     }
     mutation.mutate();
@@ -139,6 +147,20 @@ export default function StockMovementModal({ articles, warehouses, onClose }: Pr
               placeholder={isAdjustment ? 'p. ej. -3 o 5' : 'p. ej. 10'}
             />
           </Field>
+
+          {needsCost && (
+            <Field label="Costo unitario">
+              <input
+                type="number"
+                step="any"
+                min="0"
+                className={selectClass}
+                value={form.unitCost}
+                onChange={(e) => setForm({ ...form, unitCost: e.target.value })}
+                placeholder="p. ej. 100.50"
+              />
+            </Field>
+          )}
 
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 

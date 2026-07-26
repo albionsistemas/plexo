@@ -41,7 +41,7 @@ function defaultBranch() {
 }
 
 describe('SalesService.createSale', () => {
-  it('resolves the branch, creates the invoice, posts its journal entry, then records one SALE_OUT movement per line', async () => {
+  it('resolves the branch, creates the invoice, records one SALE_OUT movement per line, then posts the journal entry with the resulting COGS', async () => {
     const invoice = {
       id: 'invoice-1',
       subtotal: new Prisma.Decimal(100),
@@ -57,7 +57,10 @@ describe('SalesService.createSale', () => {
       createInvoice: jest.fn().mockResolvedValue(invoice),
     } as unknown as InvoicingService;
     const inventoryService = {
-      recordMovement: jest.fn().mockResolvedValue({}),
+      recordMovement: jest
+        .fn()
+        .mockResolvedValueOnce({ unitCost: new Prisma.Decimal(10) })
+        .mockResolvedValueOnce({ unitCost: new Prisma.Decimal(20) }),
     } as unknown as InventoryService;
     const accountingService = {
       postInvoiceJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-1', lines: [] }),
@@ -90,13 +93,6 @@ describe('SalesService.createSale', () => {
       },
       undefined,
     );
-    expect(accountingService.postInvoiceJournalEntry).toHaveBeenCalledWith({
-      invoiceId: 'invoice-1',
-      subtotal: invoice.subtotal,
-      taxTotal: invoice.taxTotal,
-      total: invoice.total,
-      date: invoice.issueDate,
-    });
     expect(inventoryService.recordMovement).toHaveBeenNthCalledWith(1, {
       warehouseId: 'warehouse-1',
       articleVariantId: 'variant-1',
@@ -115,6 +111,16 @@ describe('SalesService.createSale', () => {
       sourceType: 'INVOICE',
       sourceId: 'invoice-1',
     });
+    // COGS = 3*10 + 1*20 = 50, posted only after both movements are known.
+    const postedEntry = (accountingService.postInvoiceJournalEntry as jest.Mock).mock.calls[0][0];
+    expect(postedEntry).toMatchObject({
+      invoiceId: 'invoice-1',
+      subtotal: invoice.subtotal,
+      taxTotal: invoice.taxTotal,
+      total: invoice.total,
+      date: invoice.issueDate,
+    });
+    expect((postedEntry.cogsAmount as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(50);
     expect(result).toBe(invoice);
   });
 
@@ -255,7 +261,7 @@ describe('SalesService.createSale', () => {
     ).rejects.toThrow(failure);
   });
 
-  it('propagates an unbalanced-entry error from accounting without recording any stock movement', async () => {
+  it('propagates an unbalanced-entry error from accounting after recording stock movements (the enclosing tx rolls back everything)', async () => {
     const invoice = {
       id: 'invoice-1',
       subtotal: new Prisma.Decimal(100),
@@ -289,7 +295,10 @@ describe('SalesService.createSale', () => {
         }),
       ),
     ).rejects.toThrow(failure);
-    expect(inventoryService.recordMovement).not.toHaveBeenCalled();
+    // Inventory now runs before accounting (COGS needs the movement's
+    // stamped cost first) - the movement call did happen, it's the shared
+    // per-request transaction that rolls it back, not this method.
+    expect(inventoryService.recordMovement).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -348,6 +357,38 @@ describe('SalesService.voidSale', () => {
       sourceId: 'credit-note-1',
     });
     expect(result).toBe(creditNote);
+  });
+
+  it('re-weights the return at the original sale unit cost when the sale had one', async () => {
+    const creditNote = { id: 'credit-note-1', invoiceId: 'invoice-1' };
+    const invoicingService = {
+      createCreditNote: jest.fn().mockResolvedValue(creditNote),
+    } as unknown as InvoicingService;
+    const inventoryService = {
+      recordMovement: jest.fn().mockResolvedValue({}),
+    } as unknown as InventoryService;
+    const accountingService = {
+      reverseInvoiceJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-2', lines: [] }),
+    } as unknown as AccountingService;
+    const saleMovements = [
+      {
+        warehouseId: 'warehouse-1',
+        articleVariantId: 'variant-1',
+        quantity: new Prisma.Decimal(3),
+        unitCost: new Prisma.Decimal(42),
+      },
+    ];
+    const db = { stockMovement: { findMany: jest.fn().mockResolvedValue(saleMovements) } };
+
+    const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
+
+    await runInTenant(db, () =>
+      service.voidSale({ invoiceId: 'invoice-1', reason: 'Devolución de mercadería' }),
+    );
+
+    expect(inventoryService.recordMovement).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'RETURN', unitCost: 42 }),
+    );
   });
 
   it('propagates a reversal failure without swallowing it', async () => {

@@ -441,6 +441,10 @@ model StockLedger {
   articleVariantId String
   articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
   quantity         Decimal        @default(0) @db.Decimal(14, 3)
+  // Running weighted-average unit cost (PPP), updated on every costed
+  // inbound movement (PURCHASE_IN/PRODUCTION_IN/RETURN with a unitCost).
+  // Null until the first costed inbound - see InventoryService.recordMovement.
+  avgUnitCost      Decimal?       @db.Decimal(14, 4)
   updatedAt        DateTime       @updatedAt
 
   @@unique([warehouseId, articleVariantId])
@@ -476,6 +480,11 @@ model StockMovement {
   articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
   type             MovementType
   quantity         Decimal        @db.Decimal(14, 3)
+  // Cost snapshot for this specific movement: for costed inbound types,
+  // the unit cost provided by the caller; for SALE_OUT/PRODUCTION_OUT, the
+  // StockLedger.avgUnitCost consumed at that moment (never recomputed
+  // later). Null for ADJUSTMENT and any uncosted movement.
+  unitCost         Decimal?       @db.Decimal(14, 4)
   sourceType       String?
   sourceId         String?
   invoiceId        String?

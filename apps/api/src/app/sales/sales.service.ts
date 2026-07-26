@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AccountingService } from '@plexo/accounting';
-import { getTenantDb } from '@plexo/database';
+import { getTenantDb, Prisma } from '@plexo/database';
 import { InventoryService } from '@plexo/inventory';
 import { InvoicingService, type CreateCreditNoteDto } from '@plexo/invoicing';
 import { resolveEmailFrom, TenantSettingsService } from '@plexo/tenant-settings';
@@ -61,16 +61,13 @@ export class SalesService {
       resolveEmailFrom(settings),
     );
 
-    await this.accountingService.postInvoiceJournalEntry({
-      invoiceId: invoice.id,
-      subtotal: invoice.subtotal,
-      taxTotal: invoice.taxTotal,
-      total: invoice.total,
-      date: invoice.issueDate,
-    });
-
+    // Inventory has to run before accounting now (used to be the other way
+    // around): the COGS lines below need each SALE_OUT movement's stamped
+    // unitCost (the weighted-average cost consumed at that moment), which
+    // only exists once recordMovement() has run.
+    let totalCogs = new Prisma.Decimal(0);
     for (const line of invoice.lines) {
-      await this.inventoryService.recordMovement({
+      const movement = await this.inventoryService.recordMovement({
         warehouseId: dto.warehouseId,
         articleVariantId: line.articleVariantId,
         type: 'SALE_OUT',
@@ -79,7 +76,19 @@ export class SalesService {
         sourceType: 'INVOICE',
         sourceId: invoice.id,
       });
+      if (movement.unitCost != null) {
+        totalCogs = totalCogs.add(new Prisma.Decimal(movement.unitCost).mul(line.quantity));
+      }
     }
+
+    await this.accountingService.postInvoiceJournalEntry({
+      invoiceId: invoice.id,
+      subtotal: invoice.subtotal,
+      taxTotal: invoice.taxTotal,
+      total: invoice.total,
+      date: invoice.issueDate,
+      cogsAmount: totalCogs,
+    });
 
     return invoice;
   }
@@ -117,6 +126,12 @@ export class SalesService {
         articleVariantId: movement.articleVariantId,
         type: 'RETURN',
         quantity: movement.quantity.toNumber(),
+        // Re-weights the returned stock back in at the cost it was sold
+        // at, so the average doesn't just silently drop the cost trail -
+        // undefined (not 0) when the original sale had no cost basis, so
+        // recordMovement leaves the average untouched rather than
+        // polluting it with a fabricated zero cost.
+        unitCost: movement.unitCost != null ? movement.unitCost.toNumber() : undefined,
         invoiceId: dto.invoiceId,
         sourceType: 'CREDIT_NOTE',
         sourceId: creditNote.id,

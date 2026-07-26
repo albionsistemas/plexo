@@ -55,6 +55,7 @@ export interface RecordStockMovementInput {
   articleVariantId: string;
   type: MovementType;
   quantity: number;
+  unitCost?: number;
 }
 
 export const inventoryApi = {

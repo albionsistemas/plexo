@@ -196,10 +196,13 @@ export class InventoryService {
    * the last units, only one UPDATE matches a row, the other gets count=0
    * and fails cleanly instead of double-decrementing past zero.
    *
-   * Deliberately does NOT post anything to the ledger (accounting). A
-   * SALE_OUT recorded here without going through SalesService (apps/api,
-   * which composes Invoicing + Inventory + Accounting) has no invoiceId
-   * and no price - this module only knows quantities, never money - so
+   * Deliberately does NOT post anything to the ledger (accounting) itself.
+   * Since the weighted-average cost feature, this module does track unit
+   * cost (StockLedger.avgUnitCost, StockMovement.unitCost) - but never sale
+   * price/revenue, and never posts a journal entry on its own. A SALE_OUT
+   * recorded here without going through SalesService (apps/api, which
+   * composes Invoicing + Inventory + Accounting, reading back
+   * movement.unitCost to post COGS) has no invoiceId and no revenue side -
    * there's nothing correct to auto-post from. Any stock movement that
    * represents real revenue but didn't go through an invoice (informal
    * sale, manual adjustment standing in for one, etc.) needs its journal
@@ -215,12 +218,45 @@ export class InventoryService {
     } else if (dto.quantity <= 0) {
       throw new BadRequestException(`${dto.type} quantity must be a positive number`);
     }
+    if ((dto.type === 'PURCHASE_IN' || dto.type === 'PRODUCTION_IN') && dto.unitCost == null) {
+      throw new BadRequestException(`${dto.type} requires unitCost`);
+    }
 
     const db = getTenantDb();
     const tenantId = getTenantId();
     const delta = computeStockDelta(dto.type, dto.quantity);
 
+    // Weighted-average cost (PPP) tracking: ADJUSTMENT never touches cost -
+    // it's a quantity-only correction, same precedent as the informal-sale
+    // note below (only SalesService-driven flows auto-post to accounting).
+    // Every other type reads the current ledger row first, since both
+    // branches below need it (prior average for inbound, current average
+    // to stamp on outbound) and neither existing branch used to read
+    // before writing.
+    let priorLedger: { quantity: Prisma.Decimal; avgUnitCost: Prisma.Decimal | null } | null =
+      null;
+    if (dto.type !== 'ADJUSTMENT') {
+      priorLedger = await db.stockLedger.findUnique({
+        where: {
+          warehouseId_articleVariantId: {
+            warehouseId: dto.warehouseId,
+            articleVariantId: dto.articleVariantId,
+          },
+        },
+        select: { quantity: true, avgUnitCost: true },
+      });
+    }
+
+    let stampedUnitCost: Prisma.Decimal | null = null;
+
     if (delta < 0) {
+      if (dto.type === 'SALE_OUT' || dto.type === 'PRODUCTION_OUT') {
+        // Outbound never changes the average - it just consumes at
+        // whatever it currently is, and that's what gets stamped on the
+        // movement so SalesService can compute COGS from it later.
+        stampedUnitCost = priorLedger?.avgUnitCost ?? null;
+      }
+
       const decremented = await db.stockLedger.updateMany({
         where: {
           warehouseId: dto.warehouseId,
@@ -233,6 +269,26 @@ export class InventoryService {
         throw new BadRequestException('Insufficient stock in this warehouse');
       }
     } else {
+      let newAvgUnitCost: Prisma.Decimal | undefined;
+      // RETURN carries a cost only when the caller knows it (SalesService's
+      // voidSale, reversing a costed SALE_OUT) - a manually-posted RETURN
+      // without one just stays quantity-only, same as before this feature.
+      const isCostedInbound =
+        dto.type === 'PURCHASE_IN' || dto.type === 'PRODUCTION_IN' || dto.type === 'RETURN';
+      if (isCostedInbound && dto.unitCost != null) {
+        const incomingCost = new Prisma.Decimal(dto.unitCost);
+        const priorQty = priorLedger?.quantity ?? new Prisma.Decimal(0);
+        const priorAvg = priorLedger?.avgUnitCost ?? null;
+        newAvgUnitCost =
+          priorAvg === null || priorQty.lte(0)
+            ? incomingCost
+            : priorQty
+                .mul(priorAvg)
+                .add(new Prisma.Decimal(delta).mul(incomingCost))
+                .div(priorQty.add(delta));
+        stampedUnitCost = incomingCost;
+      }
+
       await db.stockLedger.upsert({
         where: {
           warehouseId_articleVariantId: {
@@ -245,8 +301,12 @@ export class InventoryService {
           warehouseId: dto.warehouseId,
           articleVariantId: dto.articleVariantId,
           quantity: delta,
+          avgUnitCost: newAvgUnitCost,
         },
-        update: { quantity: { increment: delta } },
+        update: {
+          quantity: { increment: delta },
+          ...(newAvgUnitCost !== undefined ? { avgUnitCost: newAvgUnitCost } : {}),
+        },
       });
     }
 
@@ -257,6 +317,7 @@ export class InventoryService {
         articleVariantId: dto.articleVariantId,
         type: dto.type,
         quantity: dto.quantity,
+        unitCost: stampedUnitCost,
         sourceType: dto.sourceType,
         sourceId: dto.sourceId,
         invoiceId: dto.invoiceId,

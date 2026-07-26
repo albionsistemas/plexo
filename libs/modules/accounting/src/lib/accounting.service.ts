@@ -31,6 +31,16 @@ const VAT_PAYABLE_ACCOUNT = {
   name: 'IVA Débito Fiscal',
   type: 'LIABILITY' as const,
 };
+const COGS_EXPENSE_ACCOUNT = {
+  code: '5.1.01',
+  name: 'Costo de Mercadería Vendida',
+  type: 'EXPENSE' as const,
+};
+const INVENTORY_ASSET_ACCOUNT = {
+  code: '1.1.04',
+  name: 'Mercaderías',
+  type: 'ASSET' as const,
+};
 
 export interface PostInvoiceJournalEntryInput {
   invoiceId: string;
@@ -38,6 +48,11 @@ export interface PostInvoiceJournalEntryInput {
   taxTotal: Prisma.Decimal | number | string;
   total: Prisma.Decimal | number | string;
   date?: Date;
+  // Weighted-average cost of the goods sold in this invoice, computed by
+  // SalesService from the unitCost each SALE_OUT movement was stamped
+  // with. Optional/zero is common (uncosted variant, no purchase history
+  // yet) and simply skips the COGS lines below - not an error.
+  cogsAmount?: Prisma.Decimal | number | string;
 }
 
 export interface TrialBalanceRow {
@@ -165,7 +180,16 @@ export class AccountingService {
    * POST /accounting/accounts) gets that account reused instead.
    *
    * Skips posting entirely for a zero-total invoice (nothing financial
-   * happened) rather than writing a degenerate zero-amount entry.
+   * happened) rather than writing a degenerate zero-amount entry. Same
+   * treatment for the optional COGS pair (debit Costo de Mercadería
+   * Vendida / credit Mercaderías) - appended to this SAME entry rather
+   * than a second one, since JournalEntry.invoiceId is @unique: a second
+   * entry per invoice isn't possible without a schema change, and folding
+   * COGS into this one means reverseInvoiceJournalEntry() (credit notes)
+   * reverses it for free along with the rest, no extra reversal logic
+   * needed. The two COGS lines always carry the identical amount to each
+   * other, so the debit=credit balance holds regardless of whether they're
+   * present - independent of the AR/revenue/VAT lines above.
    */
   async postInvoiceJournalEntry(
     input: PostInvoiceJournalEntryInput,
@@ -176,11 +200,18 @@ export class AccountingService {
     }
     const subtotal = new Prisma.Decimal(input.subtotal);
     const taxTotal = new Prisma.Decimal(input.taxTotal);
+    const cogsAmount = new Prisma.Decimal(input.cogsAmount ?? 0);
 
-    const [ar, revenue, vat] = await Promise.all([
+    const [ar, revenue, vat, cogsAccounts] = await Promise.all([
       this.getOrCreateAccount(ACCOUNTS_RECEIVABLE_ACCOUNT),
       this.getOrCreateAccount(SALES_REVENUE_ACCOUNT),
       taxTotal.gt(0) ? this.getOrCreateAccount(VAT_PAYABLE_ACCOUNT) : Promise.resolve(undefined),
+      cogsAmount.gt(0)
+        ? Promise.all([
+            this.getOrCreateAccount(COGS_EXPENSE_ACCOUNT),
+            this.getOrCreateAccount(INVENTORY_ASSET_ACCOUNT),
+          ])
+        : Promise.resolve(undefined),
     ]);
 
     const lines: PostJournalEntryDto['lines'] = [
@@ -189,6 +220,11 @@ export class AccountingService {
     ];
     if (vat && taxTotal.gt(0)) {
       lines.push({ accountId: vat.id, direction: 'CREDIT', amount: taxTotal.toNumber() });
+    }
+    if (cogsAccounts && cogsAmount.gt(0)) {
+      const [cogs, inventory] = cogsAccounts;
+      lines.push({ accountId: cogs.id, direction: 'DEBIT', amount: cogsAmount.toNumber() });
+      lines.push({ accountId: inventory.id, direction: 'CREDIT', amount: cogsAmount.toNumber() });
     }
 
     return this.postJournalEntry({
