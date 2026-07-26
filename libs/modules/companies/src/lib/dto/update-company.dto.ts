@@ -1,4 +1,4 @@
-import { CompanyRoleType } from '@plexo/database';
+import { CompanyIndustry, CompanyRoleType } from '@plexo/database';
 import {
   ArrayMinSize,
   ArrayUnique,
@@ -47,6 +47,30 @@ export class UpdateCompanyDto {
   @IsOptional()
   @IsString()
   fiscalAddress?: string;
+
+  @IsOptional()
+  @IsEnum(CompanyIndustry)
+  industry?: CompanyIndustry;
+
+  @IsOptional()
+  @IsString()
+  grossIncomeNumber?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  withholdsVat?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  withholdsIncomeTax?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  withholdsGrossIncome?: boolean;
+
+  @IsOptional()
+  @IsString()
+  logoUrl?: string;
 
   @IsOptional()
   @IsArray()

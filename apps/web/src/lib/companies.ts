@@ -2,6 +2,20 @@ import { api } from '@/lib/api';
 
 export type CompanyRoleType = 'CUSTOMER' | 'SUPPLIER' | 'BRANCH';
 
+export type CompanyIndustry =
+  | 'COMERCIO'
+  | 'SERVICIOS'
+  | 'INDUSTRIA'
+  | 'CONSTRUCCION'
+  | 'AGRO'
+  | 'TECNOLOGIA'
+  | 'SALUD'
+  | 'EDUCACION'
+  | 'GASTRONOMIA'
+  | 'TRANSPORTE'
+  | 'INMOBILIARIO'
+  | 'OTRO';
+
 export interface Company {
   id: string;
   name: string;
@@ -11,6 +25,12 @@ export interface Company {
   pointOfSaleNumber: string | null;
   taxCondition: string | null;
   fiscalAddress: string | null;
+  industry: CompanyIndustry | null;
+  grossIncomeNumber: string | null;
+  withholdsVat: boolean;
+  withholdsIncomeTax: boolean;
+  withholdsGrossIncome: boolean;
+  logoUrl: string | null;
   active: boolean;
   createdAt: string;
   roles: { role: CompanyRoleType }[];
@@ -36,6 +56,12 @@ export interface CreateCompanyInput {
   pointOfSaleNumber?: string;
   taxCondition?: string;
   fiscalAddress?: string;
+  industry?: CompanyIndustry;
+  grossIncomeNumber?: string;
+  withholdsVat?: boolean;
+  withholdsIncomeTax?: boolean;
+  withholdsGrossIncome?: boolean;
+  logoUrl?: string;
   roles: CompanyRoleType[];
 }
 
@@ -47,6 +73,12 @@ export interface UpdateCompanyInput {
   pointOfSaleNumber?: string;
   taxCondition?: string;
   fiscalAddress?: string;
+  industry?: CompanyIndustry;
+  grossIncomeNumber?: string;
+  withholdsVat?: boolean;
+  withholdsIncomeTax?: boolean;
+  withholdsGrossIncome?: boolean;
+  logoUrl?: string;
   roles?: CompanyRoleType[];
   active?: boolean;
 }

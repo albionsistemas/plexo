@@ -1,8 +1,9 @@
-import { CompanyRoleType } from '@plexo/database';
+import { CompanyIndustry, CompanyRoleType } from '@plexo/database';
 import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsNumber,
@@ -51,6 +52,34 @@ export class CreateCompanyDto {
   @IsOptional()
   @IsString()
   fiscalAddress?: string;
+
+  @IsOptional()
+  @IsEnum(CompanyIndustry)
+  industry?: CompanyIndustry;
+
+  // Ingresos Brutos (provincial), independent of taxId/CUIT - see
+  // Company.grossIncomeNumber in schema.prisma.
+  @IsOptional()
+  @IsString()
+  grossIncomeNumber?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  withholdsVat?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  withholdsIncomeTax?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  withholdsGrossIncome?: boolean;
+
+  // URL only, no upload/storage infra - see Company.logoUrl in
+  // schema.prisma.
+  @IsOptional()
+  @IsString()
+  logoUrl?: string;
 
   @IsArray()
   @ArrayMinSize(1)

@@ -144,7 +144,7 @@ model TenantSettings {
   // Espejo del DomainStatus de Resend ('pending'|'verified'|'failed'|...) -
   // String plano a propósito, es vocabulario de una API externa que no
   // controlamos.
-  domainStatus String?
+  domainStatus       String?
 
   // Sólo afecta el recordatorio de cobranza, no el email de factura
   // emitida. NEUTRAL por defecto ≈ el texto que ya se mandaba antes de este
@@ -210,6 +210,26 @@ enum CompanyRoleType {
   BRANCH
 }
 
+// Generic internal categorization for reporting/filtering - deliberately
+// NOT AFIP's own "Actividades" nomenclador (that's a much larger,
+// hierarchical, per-CUIT registry meant for tax purposes, not this). A
+// closed enum (vs free text like taxCondition) trades flexibility for
+// consistent filtering; OTRO is the catch-all for whatever doesn't fit.
+enum CompanyIndustry {
+  COMERCIO
+  SERVICIOS
+  INDUSTRIA
+  CONSTRUCCION
+  AGRO
+  TECNOLOGIA
+  SALUD
+  EDUCACION
+  GASTRONOMIA
+  TRANSPORTE
+  INMOBILIARIO
+  OTRO
+}
+
 // Unifies what used to be a Customer-only table: any external company the
 // tenant deals with (as a customer and/or a supplier) plus the tenant's
 // own branches/points of sale - all three are "a company", just playing
@@ -218,13 +238,13 @@ enum CompanyRoleType {
 // something for a BRANCH (the AFIP punto de venta invoices are issued
 // under); it's simply unused for CUSTOMER/SUPPLIER rows.
 model Company {
-  id                String   @id @default(uuid())
-  tenantId          String
-  name              String
-  taxId             String?
-  email             String?
-  creditLimit       Decimal  @default(0) @db.Decimal(14, 2)
-  pointOfSaleNumber String?
+  id                   String           @id @default(uuid())
+  tenantId             String
+  name                 String
+  taxId                String?
+  email                String?
+  creditLimit          Decimal          @default(0) @db.Decimal(14, 2)
+  pointOfSaleNumber    String?
   // Best-effort label from AFIP's padrón lookup (ws_sr_padron_a13, see
   // libs/modules/companies/afip-padron.port.ts), persisted here since
   // 2026-07-23 - previously shown only at lookup time, lost on refresh.
@@ -232,8 +252,29 @@ model Company {
   // last time someone hit "Buscar en AFIP" and saved. Not a closed enum
   // on purpose - AFIP's own categories change over time (see
   // AfipPadronData.taxCondition for the same reasoning).
-  taxCondition      String?
-  fiscalAddress     String?
+  taxCondition         String?
+  fiscalAddress        String?
+  industry             CompanyIndustry?
+  // Ingresos Brutos (provincial gross-income tax) registration number -
+  // independent of taxId/CUIT (national), used alongside it for
+  // provincial retenciones/percepciones. Free text: format varies by
+  // jurisdiction (Convenio Multilateral vs local).
+  grossIncomeNumber    String?
+  // Whether this company is an AFIP/ARBA-appointed withholding agent for
+  // each tax - three independent flags, not one generic "tiene
+  // retenciones" boolean, because a company can be appointed for one
+  // regime and not another (e.g. retiene IVA but no Ganancias). Matters
+  // mainly for CUSTOMER companies: one flagged here may pay an invoice
+  // short and hand over a certificado de retención for the difference
+  // instead of the missing amount being a real discrepancy. Purely
+  // informational for now - nothing in Receivables reads these yet, it's
+  // just visible on the company record.
+  withholdsVat         Boolean          @default(false)
+  withholdsIncomeTax   Boolean          @default(false)
+  withholdsGrossIncome Boolean          @default(false)
+  // URL only, no upload/storage infra - same convention as
+  // User.avatarUrl/Person.avatarUrl.
+  logoUrl              String?
   // Soft delete: a Company can be referenced by historical fiscal records
   // (Invoice/Quote have no onDelete cascade on purpose - see the migration
   // for why), so "deleting" one means hiding it from active use, not
@@ -241,8 +282,8 @@ model Company {
   // this flag; anything that creates a NEW forward-looking record against
   // the company (a new invoice, resolving a branch for a new sale) checks
   // it and rejects if false.
-  active            Boolean  @default(true)
-  createdAt         DateTime @default(now())
+  active               Boolean          @default(true)
+  createdAt            DateTime         @default(now())
 
   roles  CompanyRole[]
   people Person[]
@@ -546,14 +587,14 @@ model UserActivityLog {
   // audit-entity.decorator.ts) - undecorated routes leave these null and
   // keep the plain "METHOD /url" action string, exactly as before this
   // field existed.
-  entityType String? // Prisma model name, e.g. "company" - plain String on
+  entityType   String? // Prisma model name, e.g. "company" - plain String on
   // purpose (not an enum): auditing a new entity is a decorator, not a migration.
-  entityId    String?
-  entityLabel String? // display value only (e.g. "Acme S.A."); the verb/noun
+  entityId     String?
+  entityLabel  String? // display value only (e.g. "Acme S.A."); the verb/noun
   // phrasing happens at read time (ActivityLogService), not here.
-  changes Json? // {"taxId": {"from": "20-111...", "to": "20-222..."}} - see
+  changes      Json? // {"taxId": {"from": "20-111...", "to": "20-222..."}} - see
   // computeDiff in audit-diff.ts. Only ever set on outcome SUCCESS.
-  createdAt DateTime @default(now())
+  createdAt    DateTime        @default(now())
 
   @@index([tenantId, createdAt])
   @@index([tenantId, userId, createdAt])
@@ -666,7 +707,7 @@ model CreditNote {
   issuedBy       User           @relation(fields: [issuedByUserId], references: [id])
   issueDate      DateTime       @default(now())
 
-  lines       CreditNoteLine[]
+  lines        CreditNoteLine[]
   journalEntry JournalEntry?
 
   @@unique([tenantId, documentLetter, pointOfSale, number])
@@ -682,18 +723,18 @@ model CreditNote {
 // over time) - InvoicingService.createCreditNote sums them to enforce that
 // total credited quantity never exceeds InvoiceLine.quantity.
 model CreditNoteLine {
-  id             String      @id @default(uuid())
-  tenantId       String
-  creditNoteId   String
-  creditNote     CreditNote  @relation(fields: [creditNoteId], references: [id])
-  invoiceLineId  String
-  invoiceLine    InvoiceLine @relation(fields: [invoiceLineId], references: [id])
-  quantity       Decimal     @db.Decimal(14, 3)
+  id            String      @id @default(uuid())
+  tenantId      String
+  creditNoteId  String
+  creditNote    CreditNote  @relation(fields: [creditNoteId], references: [id])
+  invoiceLineId String
+  invoiceLine   InvoiceLine @relation(fields: [invoiceLineId], references: [id])
+  quantity      Decimal     @db.Decimal(14, 3)
   // Proportional slice of the InvoiceLine's netAmount/tax/lineTotal for
   // this credited quantity - same computed-field shape as InvoiceLine.
-  netAmount      Decimal     @db.Decimal(14, 2)
-  taxAmount      Decimal     @db.Decimal(14, 2)
-  lineTotal      Decimal     @db.Decimal(14, 2)
+  netAmount     Decimal     @db.Decimal(14, 2)
+  taxAmount     Decimal     @db.Decimal(14, 2)
+  lineTotal     Decimal     @db.Decimal(14, 2)
 
   @@index([tenantId])
   @@index([invoiceLineId])

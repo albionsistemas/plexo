@@ -1,6 +1,6 @@
 'use client';
 
-import { companiesApi, type Company, type CompanyRoleType } from '@/lib/companies';
+import { companiesApi, type Company, type CompanyIndustry, type CompanyRoleType } from '@/lib/companies';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import { useState } from 'react';
@@ -28,6 +28,21 @@ const ROLE_OPTIONS: { value: CompanyRoleType; label: string }[] = [
   { value: 'BRANCH', label: 'Sucursal / punto de venta propio' },
 ];
 
+const INDUSTRY_OPTIONS: { value: CompanyIndustry; label: string }[] = [
+  { value: 'COMERCIO', label: 'Comercio' },
+  { value: 'SERVICIOS', label: 'Servicios' },
+  { value: 'INDUSTRIA', label: 'Industria' },
+  { value: 'CONSTRUCCION', label: 'Construcción' },
+  { value: 'AGRO', label: 'Agro' },
+  { value: 'TECNOLOGIA', label: 'Tecnología' },
+  { value: 'SALUD', label: 'Salud' },
+  { value: 'EDUCACION', label: 'Educación' },
+  { value: 'GASTRONOMIA', label: 'Gastronomía' },
+  { value: 'TRANSPORTE', label: 'Transporte' },
+  { value: 'INMOBILIARIO', label: 'Inmobiliario' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
 export default function CompanyFormModal({ company, onClose, defaultRoles, onSaved }: Props) {
   const queryClient = useQueryClient();
   const isEdit = Boolean(company);
@@ -39,6 +54,14 @@ export default function CompanyFormModal({ company, onClose, defaultRoles, onSav
   const [pointOfSaleNumber, setPointOfSaleNumber] = useState(company?.pointOfSaleNumber ?? '');
   const [taxCondition, setTaxCondition] = useState(company?.taxCondition ?? '');
   const [fiscalAddress, setFiscalAddress] = useState(company?.fiscalAddress ?? '');
+  const [industry, setIndustry] = useState<CompanyIndustry | ''>(company?.industry ?? '');
+  const [grossIncomeNumber, setGrossIncomeNumber] = useState(company?.grossIncomeNumber ?? '');
+  const [withholdsVat, setWithholdsVat] = useState(company?.withholdsVat ?? false);
+  const [withholdsIncomeTax, setWithholdsIncomeTax] = useState(company?.withholdsIncomeTax ?? false);
+  const [withholdsGrossIncome, setWithholdsGrossIncome] = useState(
+    company?.withholdsGrossIncome ?? false,
+  );
+  const [logoUrl, setLogoUrl] = useState(company?.logoUrl ?? '');
   const [roles, setRoles] = useState<CompanyRoleType[]>(
     company?.roles.map((r) => r.role) ?? defaultRoles ?? ['CUSTOMER'],
   );
@@ -72,6 +95,12 @@ export default function CompanyFormModal({ company, onClose, defaultRoles, onSav
         pointOfSaleNumber: roles.includes('BRANCH') ? pointOfSaleNumber || undefined : undefined,
         taxCondition: taxCondition || undefined,
         fiscalAddress: fiscalAddress || undefined,
+        industry: industry || undefined,
+        grossIncomeNumber: grossIncomeNumber || undefined,
+        withholdsVat: roles.includes('CUSTOMER') ? withholdsVat : undefined,
+        withholdsIncomeTax: roles.includes('CUSTOMER') ? withholdsIncomeTax : undefined,
+        withholdsGrossIncome: roles.includes('CUSTOMER') ? withholdsGrossIncome : undefined,
+        logoUrl: logoUrl || undefined,
         roles,
       };
       return company ? companiesApi.update(company.id, dto) : companiesApi.create(dto);
@@ -154,6 +183,51 @@ export default function CompanyFormModal({ company, onClose, defaultRoles, onSav
             </Field>
           </div>
 
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Rubro">
+              <select
+                className={inputClass}
+                value={industry}
+                onChange={(e) => setIndustry(e.target.value as CompanyIndustry | '')}
+              >
+                <option value="">Sin especificar</option>
+                {INDUSTRY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Ingresos Brutos (IIBB)">
+              <input
+                className={inputClass}
+                value={grossIncomeNumber}
+                onChange={(e) => setGrossIncomeNumber(e.target.value)}
+              />
+            </Field>
+          </div>
+
+          <Field label="Logo (URL)">
+            <div className="flex items-center gap-3">
+              {logoUrl && (
+                <img
+                  src={logoUrl}
+                  alt=""
+                  className="h-10 w-10 shrink-0 rounded-lg border border-slate-300 dark:border-slate-700 object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.visibility = 'hidden';
+                  }}
+                />
+              )}
+              <input
+                className={inputClass + ' flex-1'}
+                value={logoUrl}
+                onChange={(e) => setLogoUrl(e.target.value)}
+                placeholder="https://..."
+              />
+            </div>
+          </Field>
+
           <Field label="Roles">
             <div className="flex flex-col gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 p-3">
               {ROLE_OPTIONS.map((opt) => (
@@ -178,6 +252,37 @@ export default function CompanyFormModal({ company, onClose, defaultRoles, onSav
                 value={creditLimit}
                 onChange={(e) => setCreditLimit(e.target.value)}
               />
+            </Field>
+          )}
+
+          {roles.includes('CUSTOMER') && (
+            <Field label="Retenciones (agente AFIP/ARBA)">
+              <div className="flex flex-col gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 p-3">
+                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={withholdsVat}
+                    onChange={(e) => setWithholdsVat(e.target.checked)}
+                  />
+                  Retiene IVA
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={withholdsIncomeTax}
+                    onChange={(e) => setWithholdsIncomeTax(e.target.checked)}
+                  />
+                  Retiene Ganancias
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={withholdsGrossIncome}
+                    onChange={(e) => setWithholdsGrossIncome(e.target.checked)}
+                  />
+                  Retiene Ingresos Brutos
+                </label>
+              </div>
             </Field>
           )}
 

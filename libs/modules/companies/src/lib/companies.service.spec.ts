@@ -26,6 +26,34 @@ describe('CompaniesService.createCompany', () => {
       { tenantId: 'tenant-1', role: 'SUPPLIER' },
     ]);
   });
+
+  it('passes industry, gross income number and withholding flags through', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 'company-1', roles: [{ role: 'CUSTOMER' }] });
+    const db = { company: { create } };
+    const service = new CompaniesService(stubAfipPadron);
+
+    await runInTenant(db, () =>
+      service.createCompany({
+        name: 'Acme',
+        roles: ['CUSTOMER'],
+        industry: 'COMERCIO',
+        grossIncomeNumber: '901-123456-7',
+        withholdsVat: true,
+        withholdsIncomeTax: false,
+        withholdsGrossIncome: true,
+        logoUrl: 'https://example.com/logo.png',
+      }),
+    );
+
+    expect(create.mock.calls[0][0].data).toMatchObject({
+      industry: 'COMERCIO',
+      grossIncomeNumber: '901-123456-7',
+      withholdsVat: true,
+      withholdsIncomeTax: false,
+      withholdsGrossIncome: true,
+      logoUrl: 'https://example.com/logo.png',
+    });
+  });
 });
 
 describe('CompaniesService.updateCompany', () => {
@@ -89,6 +117,37 @@ describe('CompaniesService.updateCompany', () => {
 
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ active: false }) }),
+    );
+  });
+
+  it('passes industry, gross income number and withholding flags through', async () => {
+    const update = jest.fn().mockResolvedValue({ id: 'company-1' });
+    const db = {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'company-1' }),
+        update,
+      },
+    };
+    const service = new CompaniesService(stubAfipPadron);
+
+    await runInTenant(db, () =>
+      service.updateCompany('company-1', {
+        industry: 'SERVICIOS',
+        grossIncomeNumber: '901-123456-7',
+        withholdsIncomeTax: true,
+        logoUrl: 'https://example.com/logo.png',
+      }),
+    );
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          industry: 'SERVICIOS',
+          grossIncomeNumber: '901-123456-7',
+          withholdsIncomeTax: true,
+          logoUrl: 'https://example.com/logo.png',
+        }),
+      }),
     );
   });
 });

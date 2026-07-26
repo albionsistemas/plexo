@@ -17,6 +17,21 @@ const ROLE_LABELS: Record<string, string> = {
   BRANCH: 'Sucursal',
 };
 
+const INDUSTRY_LABELS: Record<string, string> = {
+  COMERCIO: 'Comercio',
+  SERVICIOS: 'Servicios',
+  INDUSTRIA: 'Industria',
+  CONSTRUCCION: 'Construcción',
+  AGRO: 'Agro',
+  TECNOLOGIA: 'Tecnología',
+  SALUD: 'Salud',
+  EDUCACION: 'Educación',
+  GASTRONOMIA: 'Gastronomía',
+  TRANSPORTE: 'Transporte',
+  INMOBILIARIO: 'Inmobiliario',
+  OTRO: 'Otro',
+};
+
 const inputClass =
   'rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500';
 
@@ -53,7 +68,19 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
         <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{company.name}</h2>
+          <div className="flex items-center gap-3">
+            {company.logoUrl && (
+              <img
+                src={company.logoUrl}
+                alt=""
+                className="h-9 w-9 shrink-0 rounded-lg border border-slate-300 dark:border-slate-700 object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            )}
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{company.name}</h2>
+          </div>
           <button onClick={onClose} className="text-slate-500 transition hover:text-slate-700 dark:hover:text-slate-300">
             ✕
           </button>
@@ -95,6 +122,20 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
               <p className="text-slate-700 dark:text-slate-300">{company.fiscalAddress}</p>
             </div>
           )}
+          {company.industry && (
+            <div>
+              <p className="text-xs text-slate-500">Rubro</p>
+              <p className="text-slate-700 dark:text-slate-300">
+                {INDUSTRY_LABELS[company.industry] ?? company.industry}
+              </p>
+            </div>
+          )}
+          {company.grossIncomeNumber && (
+            <div>
+              <p className="text-xs text-slate-500">Ingresos Brutos (IIBB)</p>
+              <p className="text-slate-700 dark:text-slate-300">{company.grossIncomeNumber}</p>
+            </div>
+          )}
           {company.roles.some((r) => r.role === 'CUSTOMER') && (
             <div>
               <p className="text-xs text-slate-500">Límite de crédito</p>
@@ -107,6 +148,29 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
               <p className="text-slate-700 dark:text-slate-300">{company.pointOfSaleNumber ?? '—'}</p>
             </div>
           )}
+          {company.roles.some((r) => r.role === 'CUSTOMER') &&
+            (company.withholdsVat || company.withholdsIncomeTax || company.withholdsGrossIncome) && (
+              <div className="col-span-2">
+                <p className="text-xs text-slate-500">Retenciones (agente AFIP/ARBA)</p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {company.withholdsVat && (
+                    <span className="rounded bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">
+                      IVA
+                    </span>
+                  )}
+                  {company.withholdsIncomeTax && (
+                    <span className="rounded bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">
+                      Ganancias
+                    </span>
+                  )}
+                  {company.withholdsGrossIncome && (
+                    <span className="rounded bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">
+                      Ingresos Brutos
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
         </div>
 
         <div className="mb-2 flex items-center gap-2">

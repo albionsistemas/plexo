@@ -124,7 +124,25 @@ export default function CompaniesPage() {
                     onClick={() => setSelected(c)}
                     className={`cursor-pointer border-b border-slate-200/50 dark:border-slate-800/50 hover:bg-slate-200/40 dark:hover:bg-slate-800/40 ${!c.active ? 'opacity-50' : ''}`}
                   >
-                    <td className="py-2 pr-4 text-slate-800 dark:text-slate-200">{c.name}</td>
+                    <td className="py-2 pr-4 text-slate-800 dark:text-slate-200">
+                      <div className="flex items-center gap-2">
+                        {c.logoUrl ? (
+                          <img
+                            src={c.logoUrl}
+                            alt=""
+                            className="h-6 w-6 shrink-0 rounded border border-slate-300 dark:border-slate-700 object-cover"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-slate-200 dark:bg-slate-800 text-xs font-medium text-slate-500">
+                            {c.name.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                        {c.name}
+                      </div>
+                    </td>
                     <td className="py-2 pr-4">
                       <div className="flex flex-wrap gap-1">
                         {c.roles.map((r) => (
