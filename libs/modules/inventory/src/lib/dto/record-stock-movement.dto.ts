@@ -35,4 +35,12 @@ export class RecordStockMovementDto {
   @IsOptional()
   @IsUUID()
   invoiceId?: string;
+
+  // Which invoice line this movement came out of/back into - set by
+  // SalesService for SALE_OUT/RETURN so voidSale can later find "the
+  // movement for THIS line" instead of only "all movements for this
+  // invoice" (needed for partial credit notes).
+  @IsOptional()
+  @IsUUID()
+  invoiceLineId?: string;
 }

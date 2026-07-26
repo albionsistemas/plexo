@@ -321,6 +321,7 @@ export class InventoryService {
         sourceType: dto.sourceType,
         sourceId: dto.sourceId,
         invoiceId: dto.invoiceId,
+        invoiceLineId: dto.invoiceLineId,
       },
     });
 

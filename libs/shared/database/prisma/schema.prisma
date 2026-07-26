@@ -489,6 +489,14 @@ model StockMovement {
   sourceId         String?
   invoiceId        String?
   invoice          Invoice?       @relation(fields: [invoiceId], references: [id])
+  // Which invoice line this SALE_OUT movement came out of - set by
+  // SalesService.createSale. Lets voidSale find "the movement for THIS
+  // line" instead of only "all movements for this invoice", which partial
+  // credit notes need (restock/re-cost just the credited quantity, not the
+  // whole invoice). Null for movements with no invoice line (manual
+  // PURCHASE_IN/ADJUSTMENT/etc.).
+  invoiceLineId    String?
+  invoiceLine      InvoiceLine?   @relation(fields: [invoiceLineId], references: [id])
   createdAt        DateTime       @default(now())
 
   @@index([tenantId])
@@ -626,6 +634,9 @@ model InvoiceLine {
   taxRate          Decimal        @db.Decimal(5, 2)
   lineTotal        Decimal        @db.Decimal(14, 2)
 
+  creditNoteLines CreditNoteLine[]
+  stockMovements  StockMovement[]
+
   @@index([tenantId])
   @@map("invoice_lines")
 }
@@ -655,9 +666,38 @@ model CreditNote {
   issuedBy       User           @relation(fields: [issuedByUserId], references: [id])
   issueDate      DateTime       @default(now())
 
+  lines       CreditNoteLine[]
+  journalEntry JournalEntry?
+
   @@unique([tenantId, documentLetter, pointOfSale, number])
   @@index([tenantId, invoiceId])
   @@map("credit_notes")
+}
+
+// One row per (InvoiceLine, credited quantity) - a credit note always
+// targets specific invoice lines, never "the whole invoice" as a separate
+// concept: crediting every line's full quantity IS what used to be called
+// "full reversal", same code path. Multiple CreditNoteLine rows across
+// different CreditNotes can point at the same InvoiceLine (partial returns
+// over time) - InvoicingService.createCreditNote sums them to enforce that
+// total credited quantity never exceeds InvoiceLine.quantity.
+model CreditNoteLine {
+  id             String      @id @default(uuid())
+  tenantId       String
+  creditNoteId   String
+  creditNote     CreditNote  @relation(fields: [creditNoteId], references: [id])
+  invoiceLineId  String
+  invoiceLine    InvoiceLine @relation(fields: [invoiceLineId], references: [id])
+  quantity       Decimal     @db.Decimal(14, 3)
+  // Proportional slice of the InvoiceLine's netAmount/tax/lineTotal for
+  // this credited quantity - same computed-field shape as InvoiceLine.
+  netAmount      Decimal     @db.Decimal(14, 2)
+  taxAmount      Decimal     @db.Decimal(14, 2)
+  lineTotal      Decimal     @db.Decimal(14, 2)
+
+  @@index([tenantId])
+  @@index([invoiceLineId])
+  @@map("credit_note_lines")
 }
 
 model Quote {
@@ -727,6 +767,14 @@ model JournalEntry {
   tenantId     String
   invoiceId    String?       @unique
   invoice      Invoice?      @relation(fields: [invoiceId], references: [id])
+  // One entry per credit note, resolved-or-created the same way the sale's
+  // entry is resolved by invoiceId - NOT via reversalOfId/createReversingEntry,
+  // since a credit note posts its own independently-balanced (possibly
+  // partial) entry rather than a 100% mirror of a prior one, and both
+  // invoiceId/reversalOfId being @unique would block a second partial
+  // credit note from ever linking back to the same original sale entry.
+  creditNoteId String?       @unique
+  creditNote   CreditNote?   @relation(fields: [creditNoteId], references: [id])
   description  String
   date         DateTime      @default(now())
   createdById  String

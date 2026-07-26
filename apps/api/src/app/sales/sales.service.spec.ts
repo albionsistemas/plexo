@@ -303,8 +303,24 @@ describe('SalesService.createSale', () => {
 });
 
 describe('SalesService.voidSale', () => {
-  it('creates the credit note, reverses the invoice journal entry, then restocks each original sale movement', async () => {
-    const creditNote = { id: 'credit-note-1', invoiceId: 'invoice-1' };
+  function makeCreditNote(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'credit-note-1',
+      invoiceId: 'invoice-1',
+      subtotal: new Prisma.Decimal(100),
+      taxTotal: new Prisma.Decimal(21),
+      total: new Prisma.Decimal(121),
+      issueDate: new Date('2026-02-01'),
+      lines: [
+        { id: 'cn-line-1', invoiceLineId: 'line-1', quantity: new Prisma.Decimal(3) },
+        { id: 'cn-line-2', invoiceLineId: 'line-2', quantity: new Prisma.Decimal(1) },
+      ],
+      ...overrides,
+    };
+  }
+
+  it('creates the credit note, posts its journal entry, then restocks each credited line at its original movement', async () => {
+    const creditNote = makeCreditNote();
     const invoicingService = {
       createCreditNote: jest.fn().mockResolvedValue(creditNote),
     } as unknown as InvoicingService;
@@ -312,38 +328,53 @@ describe('SalesService.voidSale', () => {
       recordMovement: jest.fn().mockResolvedValue({}),
     } as unknown as InventoryService;
     const accountingService = {
-      reverseInvoiceJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-2', lines: [] }),
+      postCreditNoteJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-2', lines: [] }),
     } as unknown as AccountingService;
-    const saleMovements = [
-      {
-        warehouseId: 'warehouse-1',
-        articleVariantId: 'variant-1',
-        quantity: new Prisma.Decimal(3),
+    const originalMovementsByLine: Record<string, unknown> = {
+      'line-1': { warehouseId: 'warehouse-1', articleVariantId: 'variant-1', unitCost: null },
+      'line-2': { warehouseId: 'warehouse-1', articleVariantId: 'variant-2', unitCost: null },
+    };
+    const db = {
+      stockMovement: {
+        findFirst: jest
+          .fn()
+          .mockImplementation(({ where }: { where: { invoiceLineId: string } }) =>
+            Promise.resolve(originalMovementsByLine[where.invoiceLineId] ?? null),
+          ),
       },
-      {
-        warehouseId: 'warehouse-1',
-        articleVariantId: 'variant-2',
-        quantity: new Prisma.Decimal(1),
-      },
-    ];
-    const db = { stockMovement: { findMany: jest.fn().mockResolvedValue(saleMovements) } };
+    };
 
     const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
-    const dto = { invoiceId: 'invoice-1', reason: 'Devolución de mercadería' };
+    const dto = {
+      invoiceId: 'invoice-1',
+      reason: 'Devolución de mercadería',
+      lines: [
+        { invoiceLineId: 'line-1', quantity: 3 },
+        { invoiceLineId: 'line-2', quantity: 1 },
+      ],
+    };
 
     const result = await runInTenant(db, () => service.voidSale(dto));
 
     expect(invoicingService.createCreditNote).toHaveBeenCalledWith(dto);
-    expect(accountingService.reverseInvoiceJournalEntry).toHaveBeenCalledWith('invoice-1');
-    expect(db.stockMovement.findMany).toHaveBeenCalledWith({
-      where: { invoiceId: 'invoice-1', type: 'SALE_OUT' },
+    const postedEntry = (accountingService.postCreditNoteJournalEntry as jest.Mock).mock.calls[0][0];
+    expect(postedEntry).toMatchObject({
+      creditNoteId: 'credit-note-1',
+      invoiceId: 'invoice-1',
+      subtotal: creditNote.subtotal,
+      taxTotal: creditNote.taxTotal,
+      total: creditNote.total,
+      date: creditNote.issueDate,
     });
+    expect((postedEntry.cogsAmount as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(0);
     expect(inventoryService.recordMovement).toHaveBeenNthCalledWith(1, {
       warehouseId: 'warehouse-1',
       articleVariantId: 'variant-1',
       type: 'RETURN',
       quantity: 3,
+      unitCost: undefined,
       invoiceId: 'invoice-1',
+      invoiceLineId: 'line-1',
       sourceType: 'CREDIT_NOTE',
       sourceId: 'credit-note-1',
     });
@@ -352,15 +383,19 @@ describe('SalesService.voidSale', () => {
       articleVariantId: 'variant-2',
       type: 'RETURN',
       quantity: 1,
+      unitCost: undefined,
       invoiceId: 'invoice-1',
+      invoiceLineId: 'line-2',
       sourceType: 'CREDIT_NOTE',
       sourceId: 'credit-note-1',
     });
     expect(result).toBe(creditNote);
   });
 
-  it('re-weights the return at the original sale unit cost when the sale had one', async () => {
-    const creditNote = { id: 'credit-note-1', invoiceId: 'invoice-1' };
+  it('re-weights the return at the original sale unit cost and sums it into cogsAmount', async () => {
+    const creditNote = makeCreditNote({
+      lines: [{ id: 'cn-line-1', invoiceLineId: 'line-1', quantity: new Prisma.Decimal(3) }],
+    });
     const invoicingService = {
       createCreditNote: jest.fn().mockResolvedValue(creditNote),
     } as unknown as InvoicingService;
@@ -368,44 +403,88 @@ describe('SalesService.voidSale', () => {
       recordMovement: jest.fn().mockResolvedValue({}),
     } as unknown as InventoryService;
     const accountingService = {
-      reverseInvoiceJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-2', lines: [] }),
+      postCreditNoteJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-2', lines: [] }),
     } as unknown as AccountingService;
-    const saleMovements = [
-      {
-        warehouseId: 'warehouse-1',
-        articleVariantId: 'variant-1',
-        quantity: new Prisma.Decimal(3),
-        unitCost: new Prisma.Decimal(42),
+    const db = {
+      stockMovement: {
+        findFirst: jest.fn().mockResolvedValue({
+          warehouseId: 'warehouse-1',
+          articleVariantId: 'variant-1',
+          unitCost: new Prisma.Decimal(42),
+        }),
       },
-    ];
-    const db = { stockMovement: { findMany: jest.fn().mockResolvedValue(saleMovements) } };
+    };
 
     const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
 
     await runInTenant(db, () =>
-      service.voidSale({ invoiceId: 'invoice-1', reason: 'Devolución de mercadería' }),
+      service.voidSale({
+        invoiceId: 'invoice-1',
+        reason: 'Devolución de mercadería',
+        lines: [{ invoiceLineId: 'line-1', quantity: 3 }],
+      }),
     );
 
     expect(inventoryService.recordMovement).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'RETURN', unitCost: 42 }),
     );
+    const postedEntry = (accountingService.postCreditNoteJournalEntry as jest.Mock).mock.calls[0][0];
+    expect((postedEntry.cogsAmount as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(126);
   });
 
-  it('propagates a reversal failure without swallowing it', async () => {
-    const creditNote = { id: 'credit-note-1', invoiceId: 'invoice-1' };
+  it('skips restock/COGS for a credited line with no matching original SALE_OUT movement', async () => {
+    const creditNote = makeCreditNote({
+      lines: [{ id: 'cn-line-1', invoiceLineId: 'line-1', quantity: new Prisma.Decimal(1) }],
+    });
     const invoicingService = {
       createCreditNote: jest.fn().mockResolvedValue(creditNote),
     } as unknown as InvoicingService;
-    const inventoryService = {} as unknown as InventoryService;
-    const failure = new Error('Journal entry not found');
+    const inventoryService = {
+      recordMovement: jest.fn().mockResolvedValue({}),
+    } as unknown as InventoryService;
     const accountingService = {
-      reverseInvoiceJournalEntry: jest.fn().mockRejectedValue(failure),
+      postCreditNoteJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-2', lines: [] }),
     } as unknown as AccountingService;
+    const db = { stockMovement: { findFirst: jest.fn().mockResolvedValue(null) } };
+
+    const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
+
+    await runInTenant(db, () =>
+      service.voidSale({
+        invoiceId: 'invoice-1',
+        reason: 'Devolución de mercadería',
+        lines: [{ invoiceLineId: 'line-1', quantity: 1 }],
+      }),
+    );
+
+    expect(inventoryService.recordMovement).not.toHaveBeenCalled();
+    const postedEntry = (accountingService.postCreditNoteJournalEntry as jest.Mock).mock.calls[0][0];
+    expect((postedEntry.cogsAmount as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(0);
+  });
+
+  it('propagates a journal-posting failure without swallowing it', async () => {
+    const creditNote = makeCreditNote();
+    const invoicingService = {
+      createCreditNote: jest.fn().mockResolvedValue(creditNote),
+    } as unknown as InvoicingService;
+    const inventoryService = { recordMovement: jest.fn() } as unknown as InventoryService;
+    const failure = new Error('Credit note journal entry is not balanced');
+    const accountingService = {
+      postCreditNoteJournalEntry: jest.fn().mockRejectedValue(failure),
+    } as unknown as AccountingService;
+    const db = { stockMovement: { findFirst: jest.fn().mockResolvedValue(null) } };
 
     const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
 
     await expect(
-      service.voidSale({ invoiceId: 'invoice-1', reason: 'Devolución de mercadería' }),
+      runInTenant(db, () =>
+        service.voidSale({
+          invoiceId: 'invoice-1',
+          reason: 'Devolución de mercadería',
+          lines: [{ invoiceLineId: 'line-1', quantity: 3 }],
+        }),
+      ),
     ).rejects.toThrow(failure);
+    expect(inventoryService.recordMovement).not.toHaveBeenCalled();
   });
 });

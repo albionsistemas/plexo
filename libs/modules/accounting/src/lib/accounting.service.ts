@@ -55,6 +55,18 @@ export interface PostInvoiceJournalEntryInput {
   cogsAmount?: Prisma.Decimal | number | string;
 }
 
+export interface PostCreditNoteJournalEntryInput {
+  creditNoteId: string;
+  invoiceId: string;
+  subtotal: Prisma.Decimal | number | string;
+  taxTotal: Prisma.Decimal | number | string;
+  total: Prisma.Decimal | number | string;
+  date?: Date;
+  // Cost of the credited (returned) quantity - same optional/zero-is-fine
+  // treatment as postInvoiceJournalEntry's cogsAmount.
+  cogsAmount?: Prisma.Decimal | number | string;
+}
+
 export interface TrialBalanceRow {
   accountId: string;
   code: string;
@@ -184,12 +196,15 @@ export class AccountingService {
    * treatment for the optional COGS pair (debit Costo de Mercadería
    * Vendida / credit Mercaderías) - appended to this SAME entry rather
    * than a second one, since JournalEntry.invoiceId is @unique: a second
-   * entry per invoice isn't possible without a schema change, and folding
-   * COGS into this one means reverseInvoiceJournalEntry() (credit notes)
-   * reverses it for free along with the rest, no extra reversal logic
-   * needed. The two COGS lines always carry the identical amount to each
-   * other, so the debit=credit balance holds regardless of whether they're
-   * present - independent of the AR/revenue/VAT lines above.
+   * entry per invoice isn't possible without a schema change. The two COGS
+   * lines always carry the identical amount to each other, so the
+   * debit=credit balance holds regardless of whether they're present -
+   * independent of the AR/revenue/VAT lines above.
+   *
+   * Credit notes do NOT reverse this entry (see postCreditNoteJournalEntry
+   * below) - invoiceId being @unique means only one entry can ever exist
+   * per invoice, so a credit note (possibly partial, possibly more than
+   * one over time) posts its own independent entry instead.
    */
   async postInvoiceJournalEntry(
     input: PostInvoiceJournalEntryInput,
@@ -236,26 +251,108 @@ export class AccountingService {
   }
 
   /**
-   * Reverses the entry postInvoiceJournalEntry() posted for an invoice,
-   * for when a (full-reversal) credit note voids it - called by
-   * SalesService.voidSale() (apps/api) in the same transaction as the
-   * credit note itself, same atomicity guarantee as the sale side.
+   * Auto-posting entry point for credit notes - called by SalesService
+   * .voidSale() (apps/api) right after InvoicingService.createCreditNote(),
+   * same per-request transaction as everything else. Deliberately does NOT
+   * use createReversingEntry()/mirror postInvoiceJournalEntry's entry: a
+   * credit note can be partial (crediting only some quantity of some
+   * lines), and both invoiceId and reversalOfId are @unique on
+   * JournalEntry - a second partial credit note on the same invoice
+   * couldn't link back to the same original sale entry either way. Instead
+   * this posts its own independently-balanced entry, resolved later by
+   * creditNoteId (also @unique - one entry per credit note).
    *
-   * Looks the entry up by invoiceId (unique on JournalEntry) instead of
-   * making the caller track the entry id. Returns undefined - a no-op,
-   * not an error - when the invoice never had one posted in the first
-   * place (a zero-total invoice postInvoiceJournalEntry skipped, or one
-   * issued before auto-posting existed): crediting something with
-   * nothing on the ledger has nothing to reverse.
+   * Books the mirror image of postInvoiceJournalEntry: credit Accounts
+   * Receivable (the customer owes less), debit Sales Revenue and VAT
+   * Payable (both go down), and - if the credited quantity had a cost
+   * basis - credit Costo de Mercadería Vendida / debit Mercaderías (the
+   * expense reverses, the goods are back in stock). Balanced by
+   * construction the same way the sale side is: creditNote.total is
+   * defined as subtotal + taxTotal, and the COGS pair always carries the
+   * same amount on both sides.
+   *
+   * Skips posting entirely for a zero-total credit note (shouldn't happen -
+   * CreateCreditNoteDto requires at least one line - but mirrors
+   * postInvoiceJournalEntry's defensive skip rather than writing a
+   * degenerate entry).
    */
-  async reverseInvoiceJournalEntry(invoiceId: string): Promise<JournalEntryWithLines | undefined> {
-    const original = await getTenantDb().journalEntry.findUnique({ where: { invoiceId } });
-    if (!original) {
+  async postCreditNoteJournalEntry(
+    input: PostCreditNoteJournalEntryInput,
+  ): Promise<JournalEntryWithLines | undefined> {
+    const total = new Prisma.Decimal(input.total);
+    if (total.lte(0)) {
       return undefined;
     }
-    return this.createReversingEntry({
-      originalEntryId: original.id,
-      description: `Nota de crédito - comprobante ${invoiceId}`,
+    const subtotal = new Prisma.Decimal(input.subtotal);
+    const taxTotal = new Prisma.Decimal(input.taxTotal);
+    const cogsAmount = new Prisma.Decimal(input.cogsAmount ?? 0);
+
+    const [ar, revenue, vat, cogsAccounts] = await Promise.all([
+      this.getOrCreateAccount(ACCOUNTS_RECEIVABLE_ACCOUNT),
+      this.getOrCreateAccount(SALES_REVENUE_ACCOUNT),
+      taxTotal.gt(0) ? this.getOrCreateAccount(VAT_PAYABLE_ACCOUNT) : Promise.resolve(undefined),
+      cogsAmount.gt(0)
+        ? Promise.all([
+            this.getOrCreateAccount(COGS_EXPENSE_ACCOUNT),
+            this.getOrCreateAccount(INVENTORY_ASSET_ACCOUNT),
+          ])
+        : Promise.resolve(undefined),
+    ]);
+
+    const lines: PostJournalEntryDto['lines'] = [
+      { accountId: ar.id, direction: 'CREDIT', amount: total.toNumber() },
+      { accountId: revenue.id, direction: 'DEBIT', amount: subtotal.toNumber() },
+    ];
+    if (vat && taxTotal.gt(0)) {
+      lines.push({ accountId: vat.id, direction: 'DEBIT', amount: taxTotal.toNumber() });
+    }
+    if (cogsAccounts && cogsAmount.gt(0)) {
+      const [cogs, inventory] = cogsAccounts;
+      lines.push({ accountId: cogs.id, direction: 'CREDIT', amount: cogsAmount.toNumber() });
+      lines.push({ accountId: inventory.id, direction: 'DEBIT', amount: cogsAmount.toNumber() });
+    }
+
+    const tenantId = getTenantId();
+    const createdById = getUserId();
+    if (!createdById) {
+      throw new BadRequestException('An authenticated user is required to post a journal entry');
+    }
+
+    let debitTotal = new Prisma.Decimal(0);
+    let creditTotal = new Prisma.Decimal(0);
+    for (const line of lines) {
+      const amount = new Prisma.Decimal(line.amount);
+      if (line.direction === 'DEBIT') {
+        debitTotal = debitTotal.add(amount);
+      } else {
+        creditTotal = creditTotal.add(amount);
+      }
+    }
+    if (!debitTotal.eq(creditTotal)) {
+      throw new BadRequestException(
+        `Credit note journal entry is not balanced: debits ${debitTotal.toFixed(2)} != credits ${creditTotal.toFixed(2)}`,
+      );
+    }
+
+    return getTenantDb().journalEntry.create({
+      data: {
+        tenantId,
+        description: `Nota de crédito - comprobante ${input.invoiceId}`,
+        date: input.date,
+        creditNoteId: input.creditNoteId,
+        createdById,
+        lines: {
+          createMany: {
+            data: lines.map((line) => ({
+              tenantId,
+              accountId: line.accountId,
+              direction: line.direction,
+              amount: line.amount,
+            })),
+          },
+        },
+      },
+      include: { lines: true },
     });
   }
 

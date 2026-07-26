@@ -73,6 +73,7 @@ export class SalesService {
         type: 'SALE_OUT',
         quantity: line.quantity.toNumber(),
         invoiceId: invoice.id,
+        invoiceLineId: line.id,
         sourceType: 'INVOICE',
         sourceId: invoice.id,
       });
@@ -94,45 +95,89 @@ export class SalesService {
   }
 
   /**
-   * Composes InvoicingService.createCreditNote + the matching GL reversal
-   * + a stock restock, same transaction/atomicity story as createSale().
-   * This is the only place a credit note gets created (InvoicingController
-   * no longer exposes its own POST /invoicing/credit-notes) specifically
-   * so there's no path that credits an invoice without also reversing its
-   * journal entry and restocking - see the recordMovement() doc comment in
-   * InventoryService for why the analogous "SALE_OUT without an invoice"
-   * gap was left as a manual step instead: there, the caller has no
-   * journal entry/stock movement to reverse in the first place. Here it
+   * Composes InvoicingService.createCreditNote + its own journal entry +
+   * a stock restock, same transaction/atomicity story as createSale(). This
+   * is the only place a credit note gets created (InvoicingController no
+   * longer exposes its own POST /invoicing/credit-notes) specifically so
+   * there's no path that credits an invoice without also posting the
+   * matching entry and restocking - see the recordMovement() doc comment
+   * in InventoryService for why the analogous "SALE_OUT without an
+   * invoice" gap was left as a manual step instead: there, the caller has
+   * no journal entry/stock movement to correct in the first place. Here it
    * does, so there's no excuse not to close the loop.
    *
-   * Restock reads back the original SALE_OUT StockMovement rows for this
-   * invoice (warehouseId + quantity per line) instead of re-deriving them
-   * from the invoice lines, since the invoice itself doesn't know which
-   * warehouse each line came out of - only the movement does. A RETURN
-   * per original SALE_OUT keeps the ledger symmetric with how the sale
-   * removed it. CreateCreditNoteDto is "full reversal only" (v1), so this
-   * always restocks every line of the invoice, never a partial return.
+   * Credit notes are per-line/per-quantity now (createCreditNote enforces
+   * a line never gets credited past its original quantity, across every
+   * credit note ever issued against the invoice) - crediting every line's
+   * full quantity in one call reproduces what used to be the only option
+   * ("full reversal"), same code path, nothing special-cased for it.
+   *
+   * Restock/COGS per credited line reads back the ORIGINAL SALE_OUT
+   * StockMovement by invoiceLineId (for warehouseId + the unitCost it was
+   * sold at) instead of re-deriving them from the invoice - the invoice
+   * itself doesn't know which warehouse a line came out of, only the
+   * movement does. A line with no matching original movement (e.g. a
+   * future non-stock/service line) is skipped for both restock and COGS -
+   * never blocks the credit note, never fabricates a cost.
    */
   async voidSale(dto: CreateCreditNoteDto) {
     const creditNote = await this.invoicingService.createCreditNote(dto);
-    await this.accountingService.reverseInvoiceJournalEntry(dto.invoiceId);
 
-    const saleMovements = await getTenantDb().stockMovement.findMany({
-      where: { invoiceId: dto.invoiceId, type: 'SALE_OUT' },
+    const db = getTenantDb();
+    const restocks: {
+      creditNoteLineId: string;
+      warehouseId: string;
+      articleVariantId: string;
+      invoiceLineId: string;
+      quantity: Prisma.Decimal;
+      unitCost: Prisma.Decimal | null;
+    }[] = [];
+    let totalCogs = new Prisma.Decimal(0);
+
+    for (const creditNoteLine of creditNote.lines) {
+      const original = await db.stockMovement.findFirst({
+        where: { invoiceLineId: creditNoteLine.invoiceLineId, type: 'SALE_OUT' },
+      });
+      if (!original) {
+        continue;
+      }
+      restocks.push({
+        creditNoteLineId: creditNoteLine.id,
+        warehouseId: original.warehouseId,
+        articleVariantId: original.articleVariantId,
+        invoiceLineId: creditNoteLine.invoiceLineId,
+        quantity: creditNoteLine.quantity,
+        unitCost: original.unitCost,
+      });
+      if (original.unitCost != null) {
+        totalCogs = totalCogs.add(original.unitCost.mul(creditNoteLine.quantity));
+      }
+    }
+
+    await this.accountingService.postCreditNoteJournalEntry({
+      creditNoteId: creditNote.id,
+      invoiceId: dto.invoiceId,
+      subtotal: creditNote.subtotal,
+      taxTotal: creditNote.taxTotal,
+      total: creditNote.total,
+      date: creditNote.issueDate,
+      cogsAmount: totalCogs,
     });
-    for (const movement of saleMovements) {
+
+    for (const restock of restocks) {
       await this.inventoryService.recordMovement({
-        warehouseId: movement.warehouseId,
-        articleVariantId: movement.articleVariantId,
+        warehouseId: restock.warehouseId,
+        articleVariantId: restock.articleVariantId,
         type: 'RETURN',
-        quantity: movement.quantity.toNumber(),
+        quantity: restock.quantity.toNumber(),
         // Re-weights the returned stock back in at the cost it was sold
         // at, so the average doesn't just silently drop the cost trail -
         // undefined (not 0) when the original sale had no cost basis, so
         // recordMovement leaves the average untouched rather than
         // polluting it with a fabricated zero cost.
-        unitCost: movement.unitCost != null ? movement.unitCost.toNumber() : undefined,
+        unitCost: restock.unitCost != null ? restock.unitCost.toNumber() : undefined,
         invoiceId: dto.invoiceId,
+        invoiceLineId: restock.invoiceLineId,
         sourceType: 'CREDIT_NOTE',
         sourceId: creditNote.id,
       });

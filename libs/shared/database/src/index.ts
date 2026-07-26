@@ -32,6 +32,7 @@ export type {
   Invoice,
   InvoiceLine,
   CreditNote,
+  CreditNoteLine,
   Quote,
   QuoteLine,
   Receipt,

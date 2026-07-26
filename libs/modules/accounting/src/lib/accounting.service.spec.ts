@@ -138,55 +138,109 @@ describe('AccountingService.postInvoiceJournalEntry', () => {
   });
 });
 
-describe('AccountingService.reverseInvoiceJournalEntry', () => {
-  it('returns undefined without touching the ledger when the invoice never had an entry posted', async () => {
-    const db = {
-      journalEntry: {
-        findUnique: jest.fn().mockResolvedValue(null),
-        create: jest.fn(),
+describe('AccountingService.postCreditNoteJournalEntry', () => {
+  function dbWithAccounts(existingByCode: Record<string, { id: string }> = {}) {
+    const created: { code: string; name: string; type: string }[] = [];
+    return {
+      accountingAccount: {
+        findFirst: jest.fn(({ where }: { where: { code: string } }) =>
+          Promise.resolve(existingByCode[where.code] ?? null),
+        ),
+        create: jest.fn(({ data }: { data: { code: string; name: string; type: string } }) => {
+          created.push({ code: data.code, name: data.name, type: data.type });
+          return Promise.resolve({ id: `acc-${data.code}`, ...data });
+        }),
       },
+      journalEntry: {
+        create: jest.fn().mockResolvedValue({ id: 'entry-1', lines: [] }),
+      },
+      _created: created,
     };
+  }
+
+  it('skips posting entirely for a zero-total credit note', async () => {
+    const db = dbWithAccounts();
     const service = new AccountingService();
 
-    const result = await runInTenant(db, () => service.reverseInvoiceJournalEntry('inv-1'));
+    const result = await runInTenant(db, () =>
+      service.postCreditNoteJournalEntry({
+        creditNoteId: 'cn-1',
+        invoiceId: 'inv-1',
+        subtotal: 0,
+        taxTotal: 0,
+        total: 0,
+      }),
+    );
 
     expect(result).toBeUndefined();
     expect(db.journalEntry.create).not.toHaveBeenCalled();
   });
 
-  it('finds the entry by invoiceId and reverses it', async () => {
-    const original = {
-      id: 'entry-1',
-      description: 'Venta - comprobante inv-1',
-      lines: [
-        { accountId: 'acc-ar', direction: 'DEBIT', amount: new Prisma.Decimal(121) },
-        { accountId: 'acc-sales', direction: 'CREDIT', amount: new Prisma.Decimal(100) },
-        { accountId: 'acc-vat', direction: 'CREDIT', amount: new Prisma.Decimal(21) },
-      ],
-    };
-    const db = {
-      journalEntry: {
-        findUnique: jest
-          .fn()
-          .mockImplementation(({ where }: { where: { invoiceId?: string; id?: string } }) =>
-            Promise.resolve(where.invoiceId === 'inv-1' || where.id === 'entry-1' ? original : null),
-          ),
-        create: jest.fn().mockResolvedValue({ id: 'entry-2', lines: [] }),
-      },
-    };
+  it('books the mirror image of the sale entry: credit AR, debit Sales+VAT', async () => {
+    const db = dbWithAccounts();
     const service = new AccountingService();
 
-    await runInTenant(db, () => service.reverseInvoiceJournalEntry('inv-1'));
+    await runInTenant(db, () =>
+      service.postCreditNoteJournalEntry({
+        creditNoteId: 'cn-1',
+        invoiceId: 'inv-1',
+        subtotal: 100,
+        taxTotal: 21,
+        total: 121,
+      }),
+    );
 
-    expect(db.journalEntry.findUnique).toHaveBeenCalledWith({ where: { invoiceId: 'inv-1' } });
     const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
-    expect(createArgs.data.reversalOfId).toBe('entry-1');
+    expect(createArgs.data.creditNoteId).toBe('cn-1');
     expect(createArgs.data.description).toBe('Nota de crédito - comprobante inv-1');
     expect(createArgs.data.lines.createMany.data).toEqual([
-      { tenantId: 'tenant-1', accountId: 'acc-ar', direction: 'CREDIT', amount: original.lines[0].amount },
-      { tenantId: 'tenant-1', accountId: 'acc-sales', direction: 'DEBIT', amount: original.lines[1].amount },
-      { tenantId: 'tenant-1', accountId: 'acc-vat', direction: 'DEBIT', amount: original.lines[2].amount },
+      { tenantId: 'tenant-1', accountId: 'acc-1.1.02', direction: 'CREDIT', amount: 121 },
+      { tenantId: 'tenant-1', accountId: 'acc-4.1.01', direction: 'DEBIT', amount: 100 },
+      { tenantId: 'tenant-1', accountId: 'acc-2.1.03', direction: 'DEBIT', amount: 21 },
     ]);
+  });
+
+  it('omits the VAT line entirely for a tax-exempt credit note', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postCreditNoteJournalEntry({
+        creditNoteId: 'cn-2',
+        invoiceId: 'inv-2',
+        subtotal: 50,
+        taxTotal: 0,
+        total: 50,
+      }),
+    );
+
+    expect(db._created.some((a) => a.code === '2.1.03')).toBe(false);
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.lines.createMany.data).toHaveLength(2);
+  });
+
+  it('adds the COGS reversal pair (credit COGS / debit Mercaderías) when cogsAmount is given', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postCreditNoteJournalEntry({
+        creditNoteId: 'cn-3',
+        invoiceId: 'inv-3',
+        subtotal: 100,
+        taxTotal: 21,
+        total: 121,
+        cogsAmount: 60,
+      }),
+    );
+
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.lines.createMany.data).toEqual(
+      expect.arrayContaining([
+        { tenantId: 'tenant-1', accountId: 'acc-5.1.01', direction: 'CREDIT', amount: 60 },
+        { tenantId: 'tenant-1', accountId: 'acc-1.1.04', direction: 'DEBIT', amount: 60 },
+      ]),
+    );
   });
 });
 

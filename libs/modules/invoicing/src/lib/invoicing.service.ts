@@ -13,6 +13,7 @@ import {
   type Invoice,
   type InvoiceLine,
   type CreditNote,
+  type CreditNoteLine,
   type ExchangeRateHistory,
   type Receipt,
   type ReminderTone,
@@ -282,9 +283,17 @@ export class InvoicingService {
     return finalInvoice;
   }
 
-  /** v1: full reversal only - see CreateCreditNoteDto for why partial
-   * credit notes are out of scope here. */
-  async createCreditNote(dto: CreateCreditNoteDto): Promise<CreditNote> {
+  /**
+   * Credit notes always target specific invoice lines/quantities - crediting
+   * every line's full quantity reproduces what used to be the only option
+   * ("full reversal"), same code path, no separate branch. Guards against
+   * over-crediting (the sum of everything ever credited for a line can't
+   * exceed its original quantity) with a row lock on the targeted
+   * InvoiceLines first - without it, two concurrent credit notes for
+   * overlapping quantities of the same line could both read the same
+   * prior-credited sum and both pass the check before either commits.
+   */
+  async createCreditNote(dto: CreateCreditNoteDto): Promise<CreditNote & { lines: CreditNoteLine[] }> {
     const db = getTenantDb();
     const tenantId = getTenantId();
     const issuedByUserId = getUserId();
@@ -292,12 +301,76 @@ export class InvoicingService {
       throw new BadRequestException('An authenticated user is required to issue a credit note');
     }
 
-    const invoice = await db.invoice.findUnique({ where: { id: dto.invoiceId } });
+    const invoice = await db.invoice.findUnique({
+      where: { id: dto.invoiceId },
+      include: { lines: true },
+    });
     if (!invoice) {
       throw new NotFoundException('Invoice not found');
     }
     if (!invoice.afipCae) {
       throw new BadRequestException('Cannot credit an invoice that has not been issued yet');
+    }
+
+    // Lock first, in requested order, so two concurrent credit notes for
+    // the same line serialize instead of racing past the check below.
+    for (const line of dto.lines) {
+      await db.$queryRaw`SELECT id FROM invoice_lines WHERE id = ${line.invoiceLineId} FOR UPDATE`;
+    }
+
+    const invoiceLinesById = new Map(invoice.lines.map((l) => [l.id, l]));
+    const alreadyCredited = await db.creditNoteLine.groupBy({
+      by: ['invoiceLineId'],
+      where: { invoiceLineId: { in: dto.lines.map((l) => l.invoiceLineId) } },
+      _sum: { quantity: true },
+    });
+    const alreadyCreditedByLine = new Map(
+      alreadyCredited.map((row) => [row.invoiceLineId, row._sum.quantity ?? new Prisma.Decimal(0)]),
+    );
+
+    let subtotal = new Prisma.Decimal(0);
+    let taxTotal = new Prisma.Decimal(0);
+    let total = new Prisma.Decimal(0);
+    const linesToCreate: {
+      invoiceLineId: string;
+      quantity: Prisma.Decimal;
+      netAmount: Prisma.Decimal;
+      taxAmount: Prisma.Decimal;
+      lineTotal: Prisma.Decimal;
+    }[] = [];
+
+    for (const requested of dto.lines) {
+      const invoiceLine = invoiceLinesById.get(requested.invoiceLineId);
+      if (!invoiceLine) {
+        throw new BadRequestException(
+          `Invoice line ${requested.invoiceLineId} does not belong to this invoice`,
+        );
+      }
+      const quantity = new Prisma.Decimal(requested.quantity);
+      const priorlyCredited = alreadyCreditedByLine.get(invoiceLine.id) ?? new Prisma.Decimal(0);
+      if (priorlyCredited.add(quantity).gt(invoiceLine.quantity)) {
+        throw new BadRequestException(
+          `Cannot credit ${quantity.toString()} of invoice line ${invoiceLine.id}: only ${invoiceLine.quantity.sub(priorlyCredited).toString()} left to credit`,
+        );
+      }
+
+      // Proportional slice of the line's already-computed amounts, not
+      // re-derived from taxRate - avoids drifting from whatever rounding
+      // the original invoice line's lineTotal/netAmount already baked in.
+      const ratio = quantity.div(invoiceLine.quantity);
+      const netAmount = invoiceLine.netAmount.mul(ratio);
+      const originalTax = invoiceLine.lineTotal.sub(invoiceLine.netAmount);
+      const taxAmount = originalTax.mul(ratio);
+      const lineTotal = netAmount.add(taxAmount);
+
+      linesToCreate.push({ invoiceLineId: invoiceLine.id, quantity, netAmount, taxAmount, lineTotal });
+      subtotal = subtotal.add(netAmount);
+      taxTotal = taxTotal.add(taxAmount);
+      total = total.add(lineTotal);
+    }
+
+    if (total.gt(invoice.balanceDue)) {
+      throw new BadRequestException('Credit note total exceeds the invoice balance due');
     }
 
     const number = await this.nextCreditNoteNumber(invoice.pointOfSale, invoice.documentLetter);
@@ -312,11 +385,13 @@ export class InvoicingService {
         reason: dto.reason,
         currencyId: invoice.currencyId,
         exchangeRate: invoice.exchangeRate,
-        subtotal: invoice.subtotal,
-        taxTotal: invoice.taxTotal,
-        total: invoice.total,
+        subtotal,
+        taxTotal,
+        total,
         issuedByUserId,
+        lines: { createMany: { data: linesToCreate.map((l) => ({ tenantId, ...l })) } },
       },
+      include: { lines: true },
     });
 
     const { cae, caeExpiry } = await this.electronicInvoicing.requestCae({
@@ -324,9 +399,22 @@ export class InvoicingService {
       total: created.total,
     });
 
+    const balanceDue = invoice.balanceDue.sub(total);
+    await db.invoice.update({
+      where: { id: invoice.id },
+      // Zeroing the balance via a credit note reuses PAID rather than a
+      // return-specific status (e.g. CANCELLED) - the balance really is
+      // settled either way, and CANCELLED risks a future revenue report
+      // that filters it out silently excluding real, recognized revenue
+      // from a partial return. The CreditNote row is what records *why*
+      // it's zero, not the status.
+      data: { balanceDue, status: balanceDue.isZero() ? 'PAID' : invoice.status },
+    });
+
     return db.creditNote.update({
       where: { id: created.id },
       data: { afipCae: cae, afipCaeExpiry: caeExpiry },
+      include: { lines: true },
     });
   }
 

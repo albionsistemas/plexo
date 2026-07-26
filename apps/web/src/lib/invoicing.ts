@@ -91,9 +91,15 @@ export interface RecordReceiptInput {
   financialAccountId?: string;
 }
 
+export interface CreateCreditNoteLineInput {
+  invoiceLineId: string;
+  quantity: number;
+}
+
 export interface CreateCreditNoteInput {
   invoiceId: string;
   reason: string;
+  lines: CreateCreditNoteLineInput[];
 }
 
 export const invoicingApi = {

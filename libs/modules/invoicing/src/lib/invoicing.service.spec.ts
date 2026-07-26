@@ -245,27 +245,111 @@ describe('InvoicingService.createInvoice', () => {
 });
 
 describe('InvoicingService.createCreditNote', () => {
+  const invoiceLine = {
+    id: 'line-1',
+    quantity: new Prisma.Decimal(2),
+    netAmount: new Prisma.Decimal(100),
+    lineTotal: new Prisma.Decimal(121),
+  };
+
+  function dbWithInvoice(invoice: Record<string, unknown>, overrides: Record<string, unknown> = {}) {
+    return {
+      invoice: {
+        findUnique: jest.fn().mockResolvedValue(invoice),
+        update: jest.fn().mockResolvedValue(invoice),
+      },
+      creditNote: {
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn().mockResolvedValue({ id: 'cn-1', number: '00000001', lines: [] }),
+        update: jest.fn().mockResolvedValue({ id: 'cn-1', number: '00000001', lines: [] }),
+      },
+      creditNoteLine: {
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
+      $queryRaw: jest.fn().mockResolvedValue(undefined),
+      ...overrides,
+    };
+  }
+
   it('throws when the invoice does not exist', async () => {
     const db = { invoice: { findUnique: jest.fn().mockResolvedValue(null) } };
     const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
 
     await expect(
-      runInTenant(db, () => service.createCreditNote({ invoiceId: 'missing', reason: 'x' })),
+      runInTenant(db, () =>
+        service.createCreditNote({ invoiceId: 'missing', reason: 'x', lines: [{ invoiceLineId: 'line-1', quantity: 1 }] }),
+      ),
     ).rejects.toThrow(NotFoundException);
   });
 
   it('refuses to credit an invoice that was never issued (no CAE)', async () => {
     const db = {
-      invoice: { findUnique: jest.fn().mockResolvedValue({ id: 'invoice-1', afipCae: null }) },
+      invoice: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'invoice-1', afipCae: null, lines: [invoiceLine] }),
+      },
     };
     const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
 
     await expect(
-      runInTenant(db, () => service.createCreditNote({ invoiceId: 'invoice-1', reason: 'x' })),
+      runInTenant(db, () =>
+        service.createCreditNote({
+          invoiceId: 'invoice-1',
+          reason: 'x',
+          lines: [{ invoiceLineId: 'line-1', quantity: 1 }],
+        }),
+      ),
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('mirrors the invoice totals onto the credit note and requests its own CAE', async () => {
+  it('rejects a line that does not belong to the invoice', async () => {
+    const invoice = {
+      id: 'invoice-1',
+      afipCae: 'CAE-ORIGINAL',
+      balanceDue: new Prisma.Decimal(121),
+      lines: [invoiceLine],
+    };
+    const db = dbWithInvoice(invoice);
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
+
+    await expect(
+      runInTenant(db, () =>
+        service.createCreditNote({
+          invoiceId: 'invoice-1',
+          reason: 'return',
+          lines: [{ invoiceLineId: 'other-line', quantity: 1 }],
+        }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects crediting more than what is left on the line, across prior credit notes', async () => {
+    const invoice = {
+      id: 'invoice-1',
+      afipCae: 'CAE-ORIGINAL',
+      balanceDue: new Prisma.Decimal(121),
+      lines: [invoiceLine],
+    };
+    const db = dbWithInvoice(invoice, {
+      creditNoteLine: {
+        groupBy: jest.fn().mockResolvedValue([
+          { invoiceLineId: 'line-1', _sum: { quantity: new Prisma.Decimal(1) } },
+        ]),
+      },
+    });
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
+
+    await expect(
+      runInTenant(db, () =>
+        service.createCreditNote({
+          invoiceId: 'invoice-1',
+          reason: 'return',
+          lines: [{ invoiceLineId: 'line-1', quantity: 2 }],
+        }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('computes proportional subtotal/tax/total for the credited quantity and requests its own CAE', async () => {
     const invoice = {
       id: 'invoice-1',
       afipCae: 'CAE-ORIGINAL',
@@ -273,36 +357,49 @@ describe('InvoicingService.createCreditNote', () => {
       documentLetter: 'B',
       currencyId: 'currency-1',
       exchangeRate: new Prisma.Decimal(2),
-      subtotal: new Prisma.Decimal(100),
-      taxTotal: new Prisma.Decimal(21),
-      total: new Prisma.Decimal(121),
+      balanceDue: new Prisma.Decimal(121),
+      lines: [invoiceLine],
     };
-    const createdCreditNote = { id: 'cn-1', number: '00000001', total: invoice.total };
     const electronicInvoicing = makeElectronicInvoicing();
-    const db = {
-      invoice: { findUnique: jest.fn().mockResolvedValue(invoice) },
-      creditNote: {
-        count: jest.fn().mockResolvedValue(0),
-        create: jest.fn().mockResolvedValue(createdCreditNote),
-        update: jest.fn().mockResolvedValue(createdCreditNote),
-      },
-    };
+    const db = dbWithInvoice(invoice);
     const service = new InvoicingService(makeEmailSender(), electronicInvoicing, makeEventEmitter());
 
     await runInTenant(db, () =>
-      service.createCreditNote({ invoiceId: 'invoice-1', reason: 'return' }),
+      service.createCreditNote({
+        invoiceId: 'invoice-1',
+        reason: 'return',
+        lines: [{ invoiceLineId: 'line-1', quantity: 1 }],
+      }),
     );
 
-    expect(db.creditNote.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        invoiceId: 'invoice-1',
-        total: invoice.total,
-        subtotal: invoice.subtotal,
-        taxTotal: invoice.taxTotal,
-        reason: 'return',
-      }),
-    });
+    // Half of the line's quantity credited -> half its netAmount/tax/total.
+    const createArgs = (db.creditNote.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.invoiceId).toBe('invoice-1');
+    expect(createArgs.data.reason).toBe('return');
+    expect(createArgs.data.subtotal.toNumber()).toBe(50);
+    expect(createArgs.data.total.toNumber()).toBe(60.5);
     expect(electronicInvoicing.requestCae).toHaveBeenCalled();
+  });
+
+  it('rejects a credit note whose total exceeds the invoice balance due', async () => {
+    const invoice = {
+      id: 'invoice-1',
+      afipCae: 'CAE-ORIGINAL',
+      balanceDue: new Prisma.Decimal(10),
+      lines: [invoiceLine],
+    };
+    const db = dbWithInvoice(invoice);
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter());
+
+    await expect(
+      runInTenant(db, () =>
+        service.createCreditNote({
+          invoiceId: 'invoice-1',
+          reason: 'return',
+          lines: [{ invoiceLineId: 'line-1', quantity: 2 }],
+        }),
+      ),
+    ).rejects.toThrow(BadRequestException);
   });
 });
 
