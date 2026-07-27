@@ -26,6 +26,7 @@ export interface ArticleVariant {
   brand: string | null;
   unitPrice: number;
   totalStock: number;
+  minimumStock: number | null;
   stockByWarehouse: WarehouseStockRow[];
 }
 
@@ -66,6 +67,4 @@ export const inventoryApi = {
   listCategories: () => api.get<Category[]>('/inventory/categories').then((r) => r.data),
   recordMovement: (dto: RecordStockMovementInput) =>
     api.post('/inventory/movements', dto).then((r) => r.data),
-  updateArticle: (id: string, dto: { isService?: boolean; isPublished?: boolean }) =>
-    api.patch<Article>(`/inventory/articles/${id}`, dto).then((r) => r.data),
 };

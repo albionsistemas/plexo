@@ -40,6 +40,11 @@ export interface ArticleVariantListItem {
   brand: string | null;
   unitPrice: number;
   totalStock: number;
+  // Sum of MinimumStock.minimumQuantity across warehouses for this variant
+  // (minimums are set per warehouse, same as stock itself) - null if none
+  // configured anywhere, same convention as totalStock aggregating actual
+  // stock across warehouses.
+  minimumStock: number | null;
   stockByWarehouse: WarehouseStockRow[];
 }
 
@@ -108,7 +113,7 @@ export class InventoryService {
     const articles = await getTenantDb().article.findMany({
       include: {
         category: true,
-        variants: { include: { stockLedger: { include: { warehouse: true } } } },
+        variants: { include: { stockLedger: { include: { warehouse: true } }, minimumStocks: true } },
       },
       orderBy: { name: 'asc' },
     });
@@ -136,6 +141,10 @@ export class InventoryService {
           brand: variant.brand,
           unitPrice: variant.unitPrice.toNumber(),
           totalStock: stockByWarehouse.reduce((sum, row) => sum + row.quantity, 0),
+          minimumStock:
+            variant.minimumStocks.length === 0
+              ? null
+              : variant.minimumStocks.reduce((sum, ms) => sum + ms.minimumQuantity.toNumber(), 0),
           stockByWarehouse,
         };
       }),
