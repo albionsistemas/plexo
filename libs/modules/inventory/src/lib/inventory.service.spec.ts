@@ -118,16 +118,25 @@ describe('InventoryService.recordMovement', () => {
     const upsert = jest.fn().mockResolvedValue({});
     const create = jest.fn().mockResolvedValue({ id: 'movement-2' });
     const findUnique = jest.fn().mockResolvedValue({ quantity: new Prisma.Decimal(20), avgUnitCost: null });
+    const findUniqueOrThrow = jest.fn().mockResolvedValue({ unitPrice: new Prisma.Decimal(150) });
+    const priceHistoryCreate = jest.fn().mockResolvedValue({});
     const service = new InventoryService(makeEventEmitter());
 
-    await runInTenant({ stockLedger: { upsert, findUnique }, stockMovement: { create } }, () =>
-      service.recordMovement({
-        warehouseId: 'wh-1',
-        articleVariantId: 'variant-1',
-        type: 'PURCHASE_IN',
-        quantity: 20,
-        unitCost: 100,
-      }),
+    await runInTenant(
+      {
+        stockLedger: { upsert, findUnique },
+        stockMovement: { create },
+        articleVariant: { findUniqueOrThrow },
+        priceHistory: { create: priceHistoryCreate },
+      },
+      () =>
+        service.recordMovement({
+          warehouseId: 'wh-1',
+          articleVariantId: 'variant-1',
+          type: 'PURCHASE_IN',
+          quantity: 20,
+          unitCost: 100,
+        }),
     );
 
     const call = upsert.mock.calls[0][0];
@@ -146,20 +155,213 @@ describe('InventoryService.recordMovement', () => {
     const findUnique = jest
       .fn()
       .mockResolvedValue({ quantity: new Prisma.Decimal(10), avgUnitCost: new Prisma.Decimal(100) });
+    const findUniqueOrThrow = jest.fn().mockResolvedValue({ unitPrice: new Prisma.Decimal(150) });
+    const priceHistoryCreate = jest.fn().mockResolvedValue({});
     const service = new InventoryService(makeEventEmitter());
 
-    await runInTenant({ stockLedger: { upsert, findUnique }, stockMovement: { create } }, () =>
-      service.recordMovement({
-        warehouseId: 'wh-1',
-        articleVariantId: 'variant-1',
-        type: 'PURCHASE_IN',
-        quantity: 10,
-        unitCost: 200,
-      }),
+    await runInTenant(
+      {
+        stockLedger: { upsert, findUnique },
+        stockMovement: { create },
+        articleVariant: { findUniqueOrThrow },
+        priceHistory: { create: priceHistoryCreate },
+      },
+      () =>
+        service.recordMovement({
+          warehouseId: 'wh-1',
+          articleVariantId: 'variant-1',
+          type: 'PURCHASE_IN',
+          quantity: 10,
+          unitCost: 200,
+        }),
     );
 
     const call = upsert.mock.calls[0][0];
     expect((call.update.avgUnitCost as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(150);
+  });
+
+  it('writes a PriceHistory row snapshotting the selling price and the purchase cost', async () => {
+    const upsert = jest.fn().mockResolvedValue({});
+    const create = jest.fn().mockResolvedValue({ id: 'movement-5' });
+    const findUnique = jest.fn().mockResolvedValue(null);
+    const findUniqueOrThrow = jest.fn().mockResolvedValue({ unitPrice: new Prisma.Decimal(199.99) });
+    const priceHistoryCreate = jest.fn().mockResolvedValue({});
+    const service = new InventoryService(makeEventEmitter());
+
+    await runInTenant(
+      {
+        stockLedger: { upsert, findUnique },
+        stockMovement: { create },
+        articleVariant: { findUniqueOrThrow },
+        priceHistory: { create: priceHistoryCreate },
+      },
+      () =>
+        service.recordMovement({
+          warehouseId: 'wh-1',
+          articleVariantId: 'variant-1',
+          type: 'PURCHASE_IN',
+          quantity: 5,
+          unitCost: 80,
+        }),
+    );
+
+    expect(priceHistoryCreate).toHaveBeenCalledWith({
+      data: {
+        tenantId: 'tenant-1',
+        articleVariantId: 'variant-1',
+        unitPrice: new Prisma.Decimal(199.99),
+        costPrice: 80,
+        changedById: 'user-1',
+        purchaseOrderId: null,
+      },
+    });
+  });
+
+  it('does not write a PriceHistory row for an ADJUSTMENT (quantity-only, no cost)', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const findUnique = jest
+      .fn()
+      .mockResolvedValue({ quantity: new Prisma.Decimal(8), avgUnitCost: new Prisma.Decimal(50) });
+    const create = jest.fn().mockResolvedValue({ id: 'movement-6' });
+    const priceHistoryCreate = jest.fn();
+    const service = new InventoryService(makeEventEmitter());
+
+    await runInTenant(
+      {
+        stockLedger: { updateMany, findUnique },
+        stockMovement: { create },
+        priceHistory: { create: priceHistoryCreate },
+      },
+      () =>
+        service.recordMovement({
+          warehouseId: 'wh-1',
+          articleVariantId: 'variant-1',
+          type: 'ADJUSTMENT',
+          quantity: -2,
+        }),
+    );
+
+    expect(priceHistoryCreate).not.toHaveBeenCalled();
+  });
+
+  it('links a PURCHASE_IN to a real Orden de Compra, stamping sourceType/sourceId and the PriceHistory FK', async () => {
+    const upsert = jest.fn().mockResolvedValue({});
+    const create = jest.fn().mockResolvedValue({ id: 'movement-7' });
+    const findUnique = jest.fn().mockResolvedValue(null);
+    const findUniqueOrThrow = jest.fn().mockResolvedValue({ unitPrice: new Prisma.Decimal(50) });
+    const priceHistoryCreate = jest.fn().mockResolvedValue({});
+    const purchaseOrderFindUnique = jest.fn().mockResolvedValue({
+      status: 'SENT',
+      lines: [{ articleVariantId: 'variant-1' }],
+    });
+    const service = new InventoryService(makeEventEmitter());
+
+    await runInTenant(
+      {
+        stockLedger: { upsert, findUnique },
+        stockMovement: { create },
+        articleVariant: { findUniqueOrThrow },
+        priceHistory: { create: priceHistoryCreate },
+        purchaseOrder: { findUnique: purchaseOrderFindUnique },
+      },
+      () =>
+        service.recordMovement({
+          warehouseId: 'wh-1',
+          articleVariantId: 'variant-1',
+          type: 'PURCHASE_IN',
+          quantity: 5,
+          unitCost: 40,
+          purchaseOrderId: 'po-1',
+        }),
+    );
+
+    expect(purchaseOrderFindUnique).toHaveBeenCalledWith({
+      where: { id: 'po-1' },
+      include: { lines: { select: { articleVariantId: true } } },
+    });
+    expect(create.mock.calls[0][0].data).toEqual(
+      expect.objectContaining({ sourceType: 'PURCHASE_ORDER', sourceId: 'po-1' }),
+    );
+    expect(priceHistoryCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ purchaseOrderId: 'po-1' }) }),
+    );
+  });
+
+  it('rejects purchaseOrderId on a movement type other than PURCHASE_IN', async () => {
+    const service = new InventoryService(makeEventEmitter());
+
+    await expect(
+      runInTenant({}, () =>
+        service.recordMovement({
+          warehouseId: 'wh-1',
+          articleVariantId: 'variant-1',
+          type: 'PRODUCTION_IN',
+          quantity: 5,
+          unitCost: 40,
+          purchaseOrderId: 'po-1',
+        }),
+      ),
+    ).rejects.toThrow('purchaseOrderId is only valid for PURCHASE_IN');
+  });
+
+  it('rejects a purchaseOrderId that does not exist', async () => {
+    const purchaseOrderFindUnique = jest.fn().mockResolvedValue(null);
+    const service = new InventoryService(makeEventEmitter());
+
+    await expect(
+      runInTenant({ purchaseOrder: { findUnique: purchaseOrderFindUnique } }, () =>
+        service.recordMovement({
+          warehouseId: 'wh-1',
+          articleVariantId: 'variant-1',
+          type: 'PURCHASE_IN',
+          quantity: 5,
+          unitCost: 40,
+          purchaseOrderId: 'po-missing',
+        }),
+      ),
+    ).rejects.toThrow('Purchase order not found');
+  });
+
+  it('rejects a cancelled purchase order', async () => {
+    const purchaseOrderFindUnique = jest.fn().mockResolvedValue({
+      status: 'CANCELLED',
+      lines: [{ articleVariantId: 'variant-1' }],
+    });
+    const service = new InventoryService(makeEventEmitter());
+
+    await expect(
+      runInTenant({ purchaseOrder: { findUnique: purchaseOrderFindUnique } }, () =>
+        service.recordMovement({
+          warehouseId: 'wh-1',
+          articleVariantId: 'variant-1',
+          type: 'PURCHASE_IN',
+          quantity: 5,
+          unitCost: 40,
+          purchaseOrderId: 'po-1',
+        }),
+      ),
+    ).rejects.toThrow('cancelled');
+  });
+
+  it('rejects a purchase order with no line for the given article variant', async () => {
+    const purchaseOrderFindUnique = jest.fn().mockResolvedValue({
+      status: 'SENT',
+      lines: [{ articleVariantId: 'some-other-variant' }],
+    });
+    const service = new InventoryService(makeEventEmitter());
+
+    await expect(
+      runInTenant({ purchaseOrder: { findUnique: purchaseOrderFindUnique } }, () =>
+        service.recordMovement({
+          warehouseId: 'wh-1',
+          articleVariantId: 'variant-1',
+          type: 'PURCHASE_IN',
+          quantity: 5,
+          unitCost: 40,
+          purchaseOrderId: 'po-1',
+        }),
+      ),
+    ).rejects.toThrow('no line for that article variant');
   });
 
   it('leaves the average untouched for a RETURN posted without a unitCost', async () => {
@@ -215,6 +417,64 @@ describe('InventoryService.recordMovement', () => {
         }),
       ),
     ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('InventoryService.getPriceHistory', () => {
+  it('maps rows newest-first, resolving the linked purchase order number when present', async () => {
+    const effectiveAt1 = new Date('2026-07-01');
+    const effectiveAt2 = new Date('2026-07-10');
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'ph-2',
+        unitPrice: new Prisma.Decimal(150),
+        costPrice: new Prisma.Decimal(80),
+        effectiveAt: effectiveAt2,
+        changedById: 'user-1',
+        purchaseOrderId: 'po-1',
+        purchaseOrder: { number: 'OC-000007' },
+      },
+      {
+        id: 'ph-1',
+        unitPrice: new Prisma.Decimal(150),
+        costPrice: null,
+        effectiveAt: effectiveAt1,
+        changedById: 'user-1',
+        purchaseOrderId: null,
+        purchaseOrder: null,
+      },
+    ]);
+    const service = new InventoryService(makeEventEmitter());
+
+    const result = await runInTenant({ priceHistory: { findMany } }, () =>
+      service.getPriceHistory('variant-1'),
+    );
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { articleVariantId: 'variant-1' },
+      include: { purchaseOrder: { select: { number: true } } },
+      orderBy: { effectiveAt: 'desc' },
+    });
+    expect(result).toEqual([
+      {
+        id: 'ph-2',
+        unitPrice: new Prisma.Decimal(150),
+        costPrice: new Prisma.Decimal(80),
+        effectiveAt: effectiveAt2,
+        changedById: 'user-1',
+        purchaseOrderId: 'po-1',
+        purchaseOrderNumber: 'OC-000007',
+      },
+      {
+        id: 'ph-1',
+        unitPrice: new Prisma.Decimal(150),
+        costPrice: null,
+        effectiveAt: effectiveAt1,
+        changedById: 'user-1',
+        purchaseOrderId: null,
+        purchaseOrderNumber: null,
+      },
+    ]);
   });
 });
 

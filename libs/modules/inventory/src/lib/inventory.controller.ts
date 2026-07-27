@@ -118,6 +118,11 @@ export class InventoryController {
     return { articleVariantId: id, quantity };
   }
 
+  @Get('article-variants/:id/price-history')
+  getPriceHistory(@Param('id', ParseUUIDPipe) id: string) {
+    return this.inventoryService.getPriceHistory(id);
+  }
+
   @Roles(...WRITE_ROLES)
   @Post('minimum-stock')
   setMinimumStock(@Body() dto: SetMinimumStockDto) {

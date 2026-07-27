@@ -78,6 +78,18 @@ export interface RecordStockMovementInput {
   type: MovementType;
   quantity: number;
   unitCost?: number;
+  // Only meaningful for PURCHASE_IN - ties the movement's cost to a real
+  // Orden de Compra instead of leaving it as a manual entry with no source.
+  purchaseOrderId?: string;
+}
+
+export interface PriceHistoryEntry {
+  id: string;
+  unitPrice: string;
+  costPrice: string | null;
+  effectiveAt: string;
+  purchaseOrderId: string | null;
+  purchaseOrderNumber: string | null;
 }
 
 export interface ImportRowError {
@@ -126,4 +138,8 @@ export const inventoryApi = {
     api.delete<Article>(`/inventory/articles/${articleId}/image`).then((r) => r.data),
   updateArticle: (id: string, dto: UpdateArticleInput) =>
     api.patch<Article>(`/inventory/articles/${id}`, dto).then((r) => r.data),
+  getPriceHistory: (articleVariantId: string) =>
+    api
+      .get<PriceHistoryEntry[]>(`/inventory/article-variants/${articleVariantId}/price-history`)
+      .then((r) => r.data),
 };

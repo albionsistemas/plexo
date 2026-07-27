@@ -5,6 +5,7 @@ import { getSocket } from '@/lib/socket';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import ArticleImageModal from './ArticleImageModal';
+import ArticlePriceHistoryModal from './ArticlePriceHistoryModal';
 import ArticleSupplierModal from './ArticleSupplierModal';
 import ImportArticlesModal from './ImportArticlesModal';
 import StockMovementModal from './StockMovementModal';
@@ -111,6 +112,9 @@ export default function InventoryPage() {
   );
   const [supplierArticle, setSupplierArticle] = useState<
     { id: string; name: string; preferredSupplierId: string | null } | null
+  >(null);
+  const [historyVariant, setHistoryVariant] = useState<
+    { id: string; sku: string; articleName: string } | null
   >(null);
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
     key: 'articleName',
@@ -339,7 +343,16 @@ export default function InventoryPage() {
                       <td className="py-2 pr-4 font-mono text-xs text-slate-600 dark:text-slate-400">{row.sku}</td>
                       <td className="py-2 pr-4 text-slate-600 dark:text-slate-400">{row.categoryName ?? '—'}</td>
                       <td className="py-2 pr-4 text-right text-slate-800 dark:text-slate-200">
-                        ${row.unitPrice.toFixed(2)}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setHistoryVariant({ id: row.variantId, sku: row.sku, articleName: row.articleName })
+                          }
+                          title="Ver historial de precios"
+                          className="hover:underline hover:decoration-dotted"
+                        >
+                          ${row.unitPrice.toFixed(2)}
+                        </button>
                       </td>
                       {warehouses.map((w) => (
                         <td key={w.id} className="py-2 pr-4 text-right text-slate-700 dark:text-slate-300">
@@ -382,6 +395,10 @@ export default function InventoryPage() {
 
       {supplierArticle && (
         <ArticleSupplierModal article={supplierArticle} onClose={() => setSupplierArticle(null)} />
+      )}
+
+      {historyVariant && (
+        <ArticlePriceHistoryModal variant={historyVariant} onClose={() => setHistoryVariant(null)} />
       )}
     </div>
   );

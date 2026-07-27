@@ -464,6 +464,16 @@ model PriceHistory {
   unitPrice        Decimal        @db.Decimal(14, 2)
   costPrice        Decimal?       @db.Decimal(14, 2)
   changedById      String?
+  // Which Orden de Compra this cost came from, if the movement that
+  // triggered this row referenced one (see
+  // InventoryService.recordMovement, RecordStockMovementDto.purchaseOrderId)
+  // - null for selling-price-only changes or a cost entered without
+  // linking a purchase order. A real FK (not the loose sourceType/sourceId
+  // pattern StockMovement uses for "any originating table") because
+  // PurchaseOrder is a real, validated entity now - decision with the
+  // user, 2026-07-27.
+  purchaseOrderId  String?
+  purchaseOrder    PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
   effectiveAt      DateTime       @default(now())
 
   @@index([tenantId, articleVariantId])
@@ -1100,7 +1110,11 @@ model PurchaseOrder {
   createdBy       User     @relation(fields: [createdByUserId], references: [id])
   createdAt       DateTime @default(now())
 
-  lines PurchaseOrderLine[]
+  lines               PurchaseOrderLine[]
+  // Cost history entries (PriceHistory.purchaseOrderId) recorded when a
+  // PURCHASE_IN stock movement referenced this order - see
+  // InventoryService.recordMovement.
+  priceHistoryEntries PriceHistory[]
 
   @@unique([tenantId, number])
   @@index([tenantId, supplierId])
