@@ -274,8 +274,14 @@ model Company {
   // A Company playing the SUPPLIER role can be the counterparty of a
   // Compras document - unrelated to the `quotes`/`Quote` field above
   // (sales-side presupuesto), see QuoteRequest for why the names differ.
-  quoteRequests  QuoteRequest[]
-  purchaseOrders PurchaseOrder[]
+  quoteRequests        QuoteRequest[]
+  purchaseOrders       PurchaseOrder[]
+  // Articles that name this Company as their preferred supplier (see
+  // Article.preferredSupplierId) - read from the Company side (e.g. "what
+  // do we usually buy from this supplier") without CompaniesService
+  // importing InventoryService, per the module-boundary rule (queries
+  // the articles table directly via getTenantDb()).
+  preferredForArticles Article[]
 
   @@index([tenantId])
   @@map("companies")
@@ -377,22 +383,22 @@ model Category {
 // stocked directly - ArticleVariant is the sellable/stocked unit, even
 // for articles with no real variation (see ArticleVariant comment).
 model Article {
-  id              String         @id @default(uuid())
-  tenantId        String
-  name            String
-  description     String?
-  unitOfMeasure   UnitOfMeasure  @default(UNIT)
-  categoryId      String?
-  category        Category?      @relation(fields: [categoryId], references: [id])
-  taxDefinitionId String?
-  taxDefinition   TaxDefinition? @relation(fields: [taxDefinitionId], references: [id])
+  id                  String         @id @default(uuid())
+  tenantId            String
+  name                String
+  description         String?
+  unitOfMeasure       UnitOfMeasure  @default(UNIT)
+  categoryId          String?
+  category            Category?      @relation(fields: [categoryId], references: [id])
+  taxDefinitionId     String?
+  taxDefinition       TaxDefinition? @relation(fields: [taxDefinitionId], references: [id])
   // A service doesn't move stock - InventoryService should reject
   // PURCHASE_IN/SALE_OUT/etc. movements against its variants (not enforced
   // yet, see pendiente en PROGRESS.md).
-  isService       Boolean        @default(false)
+  isService           Boolean        @default(false)
   // Whether this article is meant to be shown in a future customer-facing
   // storefront. No storefront exists yet - this only records the intent.
-  isPublished     Boolean        @default(false)
+  isPublished         Boolean        @default(false)
   // Real uploaded file (see POST/DELETE /inventory/articles/:id/image),
   // not a pasted URL like User.avatarUrl/Person.avatarUrl - first real
   // file-storage feature in the project (2026-07-27 decision with the
@@ -400,8 +406,16 @@ model Article {
   // main.ts's @fastify/static registration - a deliberate, narrow
   // exception to "everything is tenant-scoped/RLS-protected", justified
   // because a product photo isn't fiscal/financial data.
-  imageUrl        String?
-  createdAt       DateTime       @default(now())
+  imageUrl            String?
+  // One preferred supplier per article (decision with the user,
+  // 2026-07-27): "who do we usually buy this from", set at the Article
+  // level, not per ArticleVariant - a QuoteRequest/PurchaseOrder line
+  // still targets a specific ArticleVariant regardless, this is just a
+  // default/suggestion, not a constraint on which supplier a document
+  // can actually use. Nullable - most articles won't have one set.
+  preferredSupplierId String?
+  preferredSupplier   Company?       @relation(fields: [preferredSupplierId], references: [id])
+  createdAt           DateTime       @default(now())
 
   variants ArticleVariant[]
 

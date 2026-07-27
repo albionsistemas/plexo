@@ -58,6 +58,8 @@ export interface ArticleListItem {
   isService: boolean;
   isPublished: boolean;
   imageUrl: string | null;
+  preferredSupplierId: string | null;
+  preferredSupplierName: string | null;
   variants: ArticleVariantListItem[];
 }
 
@@ -100,12 +102,34 @@ export class InventoryService {
     });
   }
 
-  updateArticle(id: string, dto: UpdateArticleDto): Promise<Article> {
-    return getTenantDb().article.update({
+  async updateArticle(id: string, dto: UpdateArticleDto): Promise<Article> {
+    const db = getTenantDb();
+    // undefined (field omitted) leaves preferredSupplierId untouched;
+    // explicit null clears it; a real id must resolve to an active
+    // SUPPLIER company - same validation QuoteRequestService/
+    // PurchaseOrderService apply when a document picks a supplier.
+    if (dto.preferredSupplierId) {
+      const supplier = await db.company.findUnique({
+        where: { id: dto.preferredSupplierId },
+        include: { roles: true },
+      });
+      if (!supplier) {
+        throw new BadRequestException('Supplier not found');
+      }
+      if (!supplier.active) {
+        throw new BadRequestException('This supplier is inactive');
+      }
+      if (!supplier.roles.some((r) => r.role === 'SUPPLIER')) {
+        throw new BadRequestException('This company is not flagged as a supplier');
+      }
+    }
+
+    return db.article.update({
       where: { id },
       data: {
         isService: dto.isService,
         isPublished: dto.isPublished,
+        preferredSupplierId: dto.preferredSupplierId,
       },
     });
   }
@@ -114,6 +138,7 @@ export class InventoryService {
     const articles = await getTenantDb().article.findMany({
       include: {
         category: true,
+        preferredSupplier: { select: { id: true, name: true } },
         variants: { include: { stockLedger: { include: { warehouse: true } }, minimumStocks: true } },
       },
       orderBy: { name: 'asc' },
@@ -129,6 +154,8 @@ export class InventoryService {
       isService: article.isService,
       isPublished: article.isPublished,
       imageUrl: article.imageUrl,
+      preferredSupplierId: article.preferredSupplierId,
+      preferredSupplierName: article.preferredSupplier?.name ?? null,
       variants: article.variants.map((variant) => {
         const stockByWarehouse: WarehouseStockRow[] = variant.stockLedger.map((sl) => ({
           warehouseId: sl.warehouseId,

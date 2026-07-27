@@ -5,6 +5,7 @@ import { getSocket } from '@/lib/socket';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import ArticleImageModal from './ArticleImageModal';
+import ArticleSupplierModal from './ArticleSupplierModal';
 import ImportArticlesModal from './ImportArticlesModal';
 import StockMovementModal from './StockMovementModal';
 
@@ -16,6 +17,8 @@ interface VariantRow {
   isService: boolean;
   isPublished: boolean;
   imageUrl: string | null;
+  preferredSupplierId: string | null;
+  preferredSupplierName: string | null;
   variantId: string;
   sku: string;
   variantLabel: string | null;
@@ -80,6 +83,8 @@ function flattenVariants(articles: Article[]): VariantRow[] {
       isService: article.isService,
       isPublished: article.isPublished,
       imageUrl: article.imageUrl,
+      preferredSupplierId: article.preferredSupplierId,
+      preferredSupplierName: article.preferredSupplierName,
       variantId: variant.id,
       sku: variant.sku,
       variantLabel: [variant.color, variant.size, variant.brand].filter(Boolean).join(' / ') || null,
@@ -104,6 +109,9 @@ export default function InventoryPage() {
   const [imageArticle, setImageArticle] = useState<{ id: string; name: string; imageUrl: string | null } | null>(
     null,
   );
+  const [supplierArticle, setSupplierArticle] = useState<
+    { id: string; name: string; preferredSupplierId: string | null } | null
+  >(null);
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
     key: 'articleName',
     direction: 'asc',
@@ -314,6 +322,19 @@ export default function InventoryPage() {
                         {row.variantLabel && (
                           <p className="text-xs text-slate-500">{row.variantLabel}</p>
                         )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSupplierArticle({
+                              id: row.articleId,
+                              name: row.articleName,
+                              preferredSupplierId: row.preferredSupplierId,
+                            })
+                          }
+                          className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                        >
+                          {row.preferredSupplierName ?? '+ proveedor'}
+                        </button>
                       </td>
                       <td className="py-2 pr-4 font-mono text-xs text-slate-600 dark:text-slate-400">{row.sku}</td>
                       <td className="py-2 pr-4 text-slate-600 dark:text-slate-400">{row.categoryName ?? '—'}</td>
@@ -358,6 +379,10 @@ export default function InventoryPage() {
       {importModalOpen && <ImportArticlesModal onClose={() => setImportModalOpen(false)} />}
 
       {imageArticle && <ArticleImageModal article={imageArticle} onClose={() => setImageArticle(null)} />}
+
+      {supplierArticle && (
+        <ArticleSupplierModal article={supplierArticle} onClose={() => setSupplierArticle(null)} />
+      )}
     </div>
   );
 }

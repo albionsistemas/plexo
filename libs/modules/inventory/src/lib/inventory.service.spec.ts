@@ -283,3 +283,83 @@ describe('InventoryService.listReorderSuggestions', () => {
     expect(findManyLedger).not.toHaveBeenCalled();
   });
 });
+
+describe('InventoryService.updateArticle', () => {
+  function makeSupplier(overrides: Partial<{ active: boolean; roles: { role: string }[] }> = {}) {
+    return {
+      id: 'supplier-1',
+      active: overrides.active ?? true,
+      roles: overrides.roles ?? [{ role: 'SUPPLIER' }],
+    };
+  }
+
+  it('sets the preferred supplier once it validates as an active SUPPLIER company', async () => {
+    const db = {
+      company: { findUnique: jest.fn().mockResolvedValue(makeSupplier()) },
+      article: { update: jest.fn((args) => Promise.resolve({ id: 'article-1', ...args.data })) },
+    };
+    const service = new InventoryService(makeEventEmitter());
+
+    await runInTenant(db, () => service.updateArticle('article-1', { preferredSupplierId: 'supplier-1' }));
+
+    expect(db.company.findUnique).toHaveBeenCalledWith({
+      where: { id: 'supplier-1' },
+      include: { roles: true },
+    });
+    expect(db.article.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ preferredSupplierId: 'supplier-1' }) }),
+    );
+  });
+
+  it('rejects a company that is not flagged as a supplier', async () => {
+    const db = {
+      company: { findUnique: jest.fn().mockResolvedValue(makeSupplier({ roles: [{ role: 'CUSTOMER' }] })) },
+    };
+    const service = new InventoryService(makeEventEmitter());
+
+    await expect(
+      runInTenant(db, () => service.updateArticle('article-1', { preferredSupplierId: 'supplier-1' })),
+    ).rejects.toThrow('not flagged as a supplier');
+  });
+
+  it('rejects an inactive supplier', async () => {
+    const db = {
+      company: { findUnique: jest.fn().mockResolvedValue(makeSupplier({ active: false })) },
+    };
+    const service = new InventoryService(makeEventEmitter());
+
+    await expect(
+      runInTenant(db, () => service.updateArticle('article-1', { preferredSupplierId: 'supplier-1' })),
+    ).rejects.toThrow('inactive');
+  });
+
+  it('clears the preferred supplier when given null, with no validation lookup', async () => {
+    const db = {
+      company: { findUnique: jest.fn() },
+      article: { update: jest.fn((args) => Promise.resolve({ id: 'article-1', ...args.data })) },
+    };
+    const service = new InventoryService(makeEventEmitter());
+
+    const result = await runInTenant(db, () =>
+      service.updateArticle('article-1', { preferredSupplierId: null }),
+    );
+
+    expect(db.company.findUnique).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({ preferredSupplierId: null }));
+  });
+
+  it('leaves the preferred supplier untouched when the field is omitted', async () => {
+    const db = {
+      company: { findUnique: jest.fn() },
+      article: { update: jest.fn((args) => Promise.resolve({ id: 'article-1', ...args.data })) },
+    };
+    const service = new InventoryService(makeEventEmitter());
+
+    await runInTenant(db, () => service.updateArticle('article-1', { isPublished: true }));
+
+    expect(db.company.findUnique).not.toHaveBeenCalled();
+    expect(db.article.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ preferredSupplierId: undefined }) }),
+    );
+  });
+});

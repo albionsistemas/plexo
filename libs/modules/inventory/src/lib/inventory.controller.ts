@@ -69,6 +69,7 @@ export class InventoryController {
     return this.inventoryService.listArticles();
   }
 
+  @AuditEntity('article', { labelFields: ['name'] })
   @Roles(...WRITE_ROLES)
   @Patch('articles/:id')
   updateArticle(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateArticleDto) {

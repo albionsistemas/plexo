@@ -21,6 +21,16 @@ import type { UpdatePersonDto } from './dto/update-person.dto.js';
 
 export type CompanyWithRoles = Company & { roles: { role: CompanyRoleType }[] };
 
+/** Minimal shape for "articles that prefer this company as a supplier" -
+ * read directly off the articles table (see Article.preferredSupplierId),
+ * not via InventoryService - modules never import each other's Service,
+ * see PROGRESS.md's architecture decisions. */
+export interface PreferredArticleSummary {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+}
+
 @Injectable()
 export class CompaniesService {
   constructor(@Inject(AFIP_PADRON) private readonly afipPadron: AfipPadronPort) {}
@@ -65,7 +75,9 @@ export class CompaniesService {
    * reproduce here under real load (8 sequential + 5 concurrent requests,
    * no hang, no pg deprecation warning), but the same risk shape is
    * present, so it gets the same fix preventively. */
-  async getCompany(id: string): Promise<CompanyWithRoles & { people: Person[] }> {
+  async getCompany(
+    id: string,
+  ): Promise<CompanyWithRoles & { people: Person[]; preferredForArticles: PreferredArticleSummary[] }> {
     const db = getTenantDb();
     const company = await db.company.findUnique({
       where: { id },
@@ -75,7 +87,12 @@ export class CompaniesService {
       throw new NotFoundException('Company not found');
     }
     const people = await db.person.findMany({ where: { companyId: id } });
-    return { ...company, people };
+    const preferredForArticles = await db.article.findMany({
+      where: { preferredSupplierId: id },
+      select: { id: true, name: true, imageUrl: true },
+      orderBy: { name: 'asc' },
+    });
+    return { ...company, people, preferredForArticles };
   }
 
   /**

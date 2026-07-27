@@ -40,7 +40,16 @@ export interface Article {
   isService: boolean;
   isPublished: boolean;
   imageUrl: string | null;
+  preferredSupplierId: string | null;
+  preferredSupplierName: string | null;
   variants: ArticleVariant[];
+}
+
+export interface UpdateArticleInput {
+  isService?: boolean;
+  isPublished?: boolean;
+  // null clears it, undefined/omitted leaves it untouched.
+  preferredSupplierId?: string | null;
 }
 
 /** Article images are served from @fastify/static at the API's root
@@ -115,4 +124,6 @@ export const inventoryApi = {
   },
   removeArticleImage: (articleId: string) =>
     api.delete<Article>(`/inventory/articles/${articleId}/image`).then((r) => r.data),
+  updateArticle: (id: string, dto: UpdateArticleInput) =>
+    api.patch<Article>(`/inventory/articles/${id}`, dto).then((r) => r.data),
 };
