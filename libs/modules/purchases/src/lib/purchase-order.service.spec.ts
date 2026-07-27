@@ -125,10 +125,12 @@ describe('PurchaseOrderService.sendEmail', () => {
     expect(emailSender.sendPurchaseOrderEmail).toHaveBeenCalledWith(
       expect.objectContaining({ to: 'compras@norte.com', purchaseOrderNumber: 'OC-000001' }),
     );
-    expect(db.purchaseOrder.update).toHaveBeenCalledWith({
-      where: { id: 'po-1' },
-      data: { status: 'SENT', sentAt: expect.any(Date), sentVia: 'EMAIL' },
-    });
+    expect(db.purchaseOrder.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'po-1' },
+        data: { status: 'SENT', sentAt: expect.any(Date), sentVia: 'EMAIL' },
+      }),
+    );
   });
 });
 

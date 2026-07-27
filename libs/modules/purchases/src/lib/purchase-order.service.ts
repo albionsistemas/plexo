@@ -154,8 +154,11 @@ export class PurchaseOrderService {
 
   /** "Enviar por Email" in the send dialog - attaches the user's default
    * PDF style, marks sentAt/sentVia so the UI can show "Reenviar" instead
-   * of "Enviar" afterward. */
-  async sendEmail(id: string): Promise<void> {
+   * of "Enviar" afterward. Returns the updated order (not just void) so
+   * the controller's @AuditEntity('purchaseOrder') logs a real diff
+   * (status/sentAt/sentVia) instead of an empty one - the interceptor
+   * diffs whatever the handler returns, it never re-fetches on its own. */
+  async sendEmail(id: string) {
     const purchaseOrder = await this.findOrThrow(id);
     if (!purchaseOrder.supplier.email) {
       throw new BadRequestException('This supplier has no email on file');
@@ -170,7 +173,7 @@ export class PurchaseOrderService {
       pdfBuffer: buffer,
       pdfFilename: filename,
     });
-    await this.markSent(id, 'EMAIL');
+    return this.markSent(id, 'EMAIL');
   }
 
   /** Server-side text so wording stays in one place (mirrors invoicing's
@@ -191,9 +194,9 @@ export class PurchaseOrderService {
     return { url: `https://wa.me/${digitsOnly}?text=${encodeURIComponent(message)}` };
   }
 
-  async markSentWhatsapp(id: string): Promise<void> {
+  async markSentWhatsapp(id: string) {
     await this.findOrThrow(id);
-    await this.markSent(id, 'WHATSAPP');
+    return this.markSent(id, 'WHATSAPP');
   }
 
   async generatePdf(id: string, style?: PdfStyle): Promise<{ buffer: Buffer; filename: string }> {
@@ -234,10 +237,11 @@ export class PurchaseOrderService {
     return purchaseOrder;
   }
 
-  private async markSent(id: string, channel: PurchaseSendChannel): Promise<void> {
-    await getTenantDb().purchaseOrder.update({
+  private markSent(id: string, channel: PurchaseSendChannel) {
+    return getTenantDb().purchaseOrder.update({
       where: { id },
       data: { status: 'SENT', sentAt: new Date(), sentVia: channel },
+      include: DETAIL_INCLUDE,
     });
   }
 

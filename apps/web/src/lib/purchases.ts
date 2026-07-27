@@ -220,12 +220,12 @@ export const purchaseOrdersApi = {
     api.patch<PurchaseOrderDetail>(`/purchases/purchase-orders/${id}`, dto).then((r) => r.data),
   cancel: (id: string) => api.patch(`/purchases/purchase-orders/${id}/cancel`).then(() => undefined),
   sendEmail: (id: string) =>
-    api.post<{ sent: boolean }>(`/purchases/purchase-orders/${id}/send-email`).then((r) => r.data),
+    api.post<PurchaseOrderDetail>(`/purchases/purchase-orders/${id}/send-email`).then((r) => r.data),
   whatsappLink: (id: string, phone: string) =>
     api
       .get<{ url: string }>(`/purchases/purchase-orders/${id}/whatsapp-link`, { params: { phone } })
       .then((r) => r.data),
   markSentWhatsapp: (id: string) =>
-    api.post<{ sent: boolean }>(`/purchases/purchase-orders/${id}/mark-sent-whatsapp`).then((r) => r.data),
+    api.post<PurchaseOrderDetail>(`/purchases/purchase-orders/${id}/mark-sent-whatsapp`).then((r) => r.data),
   openPdf: (id: string, style?: PdfStyle) => openPdf(`/purchases/purchase-orders/${id}/pdf`, style),
 };

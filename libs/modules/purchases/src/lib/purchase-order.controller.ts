@@ -32,7 +32,8 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.get(id);
   }
 
-  @AuditEntity('purchaseOrder', { labelFields: ['number'] })
+  // idParam: null - see the identical comment on QuoteRequestController.create().
+  @AuditEntity('purchaseOrder', { labelFields: ['number'], idParam: null })
   @Roles(...WRITE_ROLES)
   @Post()
   create(@Body() dto: CreatePurchaseOrderDto) {
@@ -53,12 +54,15 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.cancel(id);
   }
 
+  // Returns the updated PurchaseOrder itself (not a bare {sent:true}) so
+  // the audit log's diff actually reflects what changed (status/sentAt/
+  // sentVia) - the interceptor diffs the handler's return value as-is,
+  // it doesn't re-query the entity on its own.
   @AuditEntity('purchaseOrder', { labelFields: ['number'] })
   @Roles(...WRITE_ROLES)
   @Post(':id/send-email')
-  async sendEmail(@Param('id', ParseUUIDPipe) id: string) {
-    await this.purchaseOrderService.sendEmail(id);
-    return { sent: true };
+  sendEmail(@Param('id', ParseUUIDPipe) id: string) {
+    return this.purchaseOrderService.sendEmail(id);
   }
 
   @Get(':id/whatsapp-link')
@@ -69,9 +73,8 @@ export class PurchaseOrderController {
   @AuditEntity('purchaseOrder', { labelFields: ['number'] })
   @Roles(...WRITE_ROLES)
   @Post(':id/mark-sent-whatsapp')
-  async markSentWhatsapp(@Param('id', ParseUUIDPipe) id: string) {
-    await this.purchaseOrderService.markSentWhatsapp(id);
-    return { sent: true };
+  markSentWhatsapp(@Param('id', ParseUUIDPipe) id: string) {
+    return this.purchaseOrderService.markSentWhatsapp(id);
   }
 
   @Get(':id/pdf')

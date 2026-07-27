@@ -134,7 +134,7 @@ export class InventoryController {
     return this.inventoryService.listReorderSuggestions();
   }
 
-  @AuditEntity('article')
+  @AuditEntity('article', { labelFields: ['name'] })
   @Roles(...WRITE_ROLES)
   @Post('articles/:id/image')
   async uploadArticleImage(@Param('id', ParseUUIDPipe) id: string, @Req() req: FastifyRequest) {
@@ -146,7 +146,7 @@ export class InventoryController {
     return this.articleImageService.setImage(id, data.mimetype, buffer);
   }
 
-  @AuditEntity('article')
+  @AuditEntity('article', { labelFields: ['name'] })
   @Roles(...WRITE_ROLES)
   @Delete('articles/:id/image')
   removeArticleImage(@Param('id', ParseUUIDPipe) id: string) {
