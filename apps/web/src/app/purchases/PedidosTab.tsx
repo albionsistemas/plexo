@@ -1,27 +1,17 @@
 'use client';
 
 import {
+  describeQuoteRequestStatus,
   quoteRequestsApi,
   type PurchaseOrderDetail,
   type QuoteRequestDetail,
 } from '@/lib/purchases';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import PurchaseOrderDetailPanel from './PurchaseOrderDetailPanel';
 import QuoteRequestDetailPanel from './QuoteRequestDetailPanel';
 import QuoteRequestFormModal from './QuoteRequestFormModal';
 import SendPurchaseOrderDialog from './SendPurchaseOrderDialog';
-
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Borrador',
-  CONVERTED: 'Emitido a OC',
-  CANCELLED: 'Cancelado',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  DRAFT: 'bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-300',
-  CONVERTED: 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300',
-  CANCELLED: 'bg-slate-200 dark:bg-slate-800 text-slate-500',
-};
 
 export default function PedidosTab() {
   const queryClient = useQueryClient();
@@ -29,6 +19,7 @@ export default function PedidosTab() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [editing, setEditing] = useState<QuoteRequestDetail | null>(null);
   const [pendingSend, setPendingSend] = useState<PurchaseOrderDetail | null>(null);
+  const [viewOrderId, setViewOrderId] = useState<string | null>(null);
 
   const { data: quoteRequests, isLoading } = useQuery({
     queryKey: ['quote-requests'],
@@ -70,41 +61,50 @@ export default function PedidosTab() {
               </tr>
             </thead>
             <tbody>
-              {quoteRequests.map((qr) => (
-                <tr key={qr.id} className="border-b border-slate-200/50 dark:border-slate-800/50">
-                  <td className="p-3 font-mono text-xs text-slate-700 dark:text-slate-300">{qr.number}</td>
-                  <td className="p-3 text-slate-800 dark:text-slate-200">{qr.supplier.name}</td>
-                  <td className="p-3 text-slate-600 dark:text-slate-400">
-                    {new Date(qr.createdAt).toLocaleDateString('es-AR')}
-                  </td>
-                  <td className="p-3">
-                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[qr.status]}`}>
-                      {STATUS_LABELS[qr.status] ?? qr.status}
-                    </span>
-                  </td>
-                  <td className="p-3 text-right text-slate-800 dark:text-slate-200">
-                    {qr.estimatedTotal != null ? `$${Number(qr.estimatedTotal).toFixed(2)}` : '—'}{' '}
-                    {qr.currency.code}
-                  </td>
-                  <td className="p-3">
-                    <div className="flex justify-end gap-3 text-xs">
-                      <button
-                        onClick={() => setDetailId(qr.id)}
-                        className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
-                      >
-                        Ver
-                      </button>
-                      <button
-                        onClick={() => cloneMutation.mutate(qr.id)}
-                        disabled={cloneMutation.isPending}
-                        className="text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 disabled:opacity-50"
-                      >
-                        Clonar
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {quoteRequests.map((qr) => {
+                const { label, colorClass, purchaseOrder } = describeQuoteRequestStatus(qr);
+                return (
+                  <tr key={qr.id} className="border-b border-slate-200/50 dark:border-slate-800/50">
+                    <td className="p-3 font-mono text-xs text-slate-700 dark:text-slate-300">{qr.number}</td>
+                    <td className="p-3 text-slate-800 dark:text-slate-200">{qr.supplier.name}</td>
+                    <td className="p-3 text-slate-600 dark:text-slate-400">
+                      {new Date(qr.createdAt).toLocaleDateString('es-AR')}
+                    </td>
+                    <td className="p-3">
+                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${colorClass}`}>{label}</span>
+                      {purchaseOrder && (
+                        <button
+                          onClick={() => setViewOrderId(purchaseOrder.id)}
+                          className="ml-2 font-mono text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                        >
+                          {purchaseOrder.number}
+                        </button>
+                      )}
+                    </td>
+                    <td className="p-3 text-right text-slate-800 dark:text-slate-200">
+                      {qr.estimatedTotal != null ? `$${Number(qr.estimatedTotal).toFixed(2)}` : '—'}{' '}
+                      {qr.currency.code}
+                    </td>
+                    <td className="p-3">
+                      <div className="flex justify-end gap-3 text-xs">
+                        <button
+                          onClick={() => setDetailId(qr.id)}
+                          className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                        >
+                          Ver
+                        </button>
+                        <button
+                          onClick={() => cloneMutation.mutate(qr.id)}
+                          disabled={cloneMutation.isPending}
+                          className="text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 disabled:opacity-50"
+                        >
+                          Clonar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -137,6 +137,9 @@ export default function PedidosTab() {
           }}
           onClose={() => setPendingSend(null)}
         />
+      )}
+      {viewOrderId && (
+        <PurchaseOrderDetailPanel purchaseOrderId={viewOrderId} onClose={() => setViewOrderId(null)} />
       )}
     </div>
   );

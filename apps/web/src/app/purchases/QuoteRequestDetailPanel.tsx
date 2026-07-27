@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  describeQuoteRequestStatus,
   PDF_STYLES,
   purchasePreferencesApi,
   quoteRequestsApi,
@@ -19,17 +20,14 @@ interface Props {
   onConverted: (purchaseOrder: PurchaseOrderDetail) => void;
 }
 
-const STATUS_LABELS: Record<string, string> = {
+// Only for the "Órdenes de Compra" list below, which shows each linked
+// order's OWN status (DRAFT/SENT/CANCELLED) - a different enum than the
+// Pedido's own status, unrelated to describeQuoteRequestStatus's
+// Borrador/Comprado/Enviado/Cancelado (used for the header badge above it).
+const PURCHASE_ORDER_STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Borrador',
-  CONVERTED: 'Emitido a Orden de Compra',
-  CANCELLED: 'Cancelado',
   SENT: 'Enviada',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  DRAFT: 'bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-300',
-  CONVERTED: 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300',
-  CANCELLED: 'bg-slate-200 dark:bg-slate-800 text-slate-500',
+  CANCELLED: 'Cancelada',
 };
 
 export default function QuoteRequestDetailPanel({ quoteRequestId, onClose, onEdit, onConverted }: Props) {
@@ -111,8 +109,10 @@ export default function QuoteRequestDetailPanel({ quoteRequestId, onClose, onEdi
           <div className="flex flex-col gap-6">
             <div className="grid grid-cols-2 gap-3 text-sm">
               <Info label="Estado">
-                <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[data.status]}`}>
-                  {STATUS_LABELS[data.status] ?? data.status}
+                <span
+                  className={`rounded px-2 py-0.5 text-xs font-medium ${describeQuoteRequestStatus(data).colorClass}`}
+                >
+                  {describeQuoteRequestStatus(data).label}
                 </span>
               </Info>
               <Info label="Fecha">{new Date(data.createdAt).toLocaleDateString('es-AR')}</Info>
@@ -168,7 +168,9 @@ export default function QuoteRequestDetailPanel({ quoteRequestId, onClose, onEdi
                 <h3 className="mb-2 text-sm font-medium text-slate-600 dark:text-slate-400">Órdenes de Compra</h3>
                 <ul className="flex flex-col gap-1 text-sm text-slate-700 dark:text-slate-300">
                   {data.purchaseOrders.map((po) => (
-                    <li key={po.id}>{po.number} — {STATUS_LABELS[po.status] ?? po.status}</li>
+                    <li key={po.id}>
+                      {po.number} — {PURCHASE_ORDER_STATUS_LABELS[po.status] ?? po.status}
+                    </li>
                   ))}
                 </ul>
               </section>

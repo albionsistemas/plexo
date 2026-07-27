@@ -62,6 +62,14 @@ export interface PurchaseOrderLineInput {
   notes?: string;
 }
 
+export interface LinkedPurchaseOrderRef {
+  id: string;
+  number: string;
+  status: PurchaseDocumentStatus;
+  sentAt: string | null;
+  sentVia: PurchaseSendChannel | null;
+}
+
 export interface QuoteRequestSummary {
   id: string;
   number: string;
@@ -70,7 +78,7 @@ export interface QuoteRequestSummary {
   createdAt: string;
   supplier: { id: string; name: string };
   currency: { code: string };
-  lines: { id: string }[];
+  purchaseOrders: LinkedPurchaseOrderRef[];
 }
 
 export interface QuoteRequestDetail {
@@ -87,8 +95,37 @@ export interface QuoteRequestDetail {
   paymentTerm: CatalogRef | null;
   deliveryTime: CatalogRef | null;
   lines: QuoteRequestLineDetail[];
-  purchaseOrders: { id: string; number: string; status: PurchaseDocumentStatus }[];
+  purchaseOrders: LinkedPurchaseOrderRef[];
 }
+
+/** DRAFT/CANCELLED map straight to their own label. CONVERTED splits in
+ * two depending on the resulting Orden de Compra: "Comprado" once issued
+ * but only saved, "Enviado" once that order was actually sent to the
+ * supplier (email/WhatsApp) - the Pedido's own `status` enum has no SENT
+ * value of its own, this derives it from the linked order instead of
+ * duplicating sentAt/sentVia onto QuoteRequest. */
+export function describeQuoteRequestStatus(qr: {
+  status: PurchaseDocumentStatus;
+  purchaseOrders: LinkedPurchaseOrderRef[];
+}): { label: string; colorClass: string; purchaseOrder: LinkedPurchaseOrderRef | null } {
+  if (qr.status === 'DRAFT') {
+    return { label: 'Borrador', colorClass: STATUS_COLOR_CLASSES.DRAFT, purchaseOrder: null };
+  }
+  if (qr.status === 'CANCELLED') {
+    return { label: 'Cancelado', colorClass: STATUS_COLOR_CLASSES.CANCELLED, purchaseOrder: null };
+  }
+  const purchaseOrder = qr.purchaseOrders[0] ?? null;
+  return purchaseOrder?.sentAt
+    ? { label: 'Enviado', colorClass: STATUS_COLOR_CLASSES.ENVIADO, purchaseOrder }
+    : { label: 'Comprado', colorClass: STATUS_COLOR_CLASSES.COMPRADO, purchaseOrder };
+}
+
+const STATUS_COLOR_CLASSES = {
+  DRAFT: 'bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-300',
+  CANCELLED: 'bg-slate-200 dark:bg-slate-800 text-slate-500',
+  COMPRADO: 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300',
+  ENVIADO: 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300',
+} as const;
 
 export interface PurchaseOrderSummary {
   id: string;

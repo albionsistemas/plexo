@@ -20,9 +20,19 @@ const DETAIL_INCLUDE = {
 } satisfies Prisma.QuoteRequestInclude;
 
 const LIST_INCLUDE = {
-  lines: true,
   supplier: { select: { id: true, name: true } },
   currency: { select: { code: true } },
+  // Which Orden de Compra (if any) this Pedido was converted into, and
+  // whether it's already been sent to the supplier - lets the list tell
+  // "Comprado" (converted, still just saved) apart from "Enviado" (the
+  // resulting order was actually sent) without a second round-trip per
+  // row. Single to-many relation in this include (no `lines` alongside
+  // it) - safe under getTenantDb()'s one-connection-per-request, unlike
+  // pairing two to-many relations in the same include (see DETAIL_INCLUDE
+  // / get() below for why that pattern is avoided).
+  purchaseOrders: {
+    select: { id: true, number: true, status: true, sentAt: true, sentVia: true },
+  },
 } satisfies Prisma.QuoteRequestInclude;
 
 // tsc can't emit a .d.ts that names the raw findMany() return type (it's
@@ -58,7 +68,7 @@ export class QuoteRequestService {
     }
     const purchaseOrders = await db.purchaseOrder.findMany({
       where: { quoteRequestId: id },
-      select: { id: true, number: true, status: true },
+      select: { id: true, number: true, status: true, sentAt: true, sentVia: true },
     });
     return { ...quoteRequest, purchaseOrders };
   }
