@@ -2,7 +2,7 @@
 
 import { inventoryApi, type Article } from '@/lib/inventory';
 import { getSocket } from '@/lib/socket';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import StockMovementModal from './StockMovementModal';
 
@@ -11,6 +11,8 @@ interface VariantRow {
   articleName: string;
   categoryId: string | null;
   categoryName: string | null;
+  isService: boolean;
+  isPublished: boolean;
   variantId: string;
   sku: string;
   variantLabel: string | null;
@@ -26,6 +28,8 @@ function flattenVariants(articles: Article[]): VariantRow[] {
       articleName: article.name,
       categoryId: article.categoryId,
       categoryName: article.categoryName,
+      isService: article.isService,
+      isPublished: article.isPublished,
       variantId: variant.id,
       sku: variant.sku,
       variantLabel: [variant.color, variant.size, variant.brand].filter(Boolean).join(' / ') || null,
@@ -84,6 +88,14 @@ export default function InventoryPage() {
   }, [articles, search, categoryId]);
 
   const isLoading = articlesQuery.isLoading || warehousesQuery.isLoading;
+
+  const updateArticleMutation = useMutation({
+    mutationFn: ({ articleId, dto }: { articleId: string; dto: { isService?: boolean; isPublished?: boolean } }) =>
+      inventoryApi.updateArticle(articleId, dto),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['inventory-articles'] });
+    },
+  });
 
   return (
     <div className="flex flex-col gap-6">
@@ -145,6 +157,8 @@ export default function InventoryPage() {
                   <th className="pb-2 pr-4">Artículo</th>
                   <th className="pb-2 pr-4">SKU</th>
                   <th className="pb-2 pr-4">Categoría</th>
+                  <th className="pb-2 pr-4 text-center">Servicio</th>
+                  <th className="pb-2 pr-4 text-center">Publicado</th>
                   <th className="pb-2 pr-4 text-right">Precio</th>
                   {warehouses.map((w) => (
                     <th key={w.id} className="pb-2 pr-4 text-right">
@@ -168,6 +182,32 @@ export default function InventoryPage() {
                     </td>
                     <td className="py-2 pr-4 font-mono text-xs text-slate-600 dark:text-slate-400">{row.sku}</td>
                     <td className="py-2 pr-4 text-slate-600 dark:text-slate-400">{row.categoryName ?? '—'}</td>
+                    <td className="py-2 pr-4 text-center">
+                      <input
+                        type="checkbox"
+                        checked={row.isService}
+                        onChange={(e) =>
+                          updateArticleMutation.mutate({
+                            articleId: row.articleId,
+                            dto: { isService: e.target.checked },
+                          })
+                        }
+                        className="h-4 w-4 accent-indigo-600"
+                      />
+                    </td>
+                    <td className="py-2 pr-4 text-center">
+                      <input
+                        type="checkbox"
+                        checked={row.isPublished}
+                        onChange={(e) =>
+                          updateArticleMutation.mutate({
+                            articleId: row.articleId,
+                            dto: { isPublished: e.target.checked },
+                          })
+                        }
+                        className="h-4 w-4 accent-indigo-600"
+                      />
+                    </td>
                     <td className="py-2 pr-4 text-right text-slate-800 dark:text-slate-200">
                       ${row.unitPrice.toFixed(2)}
                     </td>

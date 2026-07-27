@@ -11,6 +11,7 @@ import {
   type Warehouse,
 } from '@plexo/database';
 import type { CreateArticleDto } from './dto/create-article.dto.js';
+import type { UpdateArticleDto } from './dto/update-article.dto.js';
 import type { CreateArticleVariantDto } from './dto/create-article-variant.dto.js';
 import type { CreateCategoryDto } from './dto/create-category.dto.js';
 import type { CreateWarehouseDto } from './dto/create-warehouse.dto.js';
@@ -49,6 +50,8 @@ export interface ArticleListItem {
   unitOfMeasure: string;
   categoryId: string | null;
   categoryName: string | null;
+  isService: boolean;
+  isPublished: boolean;
   variants: ArticleVariantListItem[];
 }
 
@@ -85,6 +88,18 @@ export class InventoryService {
         unitOfMeasure: dto.unitOfMeasure,
         categoryId: dto.categoryId,
         taxDefinitionId: dto.taxDefinitionId,
+        isService: dto.isService,
+        isPublished: dto.isPublished,
+      },
+    });
+  }
+
+  updateArticle(id: string, dto: UpdateArticleDto): Promise<Article> {
+    return getTenantDb().article.update({
+      where: { id },
+      data: {
+        isService: dto.isService,
+        isPublished: dto.isPublished,
       },
     });
   }
@@ -105,6 +120,8 @@ export class InventoryService {
       unitOfMeasure: article.unitOfMeasure,
       categoryId: article.categoryId,
       categoryName: article.category?.name ?? null,
+      isService: article.isService,
+      isPublished: article.isPublished,
       variants: article.variants.map((variant) => {
         const stockByWarehouse: WarehouseStockRow[] = variant.stockLedger.map((sl) => ({
           warehouseId: sl.warehouseId,

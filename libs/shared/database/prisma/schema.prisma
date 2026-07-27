@@ -361,6 +361,13 @@ model Article {
   category        Category?      @relation(fields: [categoryId], references: [id])
   taxDefinitionId String?
   taxDefinition   TaxDefinition? @relation(fields: [taxDefinitionId], references: [id])
+  // A service doesn't move stock - InventoryService should reject
+  // PURCHASE_IN/SALE_OUT/etc. movements against its variants (not enforced
+  // yet, see pendiente en PROGRESS.md).
+  isService       Boolean        @default(false)
+  // Whether this article is meant to be shown in a future customer-facing
+  // storefront. No storefront exists yet - this only records the intent.
+  isPublished     Boolean        @default(false)
   createdAt       DateTime       @default(now())
 
   variants ArticleVariant[]

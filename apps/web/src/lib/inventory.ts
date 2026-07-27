@@ -36,6 +36,8 @@ export interface Article {
   unitOfMeasure: string;
   categoryId: string | null;
   categoryName: string | null;
+  isService: boolean;
+  isPublished: boolean;
   variants: ArticleVariant[];
 }
 
@@ -64,4 +66,6 @@ export const inventoryApi = {
   listCategories: () => api.get<Category[]>('/inventory/categories').then((r) => r.data),
   recordMovement: (dto: RecordStockMovementInput) =>
     api.post('/inventory/movements', dto).then((r) => r.data),
+  updateArticle: (id: string, dto: { isService?: boolean; isPublished?: boolean }) =>
+    api.patch<Article>(`/inventory/articles/${id}`, dto).then((r) => r.data),
 };

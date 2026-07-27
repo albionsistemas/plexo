@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { Roles } from '@plexo/auth';
 import { CreateArticleDto } from './dto/create-article.dto.js';
+import { UpdateArticleDto } from './dto/update-article.dto.js';
 import { CreateArticleVariantDto } from './dto/create-article-variant.dto.js';
 import { CreateCategoryDto } from './dto/create-category.dto.js';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto.js';
@@ -53,6 +54,12 @@ export class InventoryController {
   @Get('articles')
   listArticles() {
     return this.inventoryService.listArticles();
+  }
+
+  @Roles(...WRITE_ROLES)
+  @Patch('articles/:id')
+  updateArticle(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateArticleDto) {
+    return this.inventoryService.updateArticle(id, dto);
   }
 
   @Roles(...WRITE_ROLES)
