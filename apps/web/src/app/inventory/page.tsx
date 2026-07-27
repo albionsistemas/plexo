@@ -1,9 +1,10 @@
 'use client';
 
-import { inventoryApi, type Article } from '@/lib/inventory';
+import { inventoryApi, resolveUploadUrl, type Article } from '@/lib/inventory';
 import { getSocket } from '@/lib/socket';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import ArticleImageModal from './ArticleImageModal';
 import ImportArticlesModal from './ImportArticlesModal';
 import StockMovementModal from './StockMovementModal';
 
@@ -14,6 +15,7 @@ interface VariantRow {
   categoryName: string | null;
   isService: boolean;
   isPublished: boolean;
+  imageUrl: string | null;
   variantId: string;
   sku: string;
   variantLabel: string | null;
@@ -77,6 +79,7 @@ function flattenVariants(articles: Article[]): VariantRow[] {
       categoryName: article.categoryName,
       isService: article.isService,
       isPublished: article.isPublished,
+      imageUrl: article.imageUrl,
       variantId: variant.id,
       sku: variant.sku,
       variantLabel: [variant.color, variant.size, variant.brand].filter(Boolean).join(' / ') || null,
@@ -98,6 +101,9 @@ export default function InventoryPage() {
   const [onlyPublished, setOnlyPublished] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [imageArticle, setImageArticle] = useState<{ id: string; name: string; imageUrl: string | null } | null>(
+    null,
+  );
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
     key: 'articleName',
     direction: 'asc',
@@ -239,6 +245,7 @@ export default function InventoryPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs text-slate-500">
+                  <th className="pb-2 pr-2" />
                   <SortableHeader label="Artículo" sortKey="articleName" currentSort={sort} onSort={handleSort} />
                   <SortableHeader label="SKU" sortKey="sku" currentSort={sort} onSort={handleSort} />
                   <SortableHeader label="Categoría" sortKey="categoryName" currentSort={sort} onSort={handleSort} />
@@ -280,6 +287,28 @@ export default function InventoryPage() {
                         belowMinimum ? 'bg-red-50 dark:bg-red-950/30' : ''
                       }`}
                     >
+                      <td className="py-2 pr-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setImageArticle({ id: row.articleId, name: row.articleName, imageUrl: row.imageUrl })
+                          }
+                          title="Imagen del artículo"
+                          className="block h-8 w-8 overflow-hidden rounded border border-slate-300 dark:border-slate-700"
+                        >
+                          {row.imageUrl ? (
+                            <img
+                              src={resolveUploadUrl(row.imageUrl) ?? undefined}
+                              alt=""
+                              className="h-8 w-8 object-cover"
+                            />
+                          ) : (
+                            <span className="flex h-8 w-8 items-center justify-center bg-slate-200 text-slate-400 dark:bg-slate-800 dark:text-slate-600">
+                              <NoImageIcon />
+                            </span>
+                          )}
+                        </button>
+                      </td>
                       <td className="py-2 pr-4">
                         <p className="text-slate-800 dark:text-slate-200">{row.articleName}</p>
                         {row.variantLabel && (
@@ -327,6 +356,19 @@ export default function InventoryPage() {
       )}
 
       {importModalOpen && <ImportArticlesModal onClose={() => setImportModalOpen(false)} />}
+
+      {imageArticle && <ArticleImageModal article={imageArticle} onClose={() => setImageArticle(null)} />}
     </div>
+  );
+}
+
+function NoImageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="9" cy="9" r="1.5" />
+      <path d="M21 15l-5-5L5 21" />
+      <path d="M3 3l18 18" />
+    </svg>
   );
 }

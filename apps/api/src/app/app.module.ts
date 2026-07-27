@@ -9,6 +9,7 @@ import { CompaniesModule } from '@plexo/companies';
 import { DatabaseModule } from '@plexo/database';
 import { InventoryModule } from '@plexo/inventory';
 import { InvoicingModule } from '@plexo/invoicing';
+import { PurchasesModule } from '@plexo/purchases';
 import { ReceivablesModule } from '@plexo/receivables';
 import { ReportsFinancialModule } from '@plexo/reports-financial';
 import { ReportsPnlModule } from '@plexo/reports-pnl';
@@ -42,6 +43,7 @@ import { SchedulerModule } from './scheduler/scheduler.module.js';
     SchedulerModule,
     TenantSettingsModule,
     ActivityLogModule,
+    PurchasesModule,
   ],
   controllers: [AppController],
   providers: [

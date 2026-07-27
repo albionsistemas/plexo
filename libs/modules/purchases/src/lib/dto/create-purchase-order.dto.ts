@@ -1,0 +1,35 @@
+import { Type } from 'class-transformer';
+import { ArrayMinSize, IsArray, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
+import { PurchaseOrderLineDto } from './purchase-order-line.dto.js';
+
+/** Standalone creation - no QuoteRequest involved (see
+ * QuoteRequestService.convert for the other way a PurchaseOrder is born). */
+export class CreatePurchaseOrderDto {
+  @IsUUID()
+  supplierId!: string;
+
+  @IsUUID()
+  currencyId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  transportModeId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  paymentTermId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  deliveryTimeId?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => PurchaseOrderLineDto)
+  lines!: PurchaseOrderLineDto[];
+}

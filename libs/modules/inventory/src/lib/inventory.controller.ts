@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -13,6 +14,8 @@ import {
 import type { FastifyRequest } from 'fastify';
 import '@fastify/multipart';
 import { Roles } from '@plexo/auth';
+import { AuditEntity } from '@plexo/database';
+import { ArticleImageService } from './article-image.service.js';
 import { ArticleImportService } from './article-import.service.js';
 import { CreateArticleDto } from './dto/create-article.dto.js';
 import { UpdateArticleDto } from './dto/update-article.dto.js';
@@ -30,6 +33,7 @@ export class InventoryController {
   constructor(
     private readonly inventoryService: InventoryService,
     private readonly articleImportService: ArticleImportService,
+    private readonly articleImageService: ArticleImageService,
   ) {}
 
   @Roles(...WRITE_ROLES)
@@ -128,5 +132,24 @@ export class InventoryController {
   @Get('reorder-suggestions')
   listReorderSuggestions() {
     return this.inventoryService.listReorderSuggestions();
+  }
+
+  @AuditEntity('article')
+  @Roles(...WRITE_ROLES)
+  @Post('articles/:id/image')
+  async uploadArticleImage(@Param('id', ParseUUIDPipe) id: string, @Req() req: FastifyRequest) {
+    const data = await req.file();
+    if (!data) {
+      throw new BadRequestException('No se recibió ningún archivo');
+    }
+    const buffer = await data.toBuffer();
+    return this.articleImageService.setImage(id, data.mimetype, buffer);
+  }
+
+  @AuditEntity('article')
+  @Roles(...WRITE_ROLES)
+  @Delete('articles/:id/image')
+  removeArticleImage(@Param('id', ParseUUIDPipe) id: string) {
+    return this.articleImageService.removeImage(id);
   }
 }

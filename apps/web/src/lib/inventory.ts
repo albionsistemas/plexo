@@ -39,7 +39,17 @@ export interface Article {
   categoryName: string | null;
   isService: boolean;
   isPublished: boolean;
+  imageUrl: string | null;
   variants: ArticleVariant[];
+}
+
+/** Article images are served from @fastify/static at the API's root
+ * (`/uploads/...`), not under the `/api` prefix everything else in `api`
+ * (axios instance) uses - strip that suffix to get the plain origin. */
+export function resolveUploadUrl(path: string | null): string | null {
+  if (!path) return null;
+  const origin = (api.defaults.baseURL ?? '').replace(/\/api\/?$/, '');
+  return `${origin}${path}`;
 }
 
 export const MOVEMENT_TYPES = [
@@ -96,4 +106,13 @@ export const inventoryApi = {
       .post<ImportResult>('/inventory/articles/import', formData)
       .then((r) => r.data);
   },
+  uploadArticleImage: (articleId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api
+      .post<Article>(`/inventory/articles/${articleId}/image`, formData)
+      .then((r) => r.data);
+  },
+  removeArticleImage: (articleId: string) =>
+    api.delete<Article>(`/inventory/articles/${articleId}/image`).then((r) => r.data),
 };

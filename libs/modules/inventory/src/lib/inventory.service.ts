@@ -57,6 +57,7 @@ export interface ArticleListItem {
   categoryName: string | null;
   isService: boolean;
   isPublished: boolean;
+  imageUrl: string | null;
   variants: ArticleVariantListItem[];
 }
 
@@ -127,6 +128,7 @@ export class InventoryService {
       categoryName: article.category?.name ?? null,
       isService: article.isService,
       isPublished: article.isPublished,
+      imageUrl: article.imageUrl,
       variants: article.variants.map((variant) => {
         const stockByWarehouse: WarehouseStockRow[] = variant.stockLedger.map((sl) => ({
           warehouseId: sl.warehouseId,

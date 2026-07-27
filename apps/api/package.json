@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@fastify/multipart": "^10.1.0",
+    "@fastify/static": "^10.1.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/jwt": "^11.0.2",
@@ -15,6 +16,7 @@
     "@plexo/database": "^0.0.1",
     "@plexo/inventory": "^0.0.1",
     "@plexo/invoicing": "^0.0.1",
+    "@plexo/purchases": "^0.0.1",
     "@plexo/receivables": "^0.0.1",
     "@plexo/reports-financial": "^0.0.1",
     "@plexo/reports-pnl": "^0.0.1",

@@ -15,6 +15,7 @@ const NAV_LINKS = [
   { href: '/invoicing', label: 'Facturación' },
   { href: '/receivables', label: 'Cuentas a Cobrar' },
   { href: '/companies', label: 'Empresas' },
+  { href: '/purchases', label: 'Compras' },
   { href: '/accounting', label: 'Contabilidad' },
   { href: '/taxes', label: 'Impuestos' },
   { href: '/reports', label: 'Reportes' },
