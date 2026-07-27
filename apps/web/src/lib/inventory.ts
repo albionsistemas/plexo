@@ -61,10 +61,39 @@ export interface RecordStockMovementInput {
   unitCost?: number;
 }
 
+export interface ImportRowError {
+  row: number;
+  sku?: string;
+  message: string;
+}
+
+export interface ImportResult {
+  created: number;
+  errors: ImportRowError[];
+}
+
 export const inventoryApi = {
   listArticles: () => api.get<Article[]>('/inventory/articles').then((r) => r.data),
   listWarehouses: () => api.get<Warehouse[]>('/inventory/warehouses').then((r) => r.data),
   listCategories: () => api.get<Category[]>('/inventory/categories').then((r) => r.data),
   recordMovement: (dto: RecordStockMovementInput) =>
     api.post('/inventory/movements', dto).then((r) => r.data),
+  downloadImportTemplate: async () => {
+    const res = await api.get('/inventory/articles/import/template', { responseType: 'blob' });
+    const url = window.URL.createObjectURL(new Blob([res.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'plantilla-articulos.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+  importArticles: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api
+      .post<ImportResult>('/inventory/articles/import', formData)
+      .then((r) => r.data);
+  },
 };

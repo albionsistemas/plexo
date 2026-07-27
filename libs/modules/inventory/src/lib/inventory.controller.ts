@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -6,8 +7,13 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Req,
+  StreamableFile,
 } from '@nestjs/common';
+import type { FastifyRequest } from 'fastify';
+import '@fastify/multipart';
 import { Roles } from '@plexo/auth';
+import { ArticleImportService } from './article-import.service.js';
 import { CreateArticleDto } from './dto/create-article.dto.js';
 import { UpdateArticleDto } from './dto/update-article.dto.js';
 import { CreateArticleVariantDto } from './dto/create-article-variant.dto.js';
@@ -21,7 +27,10 @@ const WRITE_ROLES = ['OWNER', 'ADMIN', 'INVENTORY'] as const;
 
 @Controller('inventory')
 export class InventoryController {
-  constructor(private readonly inventoryService: InventoryService) {}
+  constructor(
+    private readonly inventoryService: InventoryService,
+    private readonly articleImportService: ArticleImportService,
+  ) {}
 
   @Roles(...WRITE_ROLES)
   @Post('warehouses')
@@ -60,6 +69,27 @@ export class InventoryController {
   @Patch('articles/:id')
   updateArticle(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateArticleDto) {
     return this.inventoryService.updateArticle(id, dto);
+  }
+
+  @Roles(...WRITE_ROLES)
+  @Get('articles/import/template')
+  async downloadImportTemplate() {
+    const buffer = await this.articleImportService.generateTemplate();
+    return new StreamableFile(buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: 'attachment; filename="plantilla-articulos.xlsx"',
+    });
+  }
+
+  @Roles(...WRITE_ROLES)
+  @Post('articles/import')
+  async importArticles(@Req() req: FastifyRequest) {
+    const data = await req.file();
+    if (!data) {
+      throw new BadRequestException('No se recibió ningún archivo');
+    }
+    const buffer = await data.toBuffer();
+    return this.articleImportService.importFromBuffer(buffer);
   }
 
   @Roles(...WRITE_ROLES)

@@ -4,6 +4,7 @@ import { inventoryApi, type Article } from '@/lib/inventory';
 import { getSocket } from '@/lib/socket';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import ImportArticlesModal from './ImportArticlesModal';
 import StockMovementModal from './StockMovementModal';
 
 interface VariantRow {
@@ -96,6 +97,7 @@ export default function InventoryPage() {
   const [onlyServices, setOnlyServices] = useState(false);
   const [onlyPublished, setOnlyPublished] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
     key: 'articleName',
     direction: 'asc',
@@ -164,12 +166,20 @@ export default function InventoryPage() {
             {warehouses.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
-        >
-          + Nuevo movimiento
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setImportModalOpen(true)}
+            className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800"
+          >
+            Importar desde Excel
+          </button>
+          <button
+            onClick={() => setModalOpen(true)}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
+          >
+            + Nuevo movimiento
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -315,6 +325,8 @@ export default function InventoryPage() {
           onClose={() => setModalOpen(false)}
         />
       )}
+
+      {importModalOpen && <ImportArticlesModal onClose={() => setImportModalOpen(false)} />}
     </div>
   );
 }
