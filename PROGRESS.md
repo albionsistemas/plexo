@@ -1,6 +1,6 @@
 # PLEXO — Estado del proyecto
 
-Última actualización: 2026-07-27. Repo: `github.com/albionsistemas/plexo`, rama `main`.
+Última actualización: 2026-07-29. Repo: `github.com/albionsistemas/plexo`, rama `main`.
 
 ## Resumen ejecutivo
 
@@ -170,4 +170,6 @@ npx nx serve api            # http://localhost:3000/api  (WebSocket en :3001)
 cd apps/web && npx next dev -p 4200   # http://localhost:4200
 ```
 
-Login de prueba (esta PC): `tenantId=79dcca57-3830-4f17-af13-c000c0c0d0df`, `owner@demo.plexo` / `changeme123`. (El `tenantId=f307123c-...` anotado antes acá corresponde al seed de la otra máquina donde se hizo el tablero — cada máquina tiene su propia base local, el tenantId no viaja con git.)
+Login de prueba (esta PC): `tenantId=ba1c4146-c251-48a2-8a59-0c977428180a`, `owner@demo.plexo` / `changeme123`. (Corregido 2026-07-29: el `tenantId=79dcca57-...` que estaba anotado acá no correspondía a ningún tenant real de esta base — la fila `tenants` sólo tiene el `ba1c4146-...` sembrado el 2026-07-25; probablemente quedó pegado de otra sesión/máquina sin verificar contra la base real antes de guardarlo. El `tenantId=f307123c-...` anotado antes de ese corresponde al seed de la otra máquina donde se hizo el tablero — cada máquina tiene su propia base local, el tenantId no viaja con git.)
+
+**Sesión 2026-07-29 (esta máquina)**: al retomar, `origin/main` tenía 10 commits que esta máquina no tenía (módulo de Compras completo `@plexo/purchases`, imagen de artículo, flags servicio/publicado, importación de artículos desde Excel, proveedor preferido, historial de precios de compra — ver tabla de arriba, 2026-07-27) mientras esta máquina tenía 1 commit propio sin pushear (rubro/retenciones/IIBB/logo, 2026-07-26) — historias divergidas, no fast-forward. `git merge origin/main` sin conflictos (`ort` resolvió los 5 archivos que tocaban ambas ramas: `CompanyDetailModal.tsx`, `companies.ts`, `companies.service.ts`/`.spec.ts`, `schema.prisma`). 6 migraciones nuevas aplicadas con `prisma migrate deploy` sin problema de orden (la migración local, `20260726...`, es cronológicamente anterior a las nuevas `20260807+`). `npm install` + `prisma generate` corridos. Pusheado a `origin/main` (`e562463`) tras verificar. **Verificado en Chrome de punta a punta**: Compras — creé un Pedido de Cotización a "Distribuidora Multi SA" (Agua mineral 500ml, 20u × $150 est.), lo emití a Orden de Compra (vinculada al pedido de origen, número de serie propio), navegué Configuración (prefijos, 5 plantillas de PDF) — no se probó el envío real por Email/WhatsApp en esta sesión, se guardó sin enviar a propósito. Inventario — filtros de servicio/publicado, columna de stock mínimo y botón de importación Excel visibles; asignar proveedor preferido a un artículo reprodujo una vez más el 503 cosmético de `PATCH` vía navegador automatizado (ver nota ya documentada varias veces en este archivo) — confirmado con `curl` que el endpoint devuelve 200 y que además valida correctamente el rol (rechaza con 400 una empresa sin rol SUPPLIER), reflejado bien en la UI tras recargar.
