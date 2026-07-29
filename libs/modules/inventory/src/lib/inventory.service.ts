@@ -11,6 +11,7 @@ import {
   type Warehouse,
 } from '@plexo/database';
 import type { CreateArticleDto } from './dto/create-article.dto.js';
+import type { UpdateArticleDto } from './dto/update-article.dto.js';
 import type { CreateArticleVariantDto } from './dto/create-article-variant.dto.js';
 import type { CreateCategoryDto } from './dto/create-category.dto.js';
 import type { CreateWarehouseDto } from './dto/create-warehouse.dto.js';
@@ -39,6 +40,11 @@ export interface ArticleVariantListItem {
   brand: string | null;
   unitPrice: number;
   totalStock: number;
+  // Sum of MinimumStock.minimumQuantity across warehouses for this variant
+  // (minimums are set per warehouse, same as stock itself) - null if none
+  // configured anywhere, same convention as totalStock aggregating actual
+  // stock across warehouses.
+  minimumStock: number | null;
   stockByWarehouse: WarehouseStockRow[];
 }
 
@@ -49,7 +55,22 @@ export interface ArticleListItem {
   unitOfMeasure: string;
   categoryId: string | null;
   categoryName: string | null;
+  isService: boolean;
+  isPublished: boolean;
+  imageUrl: string | null;
+  preferredSupplierId: string | null;
+  preferredSupplierName: string | null;
   variants: ArticleVariantListItem[];
+}
+
+export interface PriceHistoryEntry {
+  id: string;
+  unitPrice: Prisma.Decimal;
+  costPrice: Prisma.Decimal | null;
+  effectiveAt: Date;
+  changedById: string | null;
+  purchaseOrderId: string | null;
+  purchaseOrderNumber: string | null;
 }
 
 @Injectable()
@@ -85,6 +106,40 @@ export class InventoryService {
         unitOfMeasure: dto.unitOfMeasure,
         categoryId: dto.categoryId,
         taxDefinitionId: dto.taxDefinitionId,
+        isService: dto.isService,
+        isPublished: dto.isPublished,
+      },
+    });
+  }
+
+  async updateArticle(id: string, dto: UpdateArticleDto): Promise<Article> {
+    const db = getTenantDb();
+    // undefined (field omitted) leaves preferredSupplierId untouched;
+    // explicit null clears it; a real id must resolve to an active
+    // SUPPLIER company - same validation QuoteRequestService/
+    // PurchaseOrderService apply when a document picks a supplier.
+    if (dto.preferredSupplierId) {
+      const supplier = await db.company.findUnique({
+        where: { id: dto.preferredSupplierId },
+        include: { roles: true },
+      });
+      if (!supplier) {
+        throw new BadRequestException('Supplier not found');
+      }
+      if (!supplier.active) {
+        throw new BadRequestException('This supplier is inactive');
+      }
+      if (!supplier.roles.some((r) => r.role === 'SUPPLIER')) {
+        throw new BadRequestException('This company is not flagged as a supplier');
+      }
+    }
+
+    return db.article.update({
+      where: { id },
+      data: {
+        isService: dto.isService,
+        isPublished: dto.isPublished,
+        preferredSupplierId: dto.preferredSupplierId,
       },
     });
   }
@@ -93,7 +148,8 @@ export class InventoryService {
     const articles = await getTenantDb().article.findMany({
       include: {
         category: true,
-        variants: { include: { stockLedger: { include: { warehouse: true } } } },
+        preferredSupplier: { select: { id: true, name: true } },
+        variants: { include: { stockLedger: { include: { warehouse: true } }, minimumStocks: true } },
       },
       orderBy: { name: 'asc' },
     });
@@ -105,6 +161,11 @@ export class InventoryService {
       unitOfMeasure: article.unitOfMeasure,
       categoryId: article.categoryId,
       categoryName: article.category?.name ?? null,
+      isService: article.isService,
+      isPublished: article.isPublished,
+      imageUrl: article.imageUrl,
+      preferredSupplierId: article.preferredSupplierId,
+      preferredSupplierName: article.preferredSupplier?.name ?? null,
       variants: article.variants.map((variant) => {
         const stockByWarehouse: WarehouseStockRow[] = variant.stockLedger.map((sl) => ({
           warehouseId: sl.warehouseId,
@@ -119,6 +180,10 @@ export class InventoryService {
           brand: variant.brand,
           unitPrice: variant.unitPrice.toNumber(),
           totalStock: stockByWarehouse.reduce((sum, row) => sum + row.quantity, 0),
+          minimumStock:
+            variant.minimumStocks.length === 0
+              ? null
+              : variant.minimumStocks.reduce((sum, ms) => sum + ms.minimumQuantity.toNumber(), 0),
           stockByWarehouse,
         };
       }),
@@ -167,6 +232,25 @@ export class InventoryService {
     });
 
     return variant;
+  }
+
+  /** Newest first - selling-price changes (no purchaseOrder) interleaved
+   * with purchase costs (see recordMovement), same timeline. */
+  async getPriceHistory(articleVariantId: string): Promise<PriceHistoryEntry[]> {
+    const rows = await getTenantDb().priceHistory.findMany({
+      where: { articleVariantId },
+      include: { purchaseOrder: { select: { number: true } } },
+      orderBy: { effectiveAt: 'desc' },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      unitPrice: row.unitPrice,
+      costPrice: row.costPrice,
+      effectiveAt: row.effectiveAt,
+      changedById: row.changedById,
+      purchaseOrderId: row.purchaseOrderId,
+      purchaseOrderNumber: row.purchaseOrder?.number ?? null,
+    }));
   }
 
   setMinimumStock(dto: SetMinimumStockDto): Promise<MinimumStock> {
@@ -225,6 +309,29 @@ export class InventoryService {
     const db = getTenantDb();
     const tenantId = getTenantId();
     const delta = computeStockDelta(dto.type, dto.quantity);
+
+    // Referencing a real Orden de Compra is only meaningful for an actual
+    // purchase, and only for one that already has a line for this exact
+    // article variant - otherwise "this movement came from that order"
+    // would be a made-up link nobody could trust later.
+    if (dto.purchaseOrderId) {
+      if (dto.type !== 'PURCHASE_IN') {
+        throw new BadRequestException('purchaseOrderId is only valid for PURCHASE_IN movements');
+      }
+      const purchaseOrder = await db.purchaseOrder.findUnique({
+        where: { id: dto.purchaseOrderId },
+        include: { lines: { select: { articleVariantId: true } } },
+      });
+      if (!purchaseOrder) {
+        throw new BadRequestException('Purchase order not found');
+      }
+      if (purchaseOrder.status === 'CANCELLED') {
+        throw new BadRequestException('This purchase order is cancelled');
+      }
+      if (!purchaseOrder.lines.some((line) => line.articleVariantId === dto.articleVariantId)) {
+        throw new BadRequestException('This purchase order has no line for that article variant');
+      }
+    }
 
     // Weighted-average cost (PPP) tracking: ADJUSTMENT never touches cost -
     // it's a quantity-only correction, same precedent as the informal-sale
@@ -318,12 +425,40 @@ export class InventoryService {
         type: dto.type,
         quantity: dto.quantity,
         unitCost: stampedUnitCost,
-        sourceType: dto.sourceType,
-        sourceId: dto.sourceId,
+        // A referenced purchase order is the authoritative source - it
+        // overrides whatever loose sourceType/sourceId the caller sent,
+        // rather than risking the two disagreeing.
+        sourceType: dto.purchaseOrderId ? 'PURCHASE_ORDER' : dto.sourceType,
+        sourceId: dto.purchaseOrderId ?? dto.sourceId,
         invoiceId: dto.invoiceId,
         invoiceLineId: dto.invoiceLineId,
       },
     });
+
+    // Cost history: every costed inbound movement (Compra o Producción)
+    // gets a PriceHistory row, not just selling-price changes - this was
+    // dead code before (costPrice was declared on the model but never
+    // written anywhere). Each row snapshots BOTH the variant's current
+    // selling price and this movement's cost, so a single timeline answers
+    // "what did this sell for and cost at that point in time" - not two
+    // disjoint kinds of rows. purchaseOrderId is null when the movement
+    // wasn't linked to one (e.g. entered manually without a document).
+    if ((dto.type === 'PURCHASE_IN' || dto.type === 'PRODUCTION_IN') && dto.unitCost != null) {
+      const variant = await db.articleVariant.findUniqueOrThrow({
+        where: { id: dto.articleVariantId },
+        select: { unitPrice: true },
+      });
+      await db.priceHistory.create({
+        data: {
+          tenantId,
+          articleVariantId: dto.articleVariantId,
+          unitPrice: variant.unitPrice,
+          costPrice: dto.unitCost,
+          changedById: getUserId(),
+          purchaseOrderId: dto.purchaseOrderId ?? null,
+        },
+      });
+    }
 
     const ledger = await db.stockLedger.findUnique({
       where: {

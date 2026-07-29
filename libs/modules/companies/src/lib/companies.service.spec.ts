@@ -56,6 +56,39 @@ describe('CompaniesService.createCompany', () => {
   });
 });
 
+describe('CompaniesService.getCompany', () => {
+  it('includes the articles that name this company as their preferred supplier', async () => {
+    const db = {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'company-1', roles: [{ role: 'SUPPLIER' }] }),
+      },
+      person: { findMany: jest.fn().mockResolvedValue([]) },
+      article: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'article-1', name: 'Agua mineral 500ml', imageUrl: null }]),
+      },
+    };
+    const service = new CompaniesService(stubAfipPadron);
+
+    const result = await runInTenant(db, () => service.getCompany('company-1'));
+
+    expect(db.article.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { preferredSupplierId: 'company-1' } }),
+    );
+    expect(result.preferredForArticles).toEqual([
+      { id: 'article-1', name: 'Agua mineral 500ml', imageUrl: null },
+    ]);
+  });
+
+  it('404s when the company does not exist', async () => {
+    const db = { company: { findUnique: jest.fn().mockResolvedValue(null) } };
+    const service = new CompaniesService(stubAfipPadron);
+
+    await expect(runInTenant(db, () => service.getCompany('missing'))).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+});
+
 describe('CompaniesService.updateCompany', () => {
   it('throws when the company does not exist', async () => {
     const db = { company: { findUnique: jest.fn().mockResolvedValue(null) } };

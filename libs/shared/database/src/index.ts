@@ -44,5 +44,12 @@ export type {
   FinancialTransaction,
   AuditLog,
   UserActivityLog,
+  TransportMode,
+  PaymentTerm,
+  DeliveryTime,
+  QuoteRequest,
+  QuoteRequestLine,
+  PurchaseOrder,
+  PurchaseOrderLine,
 } from './generated/client.js';
 export * from './generated/enums.js';

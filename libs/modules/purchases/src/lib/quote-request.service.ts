@@ -1,0 +1,410 @@
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { getTenantDb, getTenantId, getUserId, Prisma } from '@plexo/database';
+import type { PdfStyle, PurchaseDocumentStatus } from '@plexo/database';
+import type { CreateQuoteRequestDto } from './dto/create-quote-request.dto.js';
+import type { QuoteRequestLineDto } from './dto/quote-request-line.dto.js';
+import type { UpdateQuoteRequestDto } from './dto/update-quote-request.dto.js';
+import { buildPurchaseDocumentPdfData } from './pdf/build-pdf-data.js';
+import { PdfGeneratorService } from './pdf/pdf-generator.service.js';
+import { PURCHASE_ORDER_DETAIL_INCLUDE } from './purchase-order.service.js';
+import { PurchaseNumberingService } from './purchase-numbering.service.js';
+
+const DETAIL_INCLUDE = {
+  lines: { include: { articleVariant: { include: { article: true } } } },
+  supplier: { select: { id: true, name: true, taxId: true, email: true, fiscalAddress: true } },
+  currency: true,
+  transportMode: true,
+  paymentTerm: true,
+  deliveryTime: true,
+  createdBy: { select: { id: true, name: true, email: true } },
+} satisfies Prisma.QuoteRequestInclude;
+
+const LIST_INCLUDE = {
+  supplier: { select: { id: true, name: true } },
+  currency: { select: { code: true } },
+  // Which Orden de Compra (if any) this Pedido was converted into, and
+  // whether it's already been sent to the supplier - lets the list tell
+  // "Comprado" (converted, still just saved) apart from "Enviado" (the
+  // resulting order was actually sent) without a second round-trip per
+  // row. Single to-many relation in this include (no `lines` alongside
+  // it) - safe under getTenantDb()'s one-connection-per-request, unlike
+  // pairing two to-many relations in the same include (see DETAIL_INCLUDE
+  // / get() below for why that pattern is avoided).
+  purchaseOrders: {
+    select: { id: true, number: true, status: true, sentAt: true, sentVia: true },
+  },
+} satisfies Prisma.QuoteRequestInclude;
+
+// tsc can't emit a .d.ts that names the raw findMany() return type (it's
+// generated deep inside Prisma's internals) unless the method's return
+// type is spelled out explicitly - same reason CompanyWithRoles exists in
+// companies.service.ts.
+export type QuoteRequestListRow = Prisma.QuoteRequestGetPayload<{ include: typeof LIST_INCLUDE }>;
+
+@Injectable()
+export class QuoteRequestService {
+  constructor(
+    private readonly numbering: PurchaseNumberingService,
+    private readonly pdfGenerator: PdfGeneratorService,
+  ) {}
+
+  list(status?: PurchaseDocumentStatus, supplierId?: string): Promise<QuoteRequestListRow[]> {
+    return getTenantDb().quoteRequest.findMany({
+      where: { status, supplierId },
+      include: LIST_INCLUDE,
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** Two sequential queries, not one `include` with two to-many relations
+   * (`lines` and `purchaseOrders`) - see CompaniesService.getCompany's
+   * comment for why that hangs forever on getTenantDb()'s single
+   * connection-per-request. */
+  async get(id: string) {
+    const db = getTenantDb();
+    const quoteRequest = await db.quoteRequest.findUnique({ where: { id }, include: DETAIL_INCLUDE });
+    if (!quoteRequest) {
+      throw new NotFoundException('Quote request not found');
+    }
+    const purchaseOrders = await db.purchaseOrder.findMany({
+      where: { quoteRequestId: id },
+      select: { id: true, number: true, status: true, sentAt: true, sentVia: true },
+    });
+    return { ...quoteRequest, purchaseOrders };
+  }
+
+  async create(dto: CreateQuoteRequestDto) {
+    const db = getTenantDb();
+    const tenantId = getTenantId();
+    const userId = requireUserId();
+
+    await this.validateReferences(dto);
+    const number = await this.numbering.nextNumber('quoteRequest');
+    const estimatedTotal = computeEstimatedTotal(dto.lines);
+
+    return db.quoteRequest.create({
+      data: {
+        tenantId,
+        number,
+        supplierId: dto.supplierId,
+        currencyId: dto.currencyId,
+        transportModeId: dto.transportModeId,
+        paymentTermId: dto.paymentTermId,
+        deliveryTimeId: dto.deliveryTimeId,
+        validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
+        notes: dto.notes,
+        estimatedTotal,
+        createdByUserId: userId,
+        lines: {
+          createMany: {
+            data: dto.lines.map((line) => ({
+              tenantId,
+              articleVariantId: line.articleVariantId,
+              quantity: line.quantity,
+              estimatedUnitCost: line.estimatedUnitCost,
+              notes: line.notes,
+            })),
+          },
+        },
+      },
+      include: DETAIL_INCLUDE,
+    });
+  }
+
+  async update(id: string, dto: UpdateQuoteRequestDto) {
+    const db = getTenantDb();
+    const tenantId = getTenantId();
+    const existing = await db.quoteRequest.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException('Quote request not found');
+    }
+    if (existing.status !== 'DRAFT') {
+      throw new BadRequestException('Only a DRAFT quote request can be edited');
+    }
+
+    await this.validateReferences(dto);
+
+    let estimatedTotal = existing.estimatedTotal;
+    if (dto.lines) {
+      estimatedTotal = computeEstimatedTotal(dto.lines);
+      await db.quoteRequestLine.deleteMany({ where: { quoteRequestId: id } });
+      await db.quoteRequestLine.createMany({
+        data: dto.lines.map((line) => ({
+          tenantId,
+          quoteRequestId: id,
+          articleVariantId: line.articleVariantId,
+          quantity: line.quantity,
+          estimatedUnitCost: line.estimatedUnitCost,
+          notes: line.notes,
+        })),
+      });
+    }
+
+    return db.quoteRequest.update({
+      where: { id },
+      data: {
+        supplierId: dto.supplierId,
+        currencyId: dto.currencyId,
+        transportModeId: dto.transportModeId,
+        paymentTermId: dto.paymentTermId,
+        deliveryTimeId: dto.deliveryTimeId,
+        validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
+        notes: dto.notes,
+        estimatedTotal,
+      },
+      include: DETAIL_INCLUDE,
+    });
+  }
+
+  /** New DRAFT, new number from the cloning user's own series, same
+   * supplier/terms/lines - "muy útil para ir terminando o ajustando" per
+   * the user's request: tweak a copy instead of the original. */
+  async clone(id: string) {
+    const db = getTenantDb();
+    const tenantId = getTenantId();
+    const userId = requireUserId();
+    const existing = await db.quoteRequest.findUnique({ where: { id }, include: { lines: true } });
+    if (!existing) {
+      throw new NotFoundException('Quote request not found');
+    }
+
+    const number = await this.numbering.nextNumber('quoteRequest');
+    return db.quoteRequest.create({
+      data: {
+        tenantId,
+        number,
+        supplierId: existing.supplierId,
+        currencyId: existing.currencyId,
+        transportModeId: existing.transportModeId,
+        paymentTermId: existing.paymentTermId,
+        deliveryTimeId: existing.deliveryTimeId,
+        validUntil: existing.validUntil,
+        notes: existing.notes,
+        estimatedTotal: existing.estimatedTotal,
+        createdByUserId: userId,
+        lines: {
+          createMany: {
+            data: existing.lines.map((line) => ({
+              tenantId,
+              articleVariantId: line.articleVariantId,
+              quantity: line.quantity,
+              estimatedUnitCost: line.estimatedUnitCost,
+              notes: line.notes,
+            })),
+          },
+        },
+      },
+      include: DETAIL_INCLUDE,
+    });
+  }
+
+  /** Creates the PurchaseOrder ("emitir la compra") and marks this request
+   * CONVERTED - terminal, matches Invoice-style "issued documents don't go
+   * back to draft" precedent. Every line needs a real estimatedUnitCost
+   * first: PurchaseOrderLine.unitCost is NOT NULL (a real order always has
+   * a real cost), unlike QuoteRequestLine.estimatedUnitCost which is only
+   * a working estimate. */
+  async convert(id: string) {
+    const db = getTenantDb();
+    const tenantId = getTenantId();
+    const userId = requireUserId();
+    const existing = await db.quoteRequest.findUnique({ where: { id }, include: { lines: true } });
+    if (!existing) {
+      throw new NotFoundException('Quote request not found');
+    }
+    if (existing.status !== 'DRAFT') {
+      throw new BadRequestException('Only a DRAFT quote request can be converted into a purchase order');
+    }
+    const missingCost = existing.lines.find((line) => line.estimatedUnitCost == null);
+    if (missingCost) {
+      throw new BadRequestException(
+        'Every line needs an estimated cost before issuing the purchase order',
+      );
+    }
+
+    const number = await this.numbering.nextNumber('purchaseOrder');
+    const total = existing.lines.reduce(
+      (sum, line) => sum.add(new Prisma.Decimal(line.estimatedUnitCost as Prisma.Decimal).mul(line.quantity)),
+      new Prisma.Decimal(0),
+    );
+
+    const purchaseOrder = await db.purchaseOrder.create({
+      data: {
+        tenantId,
+        number,
+        supplierId: existing.supplierId,
+        quoteRequestId: existing.id,
+        currencyId: existing.currencyId,
+        transportModeId: existing.transportModeId,
+        paymentTermId: existing.paymentTermId,
+        deliveryTimeId: existing.deliveryTimeId,
+        notes: existing.notes,
+        total,
+        createdByUserId: userId,
+        lines: {
+          createMany: {
+            data: existing.lines.map((line) => ({
+              tenantId,
+              articleVariantId: line.articleVariantId,
+              quantity: line.quantity,
+              unitCost: line.estimatedUnitCost as Prisma.Decimal,
+              notes: line.notes,
+            })),
+          },
+        },
+      },
+      include: PURCHASE_ORDER_DETAIL_INCLUDE,
+    });
+
+    await db.quoteRequest.update({ where: { id }, data: { status: 'CONVERTED' } });
+    return purchaseOrder;
+  }
+
+  async cancel(id: string) {
+    const db = getTenantDb();
+    const existing = await db.quoteRequest.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException('Quote request not found');
+    }
+    if (existing.status !== 'DRAFT') {
+      throw new BadRequestException('Only a DRAFT quote request can be cancelled');
+    }
+    return db.quoteRequest.update({ where: { id }, data: { status: 'CANCELLED' } });
+  }
+
+  /** style, if omitted, falls back to the requesting user's own saved
+   * default (see PurchasePreferencesService) - overridable per-download
+   * without persisting anything. */
+  async generatePdf(id: string, style?: PdfStyle): Promise<{ buffer: Buffer; filename: string }> {
+    const db = getTenantDb();
+    const quoteRequest = await db.quoteRequest.findUnique({ where: { id }, include: DETAIL_INCLUDE });
+    if (!quoteRequest) {
+      throw new NotFoundException('Quote request not found');
+    }
+    const tenant = await db.tenant.findUniqueOrThrow({ where: { id: getTenantId() } });
+    const resolvedStyle = style ?? (await this.resolveRequesterPdfStyle());
+
+    // estimatedTotal is null until every line has a cost - the PDF still
+    // needs *something* to print, so it sums what's there and treats a
+    // missing estimate as 0 rather than crashing on a still-in-progress draft.
+    const total =
+      quoteRequest.estimatedTotal ??
+      quoteRequest.lines.reduce(
+        (sum, line) =>
+          sum.add(new Prisma.Decimal(line.estimatedUnitCost ?? 0).mul(line.quantity)),
+        new Prisma.Decimal(0),
+      );
+
+    const data = buildPurchaseDocumentPdfData(
+      'Pedido de Cotización',
+      {
+        number: quoteRequest.number,
+        createdAt: quoteRequest.createdAt,
+        notes: quoteRequest.notes,
+        total,
+        currency: quoteRequest.currency,
+        supplier: quoteRequest.supplier,
+        transportMode: quoteRequest.transportMode,
+        paymentTerm: quoteRequest.paymentTerm,
+        deliveryTime: quoteRequest.deliveryTime,
+        lines: quoteRequest.lines.map((line) => ({
+          quantity: line.quantity,
+          unitCost: line.estimatedUnitCost ?? new Prisma.Decimal(0),
+          articleVariant: line.articleVariant,
+        })),
+      },
+      tenant,
+    );
+
+    const buffer = await this.pdfGenerator.generate(resolvedStyle, data);
+    return { buffer, filename: `${quoteRequest.number}.pdf` };
+  }
+
+  private async resolveRequesterPdfStyle(): Promise<PdfStyle> {
+    const userId = requireUserId();
+    const user = await getTenantDb().user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { purchaseDocumentPdfStyle: true },
+    });
+    return user.purchaseDocumentPdfStyle;
+  }
+
+  private async validateReferences(
+    dto: Pick<
+      CreateQuoteRequestDto | UpdateQuoteRequestDto,
+      'supplierId' | 'currencyId' | 'transportModeId' | 'paymentTermId' | 'deliveryTimeId' | 'lines'
+    >,
+  ): Promise<void> {
+    const db = getTenantDb();
+
+    if (dto.supplierId) {
+      const supplier = await db.company.findUnique({
+        where: { id: dto.supplierId },
+        include: { roles: true },
+      });
+      if (!supplier) {
+        throw new NotFoundException('Supplier not found');
+      }
+      if (!supplier.active) {
+        throw new BadRequestException('This supplier is inactive');
+      }
+      if (!supplier.roles.some((r) => r.role === 'SUPPLIER')) {
+        throw new BadRequestException('This company is not flagged as a supplier');
+      }
+    }
+
+    if (dto.currencyId) {
+      const currency = await db.currency.findUnique({ where: { id: dto.currencyId } });
+      if (!currency) {
+        throw new NotFoundException('Currency not found');
+      }
+    }
+
+    if (dto.transportModeId) {
+      const found = await db.transportMode.findUnique({ where: { id: dto.transportModeId } });
+      if (!found) {
+        throw new NotFoundException('Transport mode not found');
+      }
+    }
+    if (dto.paymentTermId) {
+      const found = await db.paymentTerm.findUnique({ where: { id: dto.paymentTermId } });
+      if (!found) {
+        throw new NotFoundException('Payment term not found');
+      }
+    }
+    if (dto.deliveryTimeId) {
+      const found = await db.deliveryTime.findUnique({ where: { id: dto.deliveryTimeId } });
+      if (!found) {
+        throw new NotFoundException('Delivery time not found');
+      }
+    }
+
+    if (dto.lines) {
+      for (const line of dto.lines) {
+        const variant = await db.articleVariant.findUnique({ where: { id: line.articleVariantId } });
+        if (!variant) {
+          throw new NotFoundException(`Article variant ${line.articleVariantId} not found`);
+        }
+      }
+    }
+  }
+}
+
+function requireUserId(): string {
+  const userId = getUserId();
+  if (!userId) {
+    throw new BadRequestException('An authenticated user is required');
+  }
+  return userId;
+}
+
+/** null if any line is missing an estimate - nothing meaningful to sum. */
+function computeEstimatedTotal(lines: QuoteRequestLineDto[]): Prisma.Decimal | null {
+  if (lines.some((line) => line.estimatedUnitCost == null)) {
+    return null;
+  }
+  return lines.reduce(
+    (sum, line) => sum.add(new Prisma.Decimal(line.estimatedUnitCost as number).mul(line.quantity)),
+    new Prisma.Decimal(0),
+  );
+}

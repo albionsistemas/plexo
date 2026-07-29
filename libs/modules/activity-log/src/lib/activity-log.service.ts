@@ -11,6 +11,9 @@ const ENTITY_NOUN: Record<string, string> = {
   company: 'Empresa',
   person: 'Contacto',
   tenantSettings: 'la configuración del tenant',
+  quoteRequest: 'un Pedido de Cotización',
+  purchaseOrder: 'una Orden de Compra',
+  article: 'un Artículo',
 };
 
 const VERB_LABEL: Record<Verb, string> = {

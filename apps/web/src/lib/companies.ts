@@ -36,6 +36,12 @@ export interface Company {
   roles: { role: CompanyRoleType }[];
 }
 
+export interface PreferredArticleSummary {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+}
+
 export interface Person {
   id: string;
   companyId: string;
@@ -112,7 +118,10 @@ export const companiesApi = {
         },
       })
       .then((r) => r.data),
-  get: (id: string) => api.get<Company & { people: Person[] }>(`/companies/${id}`).then((r) => r.data),
+  get: (id: string) =>
+    api
+      .get<Company & { people: Person[]; preferredForArticles: PreferredArticleSummary[] }>(`/companies/${id}`)
+      .then((r) => r.data),
   create: (dto: CreateCompanyInput) => api.post<Company>('/companies', dto).then((r) => r.data),
   update: (id: string, dto: UpdateCompanyInput) =>
     api.patch<Company>(`/companies/${id}`, dto).then((r) => r.data),

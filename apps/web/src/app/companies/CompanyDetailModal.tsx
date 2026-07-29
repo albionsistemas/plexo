@@ -214,6 +214,30 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
             <NewPersonForm companyId={company.id} />
           </>
         )}
+
+        {company.roles.some((r) => r.role === 'SUPPLIER') && (
+          <div className={canHaveContacts ? 'mt-6 border-t border-slate-200 dark:border-slate-800 pt-4' : ''}>
+            <h3 className="mb-3 text-sm font-medium text-slate-600 dark:text-slate-400">
+              Artículos que prefieren este proveedor
+            </h3>
+            {(detail?.preferredForArticles ?? []).length === 0 ? (
+              <p className="text-sm text-slate-400 dark:text-slate-600">
+                Ningún artículo tiene a este proveedor como preferido todavía
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {detail?.preferredForArticles.map((article) => (
+                  <li
+                    key={article.id}
+                    className="rounded-lg bg-slate-200/50 dark:bg-slate-800/50 px-3 py-1.5 text-sm text-slate-800 dark:text-slate-200"
+                  >
+                    {article.name}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,0 +1,128 @@
+'use client';
+
+import { companiesApi } from '@/lib/companies';
+import { purchaseOrdersApi } from '@/lib/purchases';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { AxiosError } from 'axios';
+import { useState } from 'react';
+
+interface Props {
+  purchaseOrder: { id: string; number: string; supplierId: string; supplierName: string; supplierEmail: string | null };
+  onClose: () => void;
+}
+
+/** Shown right after "Emitir Orden de Compra" (or manually from the OC
+ * detail panel for a still-unsent DRAFT) - the warning the user asked for:
+ * send now (email or WhatsApp) or just leave it saved. */
+export default function SendPurchaseOrderDialog({ purchaseOrder, onClose }: Props) {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState('');
+  const [done, setDone] = useState('');
+  const [selectedPhone, setSelectedPhone] = useState('');
+
+  const { data: supplier } = useQuery({
+    queryKey: ['company-detail', purchaseOrder.supplierId],
+    queryFn: () => companiesApi.get(purchaseOrder.supplierId),
+  });
+  const whatsappContacts = (supplier?.people ?? []).filter((p) => p.whatsapp);
+  const phone = selectedPhone || whatsappContacts[0]?.whatsapp || '';
+
+  function invalidateAndReport(message: string) {
+    void queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+    void queryClient.invalidateQueries({ queryKey: ['quote-requests'] });
+    setError('');
+    setDone(message);
+  }
+
+  const emailMutation = useMutation({
+    mutationFn: () => purchaseOrdersApi.sendEmail(purchaseOrder.id),
+    onSuccess: () => invalidateAndReport('Enviado por email'),
+    onError: (err: AxiosError<{ message?: string | string[] }>) => {
+      const message = err.response?.data?.message ?? 'No se pudo enviar el email';
+      setError(Array.isArray(message) ? message.join(', ') : message);
+    },
+  });
+
+  const whatsappMutation = useMutation({
+    mutationFn: async () => {
+      const { url } = await purchaseOrdersApi.whatsappLink(purchaseOrder.id, phone);
+      window.open(url, '_blank');
+      return purchaseOrdersApi.markSentWhatsapp(purchaseOrder.id);
+    },
+    onSuccess: () => invalidateAndReport('Abrimos WhatsApp con el mensaje listo'),
+    onError: (err: AxiosError<{ message?: string | string[] }>) => {
+      const message = err.response?.data?.message ?? 'No se pudo armar el link de WhatsApp';
+      setError(Array.isArray(message) ? message.join(', ') : message);
+    },
+  });
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-md rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
+        <h2 className="mb-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
+          Orden de Compra {purchaseOrder.number} creada
+        </h2>
+        <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
+          ¿Se la enviamos a {purchaseOrder.supplierName} ahora, o preferís sólo guardarla?
+        </p>
+
+        <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            disabled={!purchaseOrder.supplierEmail || emailMutation.isPending}
+            onClick={() => emailMutation.mutate()}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+            title={purchaseOrder.supplierEmail ?? 'El proveedor no tiene email cargado'}
+          >
+            {emailMutation.isPending ? 'Enviando...' : 'Enviar por Email'}
+          </button>
+
+          {whatsappContacts.length > 1 && (
+            <select
+              className="rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+              value={phone}
+              onChange={(e) => setSelectedPhone(e.target.value)}
+            >
+              {whatsappContacts.map((c) => (
+                <option key={c.id} value={c.whatsapp ?? ''}>
+                  {c.firstName} {c.lastName ?? ''} — {c.whatsapp}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            disabled={!phone || whatsappMutation.isPending}
+            onClick={() => whatsappMutation.mutate()}
+            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-500 disabled:opacity-50"
+            title={phone || 'El proveedor no tiene ningún contacto con WhatsApp cargado'}
+          >
+            {whatsappMutation.isPending ? 'Abriendo...' : 'Enviar por WhatsApp'}
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800"
+          >
+            Sólo guardar (no enviar ahora)
+          </button>
+        </div>
+
+        {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {done && (
+          <div className="mt-3 flex flex-col gap-2">
+            <p className="text-sm text-green-600 dark:text-green-400">{done}</p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

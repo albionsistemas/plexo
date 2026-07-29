@@ -1,5 +1,5 @@
 import { UnitOfMeasure } from '@plexo/database';
-import { IsEnum, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
 
 export class CreateArticleDto {
   @IsString()
@@ -20,4 +20,12 @@ export class CreateArticleDto {
   @IsOptional()
   @IsUUID()
   taxDefinitionId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isService?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isPublished?: boolean;
 }

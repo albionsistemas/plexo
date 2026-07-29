@@ -7,7 +7,8 @@ import {
   type MovementType,
   type Warehouse,
 } from '@/lib/inventory';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { purchaseOrdersApi } from '@/lib/purchases';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import { useState } from 'react';
 
@@ -36,10 +37,22 @@ export default function StockMovementModal({ articles, warehouses, onClose }: Pr
     type: 'PURCHASE_IN' as MovementType,
     quantity: '',
     unitCost: '',
+    purchaseOrderId: '',
   });
   const [error, setError] = useState('');
 
   const needsCost = form.type === 'PURCHASE_IN' || form.type === 'PRODUCTION_IN';
+  const isPurchase = form.type === 'PURCHASE_IN';
+
+  // Only relevant for PURCHASE_IN - ties this movement's cost history to a
+  // real comprobante instead of leaving it as a manual entry with no
+  // source (see InventoryService.recordMovement).
+  const purchaseOrdersQuery = useQuery({
+    queryKey: ['purchase-orders'],
+    queryFn: () => purchaseOrdersApi.list(),
+    enabled: isPurchase,
+  });
+  const openPurchaseOrders = (purchaseOrdersQuery.data ?? []).filter((po) => po.status !== 'CANCELLED');
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -49,6 +62,7 @@ export default function StockMovementModal({ articles, warehouses, onClose }: Pr
         type: form.type,
         quantity: Number(form.quantity),
         unitCost: needsCost ? Number(form.unitCost) : undefined,
+        purchaseOrderId: isPurchase && form.purchaseOrderId ? form.purchaseOrderId : undefined,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['inventory-articles'] });
@@ -159,6 +173,27 @@ export default function StockMovementModal({ articles, warehouses, onClose }: Pr
                 onChange={(e) => setForm({ ...form, unitCost: e.target.value })}
                 placeholder="p. ej. 100.50"
               />
+            </Field>
+          )}
+
+          {isPurchase && (
+            <Field label="Orden de Compra (opcional)">
+              <select
+                className={selectClass}
+                value={form.purchaseOrderId}
+                onChange={(e) => setForm({ ...form, purchaseOrderId: e.target.value })}
+              >
+                <option value="">— Ninguna —</option>
+                {openPurchaseOrders.map((po) => (
+                  <option key={po.id} value={po.id}>
+                    {po.number} — {po.supplier.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500 dark:text-slate-500">
+                Si esta compra viene de una orden ya emitida, elegila acá para dejar registrado de dónde
+                salió el costo.
+              </p>
             </Field>
           )}
 

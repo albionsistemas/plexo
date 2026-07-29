@@ -43,4 +43,12 @@ export class RecordStockMovementDto {
   @IsOptional()
   @IsUUID()
   invoiceLineId?: string;
+
+  // Only valid for PURCHASE_IN (enforced in InventoryService, not here) -
+  // ties this movement's cost to a real Orden de Compra instead of the
+  // loose sourceType/sourceId text, and drives the PriceHistory entry this
+  // movement writes (see recordMovement).
+  @IsOptional()
+  @IsUUID()
+  purchaseOrderId?: string;
 }

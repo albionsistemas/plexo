@@ -62,3 +62,6 @@ test-output
 .next
 out
 /generated/prisma
+
+# uploaded files (article images, etc.) - local disk only, not versioned
+/uploads
