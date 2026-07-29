@@ -367,3 +367,107 @@ export const supplierReturnsApi = {
   create: (dto: CreateSupplierReturnInput) =>
     api.post<SupplierReturnDetail>('/purchases/supplier-returns', dto).then((r) => r.data),
 };
+
+// --- Cuentas a Pagar: Factura de Compra ---
+
+export type PurchaseInvoiceStatus = 'ISSUED' | 'PARTIALLY_PAID' | 'PAID' | 'CANCELLED';
+export type PurchaseInvoiceTaxLineType = 'IVA_CREDITO' | 'PERCEPCION';
+
+const PURCHASE_INVOICE_STATUS_LABELS: Record<PurchaseInvoiceStatus, string> = {
+  ISSUED: 'Emitida',
+  PARTIALLY_PAID: 'Pago parcial',
+  PAID: 'Pagada',
+  CANCELLED: 'Cancelada',
+};
+
+const PURCHASE_INVOICE_STATUS_COLORS: Record<PurchaseInvoiceStatus, string> = {
+  ISSUED: 'bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-300',
+  PARTIALLY_PAID: 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300',
+  PAID: 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300',
+  CANCELLED: 'bg-slate-200 dark:bg-slate-800 text-slate-500',
+};
+
+export function describePurchaseInvoiceStatus(status: PurchaseInvoiceStatus): {
+  label: string;
+  colorClass: string;
+} {
+  return { label: PURCHASE_INVOICE_STATUS_LABELS[status], colorClass: PURCHASE_INVOICE_STATUS_COLORS[status] };
+}
+
+export interface PurchaseInvoiceTaxLineDetail {
+  id: string;
+  type: PurchaseInvoiceTaxLineType;
+  concept: string;
+  amount: string;
+}
+
+export interface PurchaseInvoiceTaxLineInput {
+  type: PurchaseInvoiceTaxLineType;
+  concept: string;
+  amount: number;
+}
+
+export interface SupplierPaymentDetail {
+  id: string;
+  amount: string;
+  method: string;
+  paidAt: string;
+}
+
+export interface PurchaseInvoiceSummary {
+  id: string;
+  supplierInvoiceNumber: string;
+  supplierInvoiceDate: string;
+  dueDate: string | null;
+  subtotal: string;
+  taxTotal: string;
+  total: string;
+  balanceDue: string;
+  status: PurchaseInvoiceStatus;
+  supplierName: string;
+  createdAt: string;
+  purchaseOrder: { id: string; number: string };
+  taxLines: PurchaseInvoiceTaxLineDetail[];
+}
+
+export interface PurchaseInvoiceDetail extends PurchaseInvoiceSummary {
+  attachmentUrl: string | null;
+  notes: string | null;
+  createdBy: { id: string; name: string | null; email: string };
+  receiptLinks: { id: string; goodsReceipt: { id: string; supplierDocNumber: string | null; receivedAt: string } }[];
+  payments: SupplierPaymentDetail[];
+}
+
+export interface CreatePurchaseInvoiceInput {
+  purchaseOrderId: string;
+  supplierInvoiceNumber: string;
+  supplierInvoiceDate: string;
+  dueDate?: string;
+  subtotal: number;
+  goodsReceiptIds?: string[];
+  taxLines?: PurchaseInvoiceTaxLineInput[];
+  notes?: string;
+}
+
+export interface RecordSupplierPaymentInput {
+  amount: number;
+  method: string;
+  financialAccountId?: string;
+  paidAt?: string;
+}
+
+export const purchaseInvoicesApi = {
+  list: () => api.get<PurchaseInvoiceSummary[]>('/purchases/purchase-invoices').then((r) => r.data),
+  get: (id: string) => api.get<PurchaseInvoiceDetail>(`/purchases/purchase-invoices/${id}`).then((r) => r.data),
+  create: (dto: CreatePurchaseInvoiceInput) =>
+    api.post<PurchaseInvoiceDetail>('/purchases/purchase-invoices', dto).then((r) => r.data),
+  recordPayment: (id: string, dto: RecordSupplierPaymentInput) =>
+    api.post<SupplierPaymentDetail>(`/purchases/purchase-invoices/${id}/payments`, dto).then((r) => r.data),
+  uploadAttachment: (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api
+      .post<PurchaseInvoiceDetail>(`/purchases/purchase-invoices/${id}/attachment`, formData)
+      .then((r) => r.data);
+  },
+};

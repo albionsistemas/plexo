@@ -9,6 +9,7 @@ import { CompaniesModule } from '@plexo/companies';
 import { DatabaseModule } from '@plexo/database';
 import { InventoryModule } from '@plexo/inventory';
 import { InvoicingModule } from '@plexo/invoicing';
+import { PayablesModule } from '@plexo/payables';
 import { PurchasesModule } from '@plexo/purchases';
 import { ReceivablesModule } from '@plexo/receivables';
 import { ReportsFinancialModule } from '@plexo/reports-financial';
@@ -21,6 +22,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { GoodsReceiptsModule } from './goods-receipts/goods-receipts.module.js';
+import { PurchaseInvoicesModule } from './purchase-invoices/purchase-invoices.module.js';
 import { SalesModule } from './sales/sales.module.js';
 import { SchedulerModule } from './scheduler/scheduler.module.js';
 import { SupplierReturnsModule } from './supplier-returns/supplier-returns.module.js';
@@ -35,6 +37,7 @@ import { SupplierReturnsModule } from './supplier-returns/supplier-returns.modul
     InventoryModule,
     InvoicingModule,
     ReceivablesModule,
+    PayablesModule,
     AccountingModule,
     TaxesModule,
     ReportsPnlModule,
@@ -48,6 +51,7 @@ import { SupplierReturnsModule } from './supplier-returns/supplier-returns.modul
     PurchasesModule,
     GoodsReceiptsModule,
     SupplierReturnsModule,
+    PurchaseInvoicesModule,
   ],
   controllers: [AppController],
   providers: [

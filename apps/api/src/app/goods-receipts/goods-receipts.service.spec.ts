@@ -1,3 +1,4 @@
+import type { AccountingService } from '@plexo/accounting';
 import { Prisma } from '@plexo/database';
 import type { InventoryService } from '@plexo/inventory';
 import type { GoodsReceiptService } from '@plexo/purchases';
@@ -37,7 +38,10 @@ describe('GoodsReceiptsService.createReceipt', () => {
     const receipt = makeReceipt();
     const goodsReceiptService = { create: jest.fn().mockResolvedValue(receipt) } as unknown as GoodsReceiptService;
     const inventoryService = { recordMovement: jest.fn().mockResolvedValue({}) } as unknown as InventoryService;
-    const service = new GoodsReceiptsService(goodsReceiptService, inventoryService);
+    const accountingService = {
+      postGoodsReceiptAccrual: jest.fn().mockResolvedValue({}),
+    } as unknown as AccountingService;
+    const service = new GoodsReceiptsService(goodsReceiptService, inventoryService, accountingService);
     const dto = {
       purchaseOrderId: 'po-1',
       warehouseId: 'warehouse-1',
@@ -68,6 +72,10 @@ describe('GoodsReceiptsService.createReceipt', () => {
       purchaseOrderId: 'po-1',
       goodsReceiptLineId: 'receipt-line-2',
     });
+    // 120*150 + 5*30 = 18000 + 150 = 18150
+    const accrualArg = (accountingService.postGoodsReceiptAccrual as jest.Mock).mock.calls[0][0];
+    expect(accrualArg.goodsReceiptId).toBe('receipt-1');
+    expect((accrualArg.amount as Prisma.Decimal).toNumber()).toBe(18150);
     expect(result).toBe(receipt);
   });
 
@@ -76,7 +84,10 @@ describe('GoodsReceiptsService.createReceipt', () => {
     const goodsReceiptService = { create: jest.fn().mockResolvedValue(receipt) } as unknown as GoodsReceiptService;
     const failure = new Error('Insufficient stock in this warehouse');
     const inventoryService = { recordMovement: jest.fn().mockRejectedValue(failure) } as unknown as InventoryService;
-    const service = new GoodsReceiptsService(goodsReceiptService, inventoryService);
+    const accountingService = {
+      postGoodsReceiptAccrual: jest.fn().mockResolvedValue({}),
+    } as unknown as AccountingService;
+    const service = new GoodsReceiptsService(goodsReceiptService, inventoryService, accountingService);
 
     await expect(
       service.createReceipt({
@@ -85,5 +96,6 @@ describe('GoodsReceiptsService.createReceipt', () => {
         lines: [{ purchaseOrderLineId: 'line-1', quantity: 120 }],
       }),
     ).rejects.toThrow(failure);
+    expect(accountingService.postGoodsReceiptAccrual).not.toHaveBeenCalled();
   });
 });

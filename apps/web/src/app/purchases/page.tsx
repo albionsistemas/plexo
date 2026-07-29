@@ -3,12 +3,14 @@
 import { useState } from 'react';
 import CatalogosTab from './CatalogosTab';
 import ConfiguracionTab from './ConfiguracionTab';
+import FacturasTab from './FacturasTab';
 import OrdenesTab from './OrdenesTab';
 import PedidosTab from './PedidosTab';
 
 const TABS = [
   { id: 'pedidos', label: 'Pedidos de Cotización' },
   { id: 'ordenes', label: 'Órdenes de Compra' },
+  { id: 'facturas', label: 'Facturas' },
   { id: 'catalogos', label: 'Catálogos' },
   { id: 'configuracion', label: 'Configuración' },
 ] as const;
@@ -40,6 +42,7 @@ export default function PurchasesPage() {
 
       {tab === 'pedidos' && <PedidosTab />}
       {tab === 'ordenes' && <OrdenesTab />}
+      {tab === 'facturas' && <FacturasTab />}
       {tab === 'catalogos' && <CatalogosTab />}
       {tab === 'configuracion' && <ConfiguracionTab />}
     </div>

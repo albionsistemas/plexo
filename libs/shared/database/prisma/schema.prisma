@@ -208,6 +208,8 @@ model User {
   createdPurchaseOrders PurchaseOrder[]
   receivedGoodsReceipts GoodsReceipt[]
   returnedSupplierReturns SupplierReturn[]
+  createdPurchaseInvoices PurchaseInvoice[]
+  recordedSupplierPayments SupplierPayment[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -324,6 +326,7 @@ model Company {
   // (sales-side presupuesto), see QuoteRequest for why the names differ.
   quoteRequests        QuoteRequest[]
   purchaseOrders       PurchaseOrder[]
+  purchaseInvoices     PurchaseInvoice[]
   // Articles that name this Company as their preferred supplier (see
   // Article.preferredSupplierId) - read from the Company side (e.g. "what
   // do we usually buy from this supplier") without CompaniesService
@@ -382,11 +385,12 @@ model Currency {
   name     String
   isBase   Boolean @default(false)
 
-  exchangeRates  ExchangeRateHistory[]
-  invoices       Invoice[]
-  creditNotes    CreditNote[]
-  quoteRequests  QuoteRequest[]
-  purchaseOrders PurchaseOrder[]
+  exchangeRates    ExchangeRateHistory[]
+  invoices         Invoice[]
+  creditNotes      CreditNote[]
+  quoteRequests    QuoteRequest[]
+  purchaseOrders   PurchaseOrder[]
+  purchaseInvoices PurchaseInvoice[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -896,6 +900,22 @@ model JournalEntry {
   // credit note from ever linking back to the same original sale entry.
   creditNoteId String?       @unique
   creditNote   CreditNote?   @relation(fields: [creditNoteId], references: [id])
+  // Compras/Cuentas a Pagar - same one-entry-per-document precedent as
+  // invoiceId/creditNoteId above, not a polymorphic sourceType/sourceId:
+  // each of these needs its own uniqueness guarantee (a goods receipt's
+  // GRNI accrual, a supplier return's partial reversal, a purchase
+  // invoice's clearing entry, a payment's cash entry are each posted at
+  // most once). See AccountingService.postGoodsReceiptAccrual /
+  // reverseSupplierReturnAccrual / postPurchaseInvoiceJournalEntry /
+  // postSupplierPaymentJournalEntry.
+  goodsReceiptId    String?          @unique
+  goodsReceipt      GoodsReceipt?    @relation(fields: [goodsReceiptId], references: [id])
+  supplierReturnId  String?          @unique
+  supplierReturn    SupplierReturn?  @relation(fields: [supplierReturnId], references: [id])
+  purchaseInvoiceId String?          @unique
+  purchaseInvoice   PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id])
+  supplierPaymentId String?          @unique
+  supplierPayment   SupplierPayment? @relation(fields: [supplierPaymentId], references: [id])
   description  String
   date         DateTime      @default(now())
   createdById  String
@@ -961,8 +981,9 @@ model FinancialAccount {
   provider       FinancialAccountProvider
   currentBalance Decimal                  @default(0) @db.Decimal(14, 2)
 
-  receipts     Receipt[]
-  transactions FinancialTransaction[]
+  receipts         Receipt[]
+  transactions     FinancialTransaction[]
+  supplierPayments SupplierPayment[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -1173,6 +1194,11 @@ model PurchaseOrder {
   // Remitos (goods receipts) recorded against this order - see
   // GoodsReceiptService. Zero, one, or many (partial deliveries).
   receipts            GoodsReceipt[]
+  // Facturas de Compra recorded against this order - see
+  // PurchaseInvoiceService. Zero (still awaiting invoicing, or a cancelled
+  // order) to many (one per supplier invoice, since a single order can be
+  // invoiced across several documents as receipts come in).
+  invoices            PurchaseInvoice[]
 
   @@unique([tenantId, number])
   @@index([tenantId, supplierId])
@@ -1226,6 +1252,16 @@ model GoodsReceipt {
 
   lines GoodsReceiptLine[]
   returns SupplierReturn[]
+  // The GRNI accrual entry posted when this receipt was recorded (Dr
+  // Mercaderías / Cr Mercadería Recibida No Facturada) - see
+  // AccountingService.postGoodsReceiptAccrual, called from
+  // apps/api's GoodsReceiptsService right after GoodsReceiptService.create.
+  journalEntry JournalEntry?
+  // Which PurchaseInvoice(s) cleared this receipt's GRNI accrual - v1 is
+  // whole-receipt only (see PurchaseInvoiceReceipt's own @@unique), so this
+  // is 0 or 1 in practice, kept to-many for the same reason GoodsReceipt.
+  // returns is to-many: never blocks a re-attempt.
+  invoiceLinks PurchaseInvoiceReceipt[]
 
   @@index([tenantId, purchaseOrderId])
   @@map("goods_receipts")
@@ -1269,6 +1305,10 @@ model SupplierReturn {
   createdAt        DateTime @default(now())
 
   lines SupplierReturnLine[]
+  // The GRNI reversal entry posted when this return was recorded (Dr
+  // Mercadería Recibida No Facturada / Cr Mercaderías, proportional to the
+  // returned quantity) - see AccountingService.reverseSupplierReturnAccrual.
+  journalEntry JournalEntry?
 
   @@index([tenantId, goodsReceiptId])
   @@map("supplier_returns")
@@ -1286,4 +1326,144 @@ model SupplierReturnLine {
   @@index([tenantId])
   @@index([goodsReceiptLineId])
   @@map("supplier_return_lines")
+}
+
+// --- Cuentas a Pagar (@plexo/purchases + @plexo/payables) ---
+//
+// Factura de Compra: the supplier's own fiscal document, always tied to a
+// PurchaseOrder (that's where the article-level detail/cost already lives -
+// see PurchaseOrderLine.unitCost). Deliberately header-level, not
+// line-by-line like Invoice/InvoiceLine: the user is transcribing totals
+// off a piece of paper the supplier already priced and taxed, not
+// recalculating per-article pricing again (that's what makes entry fast -
+// see PurchaseInvoiceService). Zero or more GoodsReceipts can be linked
+// (PurchaseInvoiceReceipt) to clear their GRNI accrual; zero is valid for a
+// pure-services PurchaseOrder (Article.isService never gets a remito).
+enum PurchaseInvoiceStatus {
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+enum PurchaseInvoiceTaxLineType {
+  IVA_CREDITO
+  PERCEPCION
+}
+
+model PurchaseInvoice {
+  id              String        @id @default(uuid())
+  tenantId        String
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  supplierId      String
+  supplier        Company       @relation(fields: [supplierId], references: [id])
+  // Snapshot at entry time - same reasoning as Invoice.customerName/
+  // customerTaxId: Company.name/taxId can change later, this record
+  // (backing an IVA Crédito claim) must not silently change with it.
+  supplierName    String
+  supplierTaxId   String?
+  // The supplier's own invoice number/date - free text, NOT a Plexo-
+  // generated series (same convention as GoodsReceipt.supplierDocNumber;
+  // unlike QuoteRequest.number/PurchaseOrder.number, Plexo isn't the one
+  // issuing this document).
+  supplierInvoiceNumber String
+  supplierInvoiceDate   DateTime
+  // Optional on purpose, same convention as Invoice.dueDate: PurchaseOrder.
+  // paymentTermId today is just a free-text label ("30 días", "Contado"),
+  // not a structured day-count Plexo could compute this from - the user
+  // fills it in directly if they want this invoice to show up in the
+  // Cuentas a Pagar aging report (PayablesService.getAgingReport, same
+  // "no dueDate -> current" treatment as its AR counterpart).
+  dueDate               DateTime?
+  currencyId            String
+  currency              Currency              @relation(fields: [currencyId], references: [id])
+  // Net amount before tax, as written on the supplier's invoice.
+  subtotal    Decimal               @db.Decimal(14, 2)
+  // Sum of taxLines (IVA Crédito + Percepciones).
+  taxTotal    Decimal               @db.Decimal(14, 2)
+  total       Decimal               @db.Decimal(14, 2)
+  balanceDue  Decimal               @db.Decimal(14, 2)
+  status      PurchaseInvoiceStatus @default(ISSUED)
+  // Photo or scan of the supplier's invoice - same pattern as
+  // GoodsReceipt.attachmentUrl.
+  attachmentUrl   String?
+  notes           String?
+  createdByUserId String
+  createdBy       User     @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  taxLines     PurchaseInvoiceTaxLine[]
+  receiptLinks PurchaseInvoiceReceipt[]
+  payments     SupplierPayment[]
+  journalEntry JournalEntry?
+
+  @@index([tenantId, supplierId])
+  @@index([tenantId, purchaseOrderId])
+  @@map("purchase_invoices")
+}
+
+// One row per tax/perception line on the supplier's invoice - free-text
+// concept (e.g. "IVA 21%", "Percepción IIBB CABA"), not tied to
+// TaxDefinition (that catalog is for OUR sales-side tax rates, not
+// whatever a given supplier happens to charge) or to a rigid regime
+// catalog - same free-text criterion already used for
+// Company.grossIncomeNumber/taxCondition. IVA_CREDITO and PERCEPCION both
+// land in the same aggregate GL accounts (see AccountingService) - this
+// table is the only place the per-concept detail is kept, same idiom as
+// PriceHistory being the detail behind an aggregate StockLedger.avgUnitCost.
+model PurchaseInvoiceTaxLine {
+  id                String                     @id @default(uuid())
+  tenantId          String
+  purchaseInvoiceId String
+  purchaseInvoice   PurchaseInvoice            @relation(fields: [purchaseInvoiceId], references: [id])
+  type              PurchaseInvoiceTaxLineType
+  concept           String
+  amount            Decimal                    @db.Decimal(14, 2)
+
+  @@index([tenantId])
+  @@map("purchase_invoice_tax_lines")
+}
+
+// Which GoodsReceipt(s) this invoice clears from the GRNI bridge account.
+// v1 is whole-receipt only (see PurchaseInvoiceService) - the @@unique
+// below is what actually enforces that a receipt can't be invoiced twice,
+// not just a UI convention.
+model PurchaseInvoiceReceipt {
+  id                String          @id @default(uuid())
+  tenantId          String
+  purchaseInvoiceId String
+  purchaseInvoice   PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id])
+  goodsReceiptId    String
+  goodsReceipt      GoodsReceipt    @relation(fields: [goodsReceiptId], references: [id])
+
+  @@unique([tenantId, goodsReceiptId])
+  @@index([tenantId, purchaseInvoiceId])
+  @@map("purchase_invoice_receipts")
+}
+
+// A payment made against a PurchaseInvoice - mirrors Receipt (the AR
+// equivalent) field-for-field, including the same shallow
+// FinancialAccount integration (no automatic currentBalance update there
+// either - see Receipt). Unlike Receipt, this DOES post a journal entry
+// (Dr Proveedores / Cr Caja) - see AccountingService.
+// postSupplierPaymentJournalEntry and the decision note on
+// InvoicingService.recordReceipt's own gap, tracked separately.
+model SupplierPayment {
+  id                 String            @id @default(uuid())
+  tenantId           String
+  purchaseInvoiceId  String
+  purchaseInvoice    PurchaseInvoice   @relation(fields: [purchaseInvoiceId], references: [id])
+  amount             Decimal           @db.Decimal(14, 2)
+  method             String
+  financialAccountId String?
+  financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id])
+  paidAt             DateTime          @default(now())
+  recordedByUserId   String
+  recordedBy         User              @relation(fields: [recordedByUserId], references: [id])
+
+  journalEntry JournalEntry?
+
+  @@index([tenantId, purchaseInvoiceId])
+  @@map("supplier_payments")
 }

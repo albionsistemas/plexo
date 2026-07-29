@@ -32,6 +32,7 @@ export default [
             { sourceTag: 'scope:tenant-settings', onlyDependOnLibsWithTags: ['scope:tenant-settings', 'scope:shared'] },
             { sourceTag: 'scope:activity-log', onlyDependOnLibsWithTags: ['scope:activity-log', 'scope:shared'] },
             { sourceTag: 'scope:purchases', onlyDependOnLibsWithTags: ['scope:purchases', 'scope:shared'] },
+            { sourceTag: 'scope:payables', onlyDependOnLibsWithTags: ['scope:payables', 'scope:shared'] },
             {
               sourceTag: 'scope:api',
               onlyDependOnLibsWithTags: [
@@ -49,6 +50,7 @@ export default [
                 'scope:tenant-settings',
                 'scope:activity-log',
                 'scope:purchases',
+                'scope:payables',
               ],
             },
             {
@@ -68,6 +70,7 @@ export default [
                 'scope:tenant-settings',
                 'scope:activity-log',
                 'scope:purchases',
+                'scope:payables',
               ],
             },
             // type: layering. apps/features can use anything below them,

@@ -5,7 +5,9 @@ import type { CreateSupplierReturnDto } from './dto/create-supplier-return.dto.j
 const RETURN_DETAIL_INCLUDE = {
   lines: {
     include: {
-      goodsReceiptLine: { include: { purchaseOrderLine: { select: { id: true, articleVariantId: true } } } },
+      goodsReceiptLine: {
+        include: { purchaseOrderLine: { select: { id: true, articleVariantId: true, unitCost: true } } },
+      },
     },
   },
   goodsReceipt: { select: { id: true, warehouseId: true } },

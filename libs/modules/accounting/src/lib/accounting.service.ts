@@ -42,6 +42,40 @@ const INVENTORY_ASSET_ACCOUNT = {
   type: 'ASSET' as const,
 };
 
+/** Compras / Cuentas a Pagar - GRNI (Goods Received Not Invoiced) bridge +
+ * the accounts a Factura de Compra clears it into. See
+ * postGoodsReceiptAccrual/reverseSupplierReturnAccrual/
+ * postPurchaseInvoiceJournalEntry/postSupplierPaymentJournalEntry below. */
+const GRNI_ACCOUNT = {
+  code: '2.1.04',
+  name: 'Mercadería Recibida No Facturada',
+  type: 'LIABILITY' as const,
+};
+const ACCOUNTS_PAYABLE_ACCOUNT = { code: '2.1.05', name: 'Proveedores', type: 'LIABILITY' as const };
+const VAT_CREDIT_ACCOUNT = {
+  code: '1.1.05',
+  name: 'IVA Crédito Fiscal',
+  type: 'ASSET' as const,
+};
+const PERCEPTIONS_ACCOUNT = {
+  code: '1.1.06',
+  name: 'Percepciones Sufridas',
+  type: 'ASSET' as const,
+};
+// Whatever a Factura de Compra covers that ISN'T backed by a GRNI accrual -
+// a service line (Article.isService never gets a remito) or a price
+// variance between the receipt's PO-cost accrual and what the supplier
+// actually billed. One aggregate account for both cases, same criterion as
+// COGS_EXPENSE_ACCOUNT being one account regardless of which product sold.
+const PURCHASES_NO_RECEIPT_ACCOUNT = {
+  code: '5.1.02',
+  name: 'Compras sin remito',
+  type: 'EXPENSE' as const,
+};
+// Reused as-is for supplier payments (Cr side) - same code an earlier
+// session already created manually in this chart of accounts.
+const CASH_ACCOUNT = { code: '1.1.03', name: 'Caja', type: 'ASSET' as const };
+
 export interface PostInvoiceJournalEntryInput {
   invoiceId: string;
   subtotal: Prisma.Decimal | number | string;
@@ -65,6 +99,44 @@ export interface PostCreditNoteJournalEntryInput {
   // Cost of the credited (returned) quantity - same optional/zero-is-fine
   // treatment as postInvoiceJournalEntry's cogsAmount.
   cogsAmount?: Prisma.Decimal | number | string;
+}
+
+export interface PostGoodsReceiptAccrualInput {
+  goodsReceiptId: string;
+  amount: Prisma.Decimal | number | string;
+  date?: Date;
+}
+
+export interface ReverseSupplierReturnAccrualInput {
+  supplierReturnId: string;
+  amount: Prisma.Decimal | number | string;
+  date?: Date;
+}
+
+export interface PurchaseInvoicePerceptionInput {
+  concept: string;
+  amount: Prisma.Decimal | number | string;
+}
+
+export interface PostPurchaseInvoiceJournalEntryInput {
+  purchaseInvoiceId: string;
+  // Portion of the invoice's subtotal backed by GRNI-accrued receipts -
+  // clears (debits) that bridge liability. Zero for a pure-services
+  // invoice with no linked GoodsReceipt.
+  grniClearedAmount: Prisma.Decimal | number | string;
+  // subtotal - grniClearedAmount: services or price variance not backed by
+  // any receipt - see PURCHASES_NO_RECEIPT_ACCOUNT.
+  nonGrniAmount: Prisma.Decimal | number | string;
+  ivaCredito: Prisma.Decimal | number | string;
+  percepciones: PurchaseInvoicePerceptionInput[];
+  total: Prisma.Decimal | number | string;
+  date?: Date;
+}
+
+export interface PostSupplierPaymentJournalEntryInput {
+  supplierPaymentId: string;
+  amount: Prisma.Decimal | number | string;
+  date?: Date;
 }
 
 export interface TrialBalanceRow {
@@ -354,6 +426,230 @@ export class AccountingService {
       },
       include: { lines: true },
     });
+  }
+
+  /** Shared by the 4 Compras/Cuentas a Pagar posting methods below - same
+   * balance-check-then-create shape as postJournalEntry(), duplicated
+   * rather than reused because PostJournalEntryDto (the public "asiento
+   * manual" endpoint's DTO) only accepts invoiceId, not these newer FKs -
+   * same reason postCreditNoteJournalEntry already has its own inline
+   * balance check instead of calling postJournalEntry(). Widening that
+   * DTO would let a manually-posted entry claim one of these FKs from the
+   * public API, which isn't something a user should be able to do by hand. */
+  private async createBalancedEntry(
+    description: string,
+    lines: PostJournalEntryDto['lines'],
+    opts: {
+      date?: Date;
+      goodsReceiptId?: string;
+      supplierReturnId?: string;
+      purchaseInvoiceId?: string;
+      supplierPaymentId?: string;
+    },
+  ): Promise<JournalEntryWithLines> {
+    const tenantId = getTenantId();
+    const createdById = getUserId();
+    if (!createdById) {
+      throw new BadRequestException('An authenticated user is required to post a journal entry');
+    }
+
+    let debitTotal = new Prisma.Decimal(0);
+    let creditTotal = new Prisma.Decimal(0);
+    for (const line of lines) {
+      const amount = new Prisma.Decimal(line.amount);
+      if (line.direction === 'DEBIT') {
+        debitTotal = debitTotal.add(amount);
+      } else {
+        creditTotal = creditTotal.add(amount);
+      }
+    }
+    if (!debitTotal.eq(creditTotal)) {
+      throw new BadRequestException(
+        `Journal entry is not balanced: debits ${debitTotal.toFixed(2)} != credits ${creditTotal.toFixed(2)}`,
+      );
+    }
+
+    return getTenantDb().journalEntry.create({
+      data: {
+        tenantId,
+        description,
+        date: opts.date,
+        goodsReceiptId: opts.goodsReceiptId,
+        supplierReturnId: opts.supplierReturnId,
+        purchaseInvoiceId: opts.purchaseInvoiceId,
+        supplierPaymentId: opts.supplierPaymentId,
+        createdById,
+        lines: {
+          createMany: {
+            data: lines.map((line) => ({
+              tenantId,
+              accountId: line.accountId,
+              direction: line.direction,
+              amount: line.amount,
+            })),
+          },
+        },
+      },
+      include: { lines: true },
+    });
+  }
+
+  /**
+   * Posted when a GoodsReceipt (remito) is recorded, in the same
+   * transaction as the stock movement it drives (see apps/api's
+   * GoodsReceiptsService) - the GRNI accrual: we now hold the goods
+   * (debit Mercaderías) but haven't seen the supplier's invoice yet
+   * (credit the GRNI bridge liability instead of Proveedores directly).
+   * Cleared later by postPurchaseInvoiceJournalEntry. Skipped for a
+   * zero-amount receipt (shouldn't happen - a PurchaseOrderLine always has
+   * a real unitCost - but mirrors the other post* methods' defensive skip).
+   */
+  async postGoodsReceiptAccrual(
+    input: PostGoodsReceiptAccrualInput,
+  ): Promise<JournalEntryWithLines | undefined> {
+    const amount = new Prisma.Decimal(input.amount);
+    if (amount.lte(0)) {
+      return undefined;
+    }
+    const [inventory, grni] = await Promise.all([
+      this.getOrCreateAccount(INVENTORY_ASSET_ACCOUNT),
+      this.getOrCreateAccount(GRNI_ACCOUNT),
+    ]);
+    return this.createBalancedEntry(
+      `Recepción de mercadería - remito ${input.goodsReceiptId}`,
+      [
+        { accountId: inventory.id, direction: 'DEBIT', amount: amount.toNumber() },
+        { accountId: grni.id, direction: 'CREDIT', amount: amount.toNumber() },
+      ],
+      { date: input.date, goodsReceiptId: input.goodsReceiptId },
+    );
+  }
+
+  /**
+   * Posted when a SupplierReturn is recorded against a remito that already
+   * accrued GRNI - mirror image of postGoodsReceiptAccrual for the
+   * returned quantity's cost: the goods are going back (credit
+   * Mercaderías) and we owe the supplier that much less once invoiced
+   * (debit down the GRNI bridge). Its own independent entry, not
+   * createReversingEntry() against the original accrual - same reason
+   * postCreditNoteJournalEntry doesn't mirror postInvoiceJournalEntry:
+   * this is a partial amount tied to specific returned lines, not
+   * necessarily the whole receipt.
+   */
+  async reverseSupplierReturnAccrual(
+    input: ReverseSupplierReturnAccrualInput,
+  ): Promise<JournalEntryWithLines | undefined> {
+    const amount = new Prisma.Decimal(input.amount);
+    if (amount.lte(0)) {
+      return undefined;
+    }
+    const [inventory, grni] = await Promise.all([
+      this.getOrCreateAccount(INVENTORY_ASSET_ACCOUNT),
+      this.getOrCreateAccount(GRNI_ACCOUNT),
+    ]);
+    return this.createBalancedEntry(
+      `Devolución a proveedor - ${input.supplierReturnId}`,
+      [
+        { accountId: grni.id, direction: 'DEBIT', amount: amount.toNumber() },
+        { accountId: inventory.id, direction: 'CREDIT', amount: amount.toNumber() },
+      ],
+      { date: input.date, supplierReturnId: input.supplierReturnId },
+    );
+  }
+
+  /**
+   * Posted when a Factura de Compra is created (see apps/api's
+   * PurchaseInvoicesService, composing PurchaseInvoiceService +
+   * AccountingService). Clears the GRNI bridge for whatever this invoice
+   * settles (debit GRNI), books whatever isn't backed by a receipt as an
+   * expense (services, price variance - debit Compras sin remito), books
+   * the real fiscal detail the supplier's invoice carries (debit IVA
+   * Crédito Fiscal, debit Percepciones Sufridas - aggregate accounts, the
+   * per-concept detail lives on PurchaseInvoiceTaxLine), and credits
+   * Proveedores for the total now owed. Balanced by construction: the
+   * composition root computes grniClearedAmount + nonGrniAmount as an
+   * exact split of the invoice's subtotal, so
+   * grniClearedAmount + nonGrniAmount + ivaCredito + Σpercepciones ==
+   * total always holds - createBalancedEntry's check is a defense-in-depth
+   * safety net, not expected to ever fire here.
+   */
+  async postPurchaseInvoiceJournalEntry(
+    input: PostPurchaseInvoiceJournalEntryInput,
+  ): Promise<JournalEntryWithLines | undefined> {
+    const total = new Prisma.Decimal(input.total);
+    if (total.lte(0)) {
+      return undefined;
+    }
+    const grniClearedAmount = new Prisma.Decimal(input.grniClearedAmount);
+    const nonGrniAmount = new Prisma.Decimal(input.nonGrniAmount);
+    const ivaCredito = new Prisma.Decimal(input.ivaCredito);
+    const percepcionesTotal = input.percepciones.reduce(
+      (sum, p) => sum.add(new Prisma.Decimal(p.amount)),
+      new Prisma.Decimal(0),
+    );
+
+    const [payable, grni, expense, vatCredit, perceptions] = await Promise.all([
+      this.getOrCreateAccount(ACCOUNTS_PAYABLE_ACCOUNT),
+      grniClearedAmount.gt(0) ? this.getOrCreateAccount(GRNI_ACCOUNT) : Promise.resolve(undefined),
+      nonGrniAmount.gt(0)
+        ? this.getOrCreateAccount(PURCHASES_NO_RECEIPT_ACCOUNT)
+        : Promise.resolve(undefined),
+      ivaCredito.gt(0) ? this.getOrCreateAccount(VAT_CREDIT_ACCOUNT) : Promise.resolve(undefined),
+      percepcionesTotal.gt(0) ? this.getOrCreateAccount(PERCEPTIONS_ACCOUNT) : Promise.resolve(undefined),
+    ]);
+
+    const lines: PostJournalEntryDto['lines'] = [
+      { accountId: payable.id, direction: 'CREDIT', amount: total.toNumber() },
+    ];
+    if (grni && grniClearedAmount.gt(0)) {
+      lines.push({ accountId: grni.id, direction: 'DEBIT', amount: grniClearedAmount.toNumber() });
+    }
+    if (expense && nonGrniAmount.gt(0)) {
+      lines.push({ accountId: expense.id, direction: 'DEBIT', amount: nonGrniAmount.toNumber() });
+    }
+    if (vatCredit && ivaCredito.gt(0)) {
+      lines.push({ accountId: vatCredit.id, direction: 'DEBIT', amount: ivaCredito.toNumber() });
+    }
+    if (perceptions && percepcionesTotal.gt(0)) {
+      lines.push({ accountId: perceptions.id, direction: 'DEBIT', amount: percepcionesTotal.toNumber() });
+    }
+
+    return this.createBalancedEntry(
+      `Factura de compra - comprobante ${input.purchaseInvoiceId}`,
+      lines,
+      { date: input.date, purchaseInvoiceId: input.purchaseInvoiceId },
+    );
+  }
+
+  /**
+   * Posted when a SupplierPayment is recorded (see apps/api's
+   * PurchaseInvoicesService.recordPayment) - debit Proveedores (we owe
+   * less), credit Caja for the amount paid. Unlike Receipt (the AR
+   * equivalent, whose recordReceipt does NOT post anything today - a
+   * separate, already-flagged gap), this posts every time: without it,
+   * Proveedores would only ever grow from postPurchaseInvoiceJournalEntry
+   * and never shrink, reproducing the exact same class of bug this whole
+   * feature exists to fix for Mercaderías.
+   */
+  async postSupplierPaymentJournalEntry(
+    input: PostSupplierPaymentJournalEntryInput,
+  ): Promise<JournalEntryWithLines | undefined> {
+    const amount = new Prisma.Decimal(input.amount);
+    if (amount.lte(0)) {
+      return undefined;
+    }
+    const [payable, cash] = await Promise.all([
+      this.getOrCreateAccount(ACCOUNTS_PAYABLE_ACCOUNT),
+      this.getOrCreateAccount(CASH_ACCOUNT),
+    ]);
+    return this.createBalancedEntry(
+      `Pago a proveedor - ${input.supplierPaymentId}`,
+      [
+        { accountId: payable.id, direction: 'DEBIT', amount: amount.toNumber() },
+        { accountId: cash.id, direction: 'CREDIT', amount: amount.toNumber() },
+      ],
+      { date: input.date, supplierPaymentId: input.supplierPaymentId },
+    );
   }
 
   /** The only way to correct a posted entry: a new entry with the same

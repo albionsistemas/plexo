@@ -341,3 +341,198 @@ describe('AccountingService.getAccountLedger', () => {
     );
   });
 });
+
+function dbWithAccounts(existingByCode: Record<string, { id: string }> = {}) {
+  const created: { code: string; name: string; type: string }[] = [];
+  return {
+    accountingAccount: {
+      findFirst: jest.fn(({ where }: { where: { code: string } }) =>
+        Promise.resolve(existingByCode[where.code] ?? null),
+      ),
+      create: jest.fn(({ data }: { data: { code: string; name: string; type: string } }) => {
+        created.push({ code: data.code, name: data.name, type: data.type });
+        return Promise.resolve({ id: `acc-${data.code}`, ...data });
+      }),
+    },
+    journalEntry: {
+      create: jest.fn().mockResolvedValue({ id: 'entry-1', lines: [] }),
+    },
+    _created: created,
+  };
+}
+
+describe('AccountingService.postGoodsReceiptAccrual', () => {
+  it('books debit Mercaderías / credit GRNI for the receipt amount', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postGoodsReceiptAccrual({ goodsReceiptId: 'receipt-1', amount: 18150 }),
+    );
+
+    expect(db._created.map((a) => a.code)).toEqual(expect.arrayContaining(['1.1.04', '2.1.04']));
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.goodsReceiptId).toBe('receipt-1');
+    expect(createArgs.data.lines.createMany.data).toEqual([
+      { tenantId: 'tenant-1', accountId: 'acc-1.1.04', direction: 'DEBIT', amount: 18150 },
+      { tenantId: 'tenant-1', accountId: 'acc-2.1.04', direction: 'CREDIT', amount: 18150 },
+    ]);
+  });
+
+  it('skips posting entirely for a zero amount', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    const result = await runInTenant(db, () =>
+      service.postGoodsReceiptAccrual({ goodsReceiptId: 'receipt-1', amount: 0 }),
+    );
+
+    expect(result).toBeUndefined();
+    expect(db.journalEntry.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('AccountingService.reverseSupplierReturnAccrual', () => {
+  it('books debit GRNI / credit Mercaderías for the returned amount (mirror image of the accrual)', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.reverseSupplierReturnAccrual({ supplierReturnId: 'return-1', amount: 300 }),
+    );
+
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.supplierReturnId).toBe('return-1');
+    expect(createArgs.data.lines.createMany.data).toEqual([
+      { tenantId: 'tenant-1', accountId: 'acc-2.1.04', direction: 'DEBIT', amount: 300 },
+      { tenantId: 'tenant-1', accountId: 'acc-1.1.04', direction: 'CREDIT', amount: 300 },
+    ]);
+  });
+});
+
+describe('AccountingService.postPurchaseInvoiceJournalEntry', () => {
+  it('clears GRNI, books IVA Crédito/Percepciones, credits Proveedores for the total', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postPurchaseInvoiceJournalEntry({
+        purchaseInvoiceId: 'pinv-1',
+        grniClearedAmount: 18150,
+        nonGrniAmount: 0,
+        ivaCredito: 3811.5,
+        percepciones: [{ concept: 'Percepción IIBB', amount: 200 }],
+        total: 22161.5,
+      }),
+    );
+
+    expect(db._created.map((a) => a.code)).toEqual(
+      expect.arrayContaining(['2.1.05', '2.1.04', '1.1.05', '1.1.06']),
+    );
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.purchaseInvoiceId).toBe('pinv-1');
+    const lines = createArgs.data.lines.createMany.data;
+    expect(lines).toContainEqual({
+      tenantId: 'tenant-1',
+      accountId: 'acc-2.1.05',
+      direction: 'CREDIT',
+      amount: 22161.5,
+    });
+    expect(lines).toContainEqual({
+      tenantId: 'tenant-1',
+      accountId: 'acc-2.1.04',
+      direction: 'DEBIT',
+      amount: 18150,
+    });
+    expect(lines).toContainEqual({
+      tenantId: 'tenant-1',
+      accountId: 'acc-1.1.05',
+      direction: 'DEBIT',
+      amount: 3811.5,
+    });
+    expect(lines).toContainEqual({
+      tenantId: 'tenant-1',
+      accountId: 'acc-1.1.06',
+      direction: 'DEBIT',
+      amount: 200,
+    });
+    // debits (18150 + 3811.5 + 200 = 22161.5) == credit (22161.5) - balances
+    expect(lines).toHaveLength(4);
+  });
+
+  it('books the non-GRNI remainder to Compras sin remito for a pure-services invoice', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postPurchaseInvoiceJournalEntry({
+        purchaseInvoiceId: 'pinv-2',
+        grniClearedAmount: 0,
+        nonGrniAmount: 1000,
+        ivaCredito: 210,
+        percepciones: [],
+        total: 1210,
+      }),
+    );
+
+    expect(db._created.some((a) => a.code === '2.1.04')).toBe(false);
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    const lines = createArgs.data.lines.createMany.data;
+    expect(lines).toContainEqual({
+      tenantId: 'tenant-1',
+      accountId: 'acc-5.1.02',
+      direction: 'DEBIT',
+      amount: 1000,
+    });
+    expect(lines).toHaveLength(3);
+  });
+
+  it('skips posting entirely for a zero-total invoice', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    const result = await runInTenant(db, () =>
+      service.postPurchaseInvoiceJournalEntry({
+        purchaseInvoiceId: 'pinv-3',
+        grniClearedAmount: 0,
+        nonGrniAmount: 0,
+        ivaCredito: 0,
+        percepciones: [],
+        total: 0,
+      }),
+    );
+
+    expect(result).toBeUndefined();
+    expect(db.journalEntry.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('AccountingService.postSupplierPaymentJournalEntry', () => {
+  it('books debit Proveedores / credit Caja for the paid amount', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postSupplierPaymentJournalEntry({ supplierPaymentId: 'pay-1', amount: 500 }),
+    );
+
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.supplierPaymentId).toBe('pay-1');
+    expect(createArgs.data.lines.createMany.data).toEqual([
+      { tenantId: 'tenant-1', accountId: 'acc-2.1.05', direction: 'DEBIT', amount: 500 },
+      { tenantId: 'tenant-1', accountId: 'acc-1.1.03', direction: 'CREDIT', amount: 500 },
+    ]);
+  });
+
+  it('skips posting entirely for a zero amount', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    const result = await runInTenant(db, () =>
+      service.postSupplierPaymentJournalEntry({ supplierPaymentId: 'pay-2', amount: 0 }),
+    );
+
+    expect(result).toBeUndefined();
+    expect(db.journalEntry.create).not.toHaveBeenCalled();
+  });
+});

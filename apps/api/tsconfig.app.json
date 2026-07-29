@@ -52,6 +52,9 @@
       "path": "../../libs/modules/purchases/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/modules/payables/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/modules/invoicing/tsconfig.lib.json"
     },
     {

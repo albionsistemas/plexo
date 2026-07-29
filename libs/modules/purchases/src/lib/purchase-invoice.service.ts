@@ -1,0 +1,227 @@
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { getTenantDb, getTenantId, getUserId, Prisma } from '@plexo/database';
+import type { CreatePurchaseInvoiceDto } from './dto/create-purchase-invoice.dto.js';
+import type { RecordSupplierPaymentDto } from './dto/record-supplier-payment.dto.js';
+import { getReturnedQuantitiesByGoodsReceiptLine } from './supplier-return.service.js';
+
+const INVOICE_DETAIL_INCLUDE = {
+  taxLines: true,
+  receiptLinks: {
+    include: {
+      goodsReceipt: { select: { id: true, supplierDocNumber: true, receivedAt: true } },
+    },
+  },
+  payments: { orderBy: { paidAt: 'desc' } },
+  purchaseOrder: { select: { id: true, number: true } },
+  createdBy: { select: { id: true, name: true, email: true } },
+} satisfies Prisma.PurchaseInvoiceInclude;
+
+const LIST_INCLUDE = {
+  taxLines: true,
+  purchaseOrder: { select: { id: true, number: true } },
+} satisfies Prisma.PurchaseInvoiceInclude;
+
+/** What GoodsReceiptsService/apps-api's PurchaseInvoicesService needs to
+ * post the accounting entry (see AccountingService.
+ * postPurchaseInvoiceJournalEntry) - kept separate from the persisted
+ * PurchaseInvoice row itself, same "never cache a derived amount"
+ * criterion as PurchaseOrderService.attachReceivingInfo. */
+export interface CreatedPurchaseInvoice {
+  invoice: Prisma.PurchaseInvoiceGetPayload<{ include: typeof INVOICE_DETAIL_INCLUDE }>;
+  grniClearedAmount: Prisma.Decimal;
+  nonGrniAmount: Prisma.Decimal;
+}
+
+/**
+ * Factura de Compra - always tied to a PurchaseOrder (that's where the
+ * article-level cost detail lives, see PurchaseOrderLine.unitCost). This
+ * service only creates the document and computes the GRNI split
+ * (grniClearedAmount/nonGrniAmount) from purchases-domain data (which
+ * GoodsReceipts it clears, net of any SupplierReturns already logged
+ * against them) - it never calls AccountingService itself (this repo's
+ * rule: a lib module never imports another module's Service). apps/api's
+ * PurchaseInvoicesService is the composition root that takes these two
+ * amounts and posts the actual journal entry, same shape as
+ * GoodsReceiptsService composing GoodsReceiptService + InventoryService.
+ */
+@Injectable()
+export class PurchaseInvoiceService {
+  list() {
+    return getTenantDb().purchaseInvoice.findMany({
+      include: LIST_INCLUDE,
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async get(id: string) {
+    const invoice = await getTenantDb().purchaseInvoice.findUnique({
+      where: { id },
+      include: INVOICE_DETAIL_INCLUDE,
+    });
+    if (!invoice) {
+      throw new NotFoundException('Purchase invoice not found');
+    }
+    return invoice;
+  }
+
+  async create(dto: CreatePurchaseInvoiceDto): Promise<CreatedPurchaseInvoice> {
+    const db = getTenantDb();
+    const tenantId = getTenantId();
+    const createdByUserId = requireUserId();
+
+    const purchaseOrder = await db.purchaseOrder.findUnique({
+      where: { id: dto.purchaseOrderId },
+      include: {
+        supplier: true,
+        receipts: {
+          include: {
+            lines: { include: { purchaseOrderLine: { select: { id: true, unitCost: true } } } },
+          },
+        },
+      },
+    });
+    if (!purchaseOrder) {
+      throw new NotFoundException('Purchase order not found');
+    }
+    if (!purchaseOrder.supplier.active) {
+      throw new BadRequestException('This supplier is inactive');
+    }
+
+    const goodsReceiptIds = dto.goodsReceiptIds ?? [];
+    const selectedReceipts = purchaseOrder.receipts.filter((r) => goodsReceiptIds.includes(r.id));
+    if (selectedReceipts.length !== goodsReceiptIds.length) {
+      throw new BadRequestException('One or more goods receipts do not belong to this purchase order');
+    }
+
+    // No FOR UPDATE lock here (unlike GoodsReceiptService/
+    // SupplierReturnService's quantity-accumulation races) - the @@unique
+    // on purchase_invoice_receipts(tenantId, goodsReceiptId) is the real
+    // backstop against a genuine concurrent double-invoice; this check is
+    // only so the common case gets a legible 400 instead of a raw P2002.
+    if (goodsReceiptIds.length > 0) {
+      const alreadyInvoiced = await db.purchaseInvoiceReceipt.findMany({
+        where: { goodsReceiptId: { in: goodsReceiptIds } },
+        select: { goodsReceiptId: true },
+      });
+      if (alreadyInvoiced.length > 0) {
+        throw new BadRequestException(
+          `Goods receipt(s) already invoiced: ${alreadyInvoiced.map((r) => r.goodsReceiptId).join(', ')}`,
+        );
+      }
+    }
+
+    // Recomputed from the receipts' own lines net of returns, never cached
+    // - same criterion as PurchaseOrderService.attachReceivingInfo.
+    const allLineIds = selectedReceipts.flatMap((r) => r.lines.map((l) => l.id));
+    const returnedByLine = await getReturnedQuantitiesByGoodsReceiptLine(allLineIds);
+
+    let grniClearedAmount = new Prisma.Decimal(0);
+    for (const receipt of selectedReceipts) {
+      for (const line of receipt.lines) {
+        const returned = returnedByLine.get(line.id) ?? new Prisma.Decimal(0);
+        const netQuantity = line.quantity.sub(returned);
+        grniClearedAmount = grniClearedAmount.add(netQuantity.mul(line.purchaseOrderLine.unitCost));
+      }
+    }
+
+    const subtotal = new Prisma.Decimal(dto.subtotal);
+    const nonGrniAmount = subtotal.sub(grniClearedAmount);
+    if (nonGrniAmount.lt(0)) {
+      throw new BadRequestException(
+        `El subtotal facturado ($${subtotal.toFixed(2)}) es menor al monto acumulado por los remitos seleccionados ($${grniClearedAmount.toFixed(2)})`,
+      );
+    }
+
+    const taxLines = dto.taxLines ?? [];
+    const taxTotal = taxLines.reduce(
+      (sum, line) => sum.add(new Prisma.Decimal(line.amount)),
+      new Prisma.Decimal(0),
+    );
+    const total = subtotal.add(taxTotal);
+
+    const invoice = await db.purchaseInvoice.create({
+      data: {
+        tenantId,
+        purchaseOrderId: dto.purchaseOrderId,
+        supplierId: purchaseOrder.supplierId,
+        supplierName: purchaseOrder.supplier.name,
+        supplierTaxId: purchaseOrder.supplier.taxId,
+        supplierInvoiceNumber: dto.supplierInvoiceNumber,
+        supplierInvoiceDate: new Date(dto.supplierInvoiceDate),
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+        currencyId: purchaseOrder.currencyId,
+        subtotal,
+        taxTotal,
+        total,
+        balanceDue: total,
+        notes: dto.notes,
+        createdByUserId,
+        taxLines: {
+          createMany: {
+            data: taxLines.map((line) => ({
+              tenantId,
+              type: line.type,
+              concept: line.concept,
+              amount: line.amount,
+            })),
+          },
+        },
+        receiptLinks: {
+          createMany: { data: goodsReceiptIds.map((goodsReceiptId) => ({ tenantId, goodsReceiptId })) },
+        },
+      },
+      include: INVOICE_DETAIL_INCLUDE,
+    });
+
+    return { invoice, grniClearedAmount, nonGrniAmount };
+  }
+
+  /** Creates the SupplierPayment row and updates balanceDue/status - does
+   * NOT post the accounting entry itself (see apps/api's
+   * PurchaseInvoicesService.recordPayment, which calls this then
+   * AccountingService.postSupplierPaymentJournalEntry in the same
+   * transaction). Mirrors InvoicingService.recordReceipt's balance/status
+   * update exactly. */
+  async recordPayment(invoiceId: string, dto: RecordSupplierPaymentDto) {
+    const db = getTenantDb();
+    const tenantId = getTenantId();
+    const recordedByUserId = requireUserId();
+
+    const invoice = await db.purchaseInvoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) {
+      throw new NotFoundException('Purchase invoice not found');
+    }
+    const amount = new Prisma.Decimal(dto.amount);
+    if (amount.gt(invoice.balanceDue)) {
+      throw new BadRequestException('Payment amount exceeds the invoice balance due');
+    }
+
+    const payment = await db.supplierPayment.create({
+      data: {
+        tenantId,
+        purchaseInvoiceId: invoiceId,
+        amount,
+        method: dto.method,
+        financialAccountId: dto.financialAccountId,
+        paidAt: dto.paidAt ? new Date(dto.paidAt) : undefined,
+        recordedByUserId,
+      },
+    });
+
+    const balanceDue = invoice.balanceDue.sub(amount);
+    await db.purchaseInvoice.update({
+      where: { id: invoiceId },
+      data: { balanceDue, status: balanceDue.isZero() ? 'PAID' : 'PARTIALLY_PAID' },
+    });
+
+    return payment;
+  }
+}
+
+function requireUserId(): string {
+  const userId = getUserId();
+  if (!userId) {
+    throw new BadRequestException('An authenticated user is required');
+  }
+  return userId;
+}

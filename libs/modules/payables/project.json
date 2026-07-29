@@ -1,0 +1,9 @@
+{
+  "name": "payables",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/modules/payables/src",
+  "projectType": "library",
+  "tags": ["scope:payables", "type:feature"],
+  "// targets": "to see all targets run: nx show project payables --web",
+  "targets": {}
+}

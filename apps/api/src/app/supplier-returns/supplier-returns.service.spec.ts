@@ -1,3 +1,4 @@
+import type { AccountingService } from '@plexo/accounting';
 import { Prisma } from '@plexo/database';
 import type { InventoryService } from '@plexo/inventory';
 import type { SupplierReturnService } from '@plexo/purchases';
@@ -19,7 +20,9 @@ function makeSupplierReturn(overrides: Record<string, unknown> = {}) {
         id: 'return-line-1',
         goodsReceiptLineId: 'receipt-line-1',
         quantity: new Prisma.Decimal(2),
-        goodsReceiptLine: { purchaseOrderLine: { articleVariantId: 'variant-1' } },
+        goodsReceiptLine: {
+          purchaseOrderLine: { articleVariantId: 'variant-1', unitCost: new Prisma.Decimal(150) },
+        },
       },
     ],
     ...overrides,
@@ -33,7 +36,10 @@ describe('SupplierReturnsService.createReturn', () => {
       create: jest.fn().mockResolvedValue(supplierReturn),
     } as unknown as SupplierReturnService;
     const inventoryService = { recordMovement: jest.fn().mockResolvedValue({}) } as unknown as InventoryService;
-    const service = new SupplierReturnsService(supplierReturnService, inventoryService);
+    const accountingService = {
+      reverseSupplierReturnAccrual: jest.fn().mockResolvedValue({}),
+    } as unknown as AccountingService;
+    const service = new SupplierReturnsService(supplierReturnService, inventoryService, accountingService);
     const dto = {
       goodsReceiptId: 'receipt-1',
       reason: 'tapa en mal estado',
@@ -52,6 +58,10 @@ describe('SupplierReturnsService.createReturn', () => {
       sourceType: 'SUPPLIER_RETURN',
       sourceId: 'return-1',
     });
+    // 2 * 150 = 300
+    const reversalArg = (accountingService.reverseSupplierReturnAccrual as jest.Mock).mock.calls[0][0];
+    expect(reversalArg.supplierReturnId).toBe('return-1');
+    expect((reversalArg.amount as Prisma.Decimal).toNumber()).toBe(300);
     expect(result).toBe(supplierReturn);
   });
 
@@ -62,7 +72,10 @@ describe('SupplierReturnsService.createReturn', () => {
     } as unknown as SupplierReturnService;
     const failure = new Error('Insufficient stock in this warehouse');
     const inventoryService = { recordMovement: jest.fn().mockRejectedValue(failure) } as unknown as InventoryService;
-    const service = new SupplierReturnsService(supplierReturnService, inventoryService);
+    const accountingService = {
+      reverseSupplierReturnAccrual: jest.fn().mockResolvedValue({}),
+    } as unknown as AccountingService;
+    const service = new SupplierReturnsService(supplierReturnService, inventoryService, accountingService);
 
     await expect(
       service.createReturn({
@@ -71,5 +84,6 @@ describe('SupplierReturnsService.createReturn', () => {
         lines: [{ goodsReceiptLineId: 'receipt-line-1', quantity: 2 }],
       }),
     ).rejects.toThrow(failure);
+    expect(accountingService.reverseSupplierReturnAccrual).not.toHaveBeenCalled();
   });
 });
