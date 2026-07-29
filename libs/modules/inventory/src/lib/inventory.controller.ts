@@ -129,9 +129,24 @@ export class InventoryController {
     return this.inventoryService.setMinimumStock(dto);
   }
 
+  // purchaseOrderId/goodsReceiptLineId are only ever set by
+  // GoodsReceiptsService (apps/api), which calls InventoryService.
+  // recordMovement() directly in-process - never through this HTTP
+  // endpoint, so ValidationPipe never runs on that internal call. This
+  // is the only place a caller (the frontend's "Nuevo movimiento" modal,
+  // or any other API client) could otherwise link a manual movement to a
+  // real Orden de Compra with none of GoodsReceiptService's validation
+  // (quantity capped at what's pending, cost read from the order's own
+  // line, entregas parciales acumuladas) - closing exactly the gap this
+  // was built to fix, not just hiding it in the UI. See PROGRESS.md.
   @Roles(...WRITE_ROLES)
   @Post('movements')
   recordMovement(@Body() dto: RecordStockMovementDto) {
+    if (dto.purchaseOrderId || dto.goodsReceiptLineId) {
+      throw new BadRequestException(
+        'Para recibir mercadería contra una Orden de Compra, usá "Recibir mercadería" desde Compras - no este movimiento manual.',
+      );
+    }
     return this.inventoryService.recordMovement(dto);
   }
 

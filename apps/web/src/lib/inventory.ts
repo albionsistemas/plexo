@@ -72,15 +72,17 @@ export const MOVEMENT_TYPES = [
 
 export type MovementType = (typeof MOVEMENT_TYPES)[number]['value'];
 
+// No purchaseOrderId here on purpose (2026-07-29) - linking a manual
+// movement to a real Orden de Compra with no quantity/cost validation was
+// exactly the bug "Recibir mercadería" (ReceiveGoodsModal) was built to
+// close; the backend also rejects this field on POST /inventory/movements
+// now (InventoryController.recordMovement), it's not just hidden here.
 export interface RecordStockMovementInput {
   warehouseId: string;
   articleVariantId: string;
   type: MovementType;
   quantity: number;
   unitCost?: number;
-  // Only meaningful for PURCHASE_IN - ties the movement's cost to a real
-  // Orden de Compra instead of leaving it as a manual entry with no source.
-  purchaseOrderId?: string;
 }
 
 export interface PriceHistoryEntry {

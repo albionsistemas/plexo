@@ -7,8 +7,7 @@ import {
   type MovementType,
   type Warehouse,
 } from '@/lib/inventory';
-import { purchaseOrdersApi } from '@/lib/purchases';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import { useState } from 'react';
 
@@ -21,6 +20,17 @@ interface Props {
 const selectClass =
   'rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500';
 
+/** Freeform stock entry - NOT the way to receive against an Orden de
+ * Compra anymore (see PurchaseOrderDetailPanel's "Recibir mercadería" /
+ * ReceiveGoodsModal, which caps quantity at what's actually pending and
+ * reads cost from the order itself). This modal used to also offer an
+ * "Orden de Compra (opcional)" picker for PURCHASE_IN - it let anyone
+ * type any quantity against any order with no validation at all, which
+ * is exactly the bug that flow was built to close, so it was removed
+ * (2026-07-29) rather than left as a parallel, unguarded path. The
+ * backend rejects purchaseOrderId/goodsReceiptLineId on this endpoint
+ * too (InventoryController.recordMovement) - this isn't just a UI
+ * change, the loophole is closed server-side. */
 export default function StockMovementModal({ articles, warehouses, onClose }: Props) {
   const queryClient = useQueryClient();
 
@@ -37,22 +47,10 @@ export default function StockMovementModal({ articles, warehouses, onClose }: Pr
     type: 'PURCHASE_IN' as MovementType,
     quantity: '',
     unitCost: '',
-    purchaseOrderId: '',
   });
   const [error, setError] = useState('');
 
   const needsCost = form.type === 'PURCHASE_IN' || form.type === 'PRODUCTION_IN';
-  const isPurchase = form.type === 'PURCHASE_IN';
-
-  // Only relevant for PURCHASE_IN - ties this movement's cost history to a
-  // real comprobante instead of leaving it as a manual entry with no
-  // source (see InventoryService.recordMovement).
-  const purchaseOrdersQuery = useQuery({
-    queryKey: ['purchase-orders'],
-    queryFn: () => purchaseOrdersApi.list(),
-    enabled: isPurchase,
-  });
-  const openPurchaseOrders = (purchaseOrdersQuery.data ?? []).filter((po) => po.status !== 'CANCELLED');
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -62,7 +60,6 @@ export default function StockMovementModal({ articles, warehouses, onClose }: Pr
         type: form.type,
         quantity: Number(form.quantity),
         unitCost: needsCost ? Number(form.unitCost) : undefined,
-        purchaseOrderId: isPurchase && form.purchaseOrderId ? form.purchaseOrderId : undefined,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['inventory-articles'] });
@@ -93,6 +90,7 @@ export default function StockMovementModal({ articles, warehouses, onClose }: Pr
   }
 
   const isAdjustment = form.type === 'ADJUSTMENT';
+  const isPurchase = form.type === 'PURCHASE_IN';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -177,24 +175,11 @@ export default function StockMovementModal({ articles, warehouses, onClose }: Pr
           )}
 
           {isPurchase && (
-            <Field label="Orden de Compra (opcional)">
-              <select
-                className={selectClass}
-                value={form.purchaseOrderId}
-                onChange={(e) => setForm({ ...form, purchaseOrderId: e.target.value })}
-              >
-                <option value="">— Ninguna —</option>
-                {openPurchaseOrders.map((po) => (
-                  <option key={po.id} value={po.id}>
-                    {po.number} — {po.supplier.name}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-slate-500 dark:text-slate-500">
-                Si esta compra viene de una orden ya emitida, elegila acá para dejar registrado de dónde
-                salió el costo.
-              </p>
-            </Field>
+            <p className="text-xs text-slate-500 dark:text-slate-500">
+              ¿Esta compra viene de una Orden de Compra ya enviada? Usá "Recibir mercadería" desde el
+              detalle de esa orden en Compras, no este formulario — ahí el sistema valida la cantidad
+              contra lo pendiente y toma el costo de la orden.
+            </p>
           )}
 
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
