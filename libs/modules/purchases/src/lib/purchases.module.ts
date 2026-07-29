@@ -14,6 +14,7 @@ import { PurchasePreferencesController } from './purchase-preferences.controller
 import { PurchasePreferencesService } from './purchase-preferences.service.js';
 import { QuoteRequestController } from './quote-request.controller.js';
 import { QuoteRequestService } from './quote-request.service.js';
+import { SupplierReturnService } from './supplier-return.service.js';
 
 const logger = new Logger('PurchasesModule');
 
@@ -50,12 +51,20 @@ function createPurchaseEmailSender(): PurchaseEmailSender {
     PurchaseOrderService,
     GoodsReceiptService,
     GoodsReceiptAttachmentService,
+    SupplierReturnService,
     { provide: PURCHASE_EMAIL_SENDER, useFactory: createPurchaseEmailSender },
   ],
-  // GoodsReceiptService/GoodsReceiptAttachmentService have no controller of
-  // their own here - apps/api's GoodsReceiptsModule composes them with
-  // InventoryService (see that module's own doc comment for why that
-  // composition can't live inside this lib).
-  exports: [QuoteRequestService, PurchaseOrderService, GoodsReceiptService, GoodsReceiptAttachmentService],
+  // GoodsReceiptService/GoodsReceiptAttachmentService/SupplierReturnService
+  // have no controller of their own here - apps/api's GoodsReceiptsModule/
+  // SupplierReturnsModule compose them with InventoryService (see those
+  // modules' own doc comments for why that composition can't live inside
+  // this lib).
+  exports: [
+    QuoteRequestService,
+    PurchaseOrderService,
+    GoodsReceiptService,
+    GoodsReceiptAttachmentService,
+    SupplierReturnService,
+  ],
 })
 export class PurchasesModule {}

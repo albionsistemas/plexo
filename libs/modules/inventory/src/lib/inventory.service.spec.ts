@@ -79,6 +79,34 @@ describe('InventoryService.recordMovement', () => {
     );
   });
 
+  it('stamps a SUPPLIER_RETURN with the ledger avg cost without changing it, same as an outbound sale', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const create = jest.fn().mockResolvedValue({ id: 'movement-1' });
+    const findUnique = jest
+      .fn()
+      .mockResolvedValue({ quantity: new Prisma.Decimal(15), avgUnitCost: new Prisma.Decimal(50) });
+    const service = new InventoryService(makeEventEmitter());
+
+    await runInTenant(
+      { stockLedger: { updateMany, findUnique }, stockMovement: { create } },
+      () =>
+        service.recordMovement({
+          warehouseId: 'wh-1',
+          articleVariantId: 'variant-1',
+          type: 'SUPPLIER_RETURN',
+          quantity: 2,
+          goodsReceiptLineId: 'receipt-line-1',
+        }),
+    );
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { warehouseId: 'wh-1', articleVariantId: 'variant-1', quantity: { gte: 2 } },
+      data: { quantity: { increment: -2 } },
+    });
+    const created = create.mock.calls[0][0].data;
+    expect((created.unitCost as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(50);
+  });
+
   it('rejects a SALE_OUT when the atomic decrement matches zero rows (insufficient stock)', async () => {
     const updateMany = jest.fn().mockResolvedValue({ count: 0 });
     const create = jest.fn();

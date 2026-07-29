@@ -53,5 +53,7 @@ export type {
   PurchaseOrderLine,
   GoodsReceipt,
   GoodsReceiptLine,
+  SupplierReturn,
+  SupplierReturnLine,
 } from './generated/client.js';
 export * from './generated/enums.js';

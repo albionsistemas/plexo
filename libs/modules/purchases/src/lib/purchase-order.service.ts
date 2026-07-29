@@ -24,7 +24,35 @@ export const PURCHASE_ORDER_DETAIL_INCLUDE = {
   // Remitos logged against this order - see GoodsReceiptService. Newest
   // first so the detail panel shows the latest delivery on top.
   receipts: {
-    include: { lines: true, receivedBy: { select: { id: true, name: true, email: true } } },
+    include: {
+      // Pre-existing gap, found while building SupplierReturnModal (first
+      // consumer to actually read this nested field from this specific
+      // include path): this used to be a shallow `lines: true`, which
+      // never nested purchaseOrderLine - fine for GoodsReceiptService.
+      // create()'s own return value (that one uses a separate, correctly
+      // deep RECEIPT_DETAIL_INCLUDE), but silently wrong here since
+      // nothing had read receipt.lines[].purchaseOrderLine through THIS
+      // path until now.
+      lines: { include: { purchaseOrderLine: { select: { id: true, articleVariantId: true, unitCost: true } } } },
+      receivedBy: { select: { id: true, name: true, email: true } },
+      // Devoluciones a proveedor logged against this specific remito - see
+      // SupplierReturnService. Nested one level deeper than receipts
+      // because a return is always scoped to one receipt, never the whole
+      // order (see that service's own doc comment on why).
+      returns: {
+        include: {
+          lines: {
+            include: {
+              goodsReceiptLine: {
+                include: { purchaseOrderLine: { include: { articleVariant: { include: { article: true } } } } },
+              },
+            },
+          },
+          returnedBy: { select: { id: true, name: true, email: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
     orderBy: { receivedAt: 'desc' },
   },
 } satisfies Prisma.PurchaseOrderInclude;

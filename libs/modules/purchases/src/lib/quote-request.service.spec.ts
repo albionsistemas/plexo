@@ -149,7 +149,7 @@ describe('QuoteRequestService.convert', () => {
           }),
         ),
       },
-      goodsReceiptLine: { groupBy: jest.fn().mockResolvedValue([]) },
+      goodsReceiptLine: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const numbering = makeNumbering('OC-000005');
     const service = new QuoteRequestService(numbering, makePdfGenerator());

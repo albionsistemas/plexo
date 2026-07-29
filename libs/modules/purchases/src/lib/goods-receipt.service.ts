@@ -1,30 +1,44 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { getTenantDb, getTenantId, getUserId, Prisma } from '@plexo/database';
 import type { CreateGoodsReceiptDto } from './dto/create-goods-receipt.dto.js';
+import { getReturnedQuantitiesByGoodsReceiptLine } from './supplier-return.service.js';
 
 const RECEIPT_DETAIL_INCLUDE = {
   lines: { include: { purchaseOrderLine: { select: { id: true, articleVariantId: true, unitCost: true } } } },
   receivedBy: { select: { id: true, name: true, email: true } },
 } satisfies Prisma.GoodsReceiptInclude;
 
-/** Sum of what's already been received per PurchaseOrderLine, across every
- * GoodsReceipt ever logged against it - same shape as InvoicingService.
+/** Sum of what's already been received per PurchaseOrderLine, NET of
+ * anything sent back via SupplierReturn - same shape as InvoicingService.
  * createCreditNote's `alreadyCreditedByLine` (invoicing.service.ts), just
  * for remitos instead of partial credit notes. Exported so
  * PurchaseOrderService can reuse it for display (receivedQuantity/
- * pendingQuantity per line) without duplicating the aggregate query. */
+ * pendingQuantity per line) without duplicating the aggregate query.
+ *
+ * A return is recorded against a specific GoodsReceiptLine (see
+ * SupplierReturnService), one level below PurchaseOrderLine - can't do
+ * this as a single groupBy like before, need each receipt line's own id to
+ * net its returns against it before rolling up to the PO line. */
 export async function getReceivedQuantitiesByLine(
   purchaseOrderLineIds: string[],
 ): Promise<Map<string, Prisma.Decimal>> {
   if (purchaseOrderLineIds.length === 0) {
     return new Map();
   }
-  const rows = await getTenantDb().goodsReceiptLine.groupBy({
-    by: ['purchaseOrderLineId'],
+  const receiptLines = await getTenantDb().goodsReceiptLine.findMany({
     where: { purchaseOrderLineId: { in: purchaseOrderLineIds } },
-    _sum: { quantity: true },
+    select: { id: true, purchaseOrderLineId: true, quantity: true },
   });
-  return new Map(rows.map((row) => [row.purchaseOrderLineId, row._sum.quantity ?? new Prisma.Decimal(0)]));
+  const returnedByReceiptLine = await getReturnedQuantitiesByGoodsReceiptLine(receiptLines.map((l) => l.id));
+
+  const netByPurchaseOrderLine = new Map<string, Prisma.Decimal>();
+  for (const receiptLine of receiptLines) {
+    const returned = returnedByReceiptLine.get(receiptLine.id) ?? new Prisma.Decimal(0);
+    const net = receiptLine.quantity.sub(returned);
+    const prior = netByPurchaseOrderLine.get(receiptLine.purchaseOrderLineId) ?? new Prisma.Decimal(0);
+    netByPurchaseOrderLine.set(receiptLine.purchaseOrderLineId, prior.add(net));
+  }
+  return netByPurchaseOrderLine;
 }
 
 /**

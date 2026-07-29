@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import ReceiveGoodsModal from './ReceiveGoodsModal';
 import SendPurchaseOrderDialog from './SendPurchaseOrderDialog';
+import SupplierReturnModal from './SupplierReturnModal';
 
 interface Props {
   purchaseOrderId: string;
@@ -32,6 +33,7 @@ export default function PurchaseOrderDetailPanel({ purchaseOrderId, onClose }: P
   const [pdfStyle, setPdfStyle] = useState<PdfStyle>('MODERNO');
   const [sending, setSending] = useState(false);
   const [receiving, setReceiving] = useState(false);
+  const [returningReceiptId, setReturningReceiptId] = useState<string | null>(null);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setVisible(true));
@@ -183,6 +185,27 @@ export default function PurchaseOrderDetailPanel({ purchaseOrderId, onClose }: P
                         {receipt.receivedBy.name ?? receipt.receivedBy.email}
                       </p>
                       {receipt.notes && <p className="mt-1 text-slate-600 dark:text-slate-400">{receipt.notes}</p>}
+
+                      {receipt.returns.length > 0 && (
+                        <div className="mt-2 flex flex-col gap-1 border-t border-slate-200/50 dark:border-slate-800/50 pt-2">
+                          {receipt.returns.map((ret) => (
+                            <p key={ret.id} className="text-amber-700 dark:text-amber-400">
+                              Devuelto{' '}
+                              {new Date(ret.createdAt).toLocaleDateString('es-AR', { timeZone: 'UTC' })}: {ret.reason}
+                              {' · '}
+                              {ret.returnedBy.name ?? ret.returnedBy.email}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setReturningReceiptId(receipt.id)}
+                        className="mt-2 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                      >
+                        Devolver mercadería
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -264,6 +287,22 @@ export default function PurchaseOrderDetailPanel({ purchaseOrderId, onClose }: P
       )}
 
       {receiving && data && <ReceiveGoodsModal purchaseOrder={data} onClose={() => setReceiving(false)} />}
+
+      {returningReceiptId &&
+        data &&
+        (() => {
+          const receipt = data.receipts.find((r) => r.id === returningReceiptId);
+          return (
+            receipt && (
+              <SupplierReturnModal
+                purchaseOrderId={purchaseOrderId}
+                receipt={receipt}
+                orderLines={data.lines}
+                onClose={() => setReturningReceiptId(null)}
+              />
+            )
+          );
+        })()}
     </div>
   );
 }

@@ -18,7 +18,11 @@ function makeDb(overrides: Record<string, unknown> = {}) {
     purchaseOrder: { findUnique: jest.fn().mockResolvedValue(makeSentOrder([{ id: 'line-1', quantity: 200 }])) },
     warehouse: { findUnique: jest.fn().mockResolvedValue({ id: 'warehouse-1' }) },
     $queryRaw: jest.fn().mockResolvedValue(undefined),
-    goodsReceiptLine: { groupBy: jest.fn().mockResolvedValue([]) },
+    goodsReceiptLine: { findMany: jest.fn().mockResolvedValue([]) },
+    // Nothing returned to the supplier yet, by default - only reached when
+    // goodsReceiptLine.findMany above returns rows (see the empty-array
+    // guard in getReturnedQuantitiesByGoodsReceiptLine).
+    supplierReturnLine: { groupBy: jest.fn().mockResolvedValue([]) },
     goodsReceipt: {
       create: jest.fn((args) =>
         Promise.resolve({
@@ -34,6 +38,13 @@ function makeDb(overrides: Record<string, unknown> = {}) {
     },
     ...overrides,
   };
+}
+
+/** Shorthand for the "X already received on this line" mock shape -
+ * getReceivedQuantitiesByLine reads real GoodsReceiptLine rows now (not a
+ * groupBy), since it has to net out per-line returns before rolling up. */
+function makeExistingReceiptLine(purchaseOrderLineId: string, quantity: number) {
+  return { id: `existing-${purchaseOrderLineId}`, purchaseOrderLineId, quantity: new Prisma.Decimal(quantity) };
 }
 
 describe('GoodsReceiptService.create', () => {
@@ -64,9 +75,7 @@ describe('GoodsReceiptService.create', () => {
   it('allows a second partial receipt that exactly completes what is pending', async () => {
     const db = makeDb({
       // 120 already received - only 80 left of the 200 ordered.
-      goodsReceiptLine: {
-        groupBy: jest.fn().mockResolvedValue([{ purchaseOrderLineId: 'line-1', _sum: { quantity: new Prisma.Decimal(120) } }]),
-      },
+      goodsReceiptLine: { findMany: jest.fn().mockResolvedValue([makeExistingReceiptLine('line-1', 120)]) },
     });
     const service = new GoodsReceiptService();
 
@@ -83,9 +92,7 @@ describe('GoodsReceiptService.create', () => {
 
   it('rejects a receipt that would exceed what is still pending, with the remaining amount in the message', async () => {
     const db = makeDb({
-      goodsReceiptLine: {
-        groupBy: jest.fn().mockResolvedValue([{ purchaseOrderLineId: 'line-1', _sum: { quantity: new Prisma.Decimal(120) } }]),
-      },
+      goodsReceiptLine: { findMany: jest.fn().mockResolvedValue([makeExistingReceiptLine('line-1', 120)]) },
     });
     const service = new GoodsReceiptService();
 
@@ -99,6 +106,30 @@ describe('GoodsReceiptService.create', () => {
       ),
     ).rejects.toThrow('only 80 left to receive');
     expect(db.goodsReceipt.create).not.toHaveBeenCalled();
+  });
+
+  it('counts a supplier return against the same receipt line back toward pending (received net of returned)', async () => {
+    const db = makeDb({
+      // 200 received on line-1, but 50 of it was returned to the supplier -
+      // net received is 150, so 50 should still be receivable.
+      goodsReceiptLine: { findMany: jest.fn().mockResolvedValue([makeExistingReceiptLine('line-1', 200)]) },
+      supplierReturnLine: {
+        groupBy: jest.fn().mockResolvedValue([
+          { goodsReceiptLineId: 'existing-line-1', _sum: { quantity: new Prisma.Decimal(50) } },
+        ]),
+      },
+    });
+    const service = new GoodsReceiptService();
+
+    await runAsUser(db, () =>
+      service.create({
+        purchaseOrderId: 'po-1',
+        warehouseId: 'warehouse-1',
+        lines: [{ purchaseOrderLineId: 'line-1', quantity: 50 }],
+      }),
+    );
+
+    expect(db.goodsReceipt.create).toHaveBeenCalled();
   });
 
   it('rejects receiving against an order that is not SENT', async () => {

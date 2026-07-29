@@ -357,10 +357,11 @@ export class InventoryService {
     let stampedUnitCost: Prisma.Decimal | null = null;
 
     if (delta < 0) {
-      if (dto.type === 'SALE_OUT' || dto.type === 'PRODUCTION_OUT') {
+      if (dto.type === 'SALE_OUT' || dto.type === 'PRODUCTION_OUT' || dto.type === 'SUPPLIER_RETURN') {
         // Outbound never changes the average - it just consumes at
         // whatever it currently is, and that's what gets stamped on the
-        // movement so SalesService can compute COGS from it later.
+        // movement (SalesService reads it back for COGS; a SUPPLIER_RETURN
+        // just keeps a record of what those units were valued at).
         stampedUnitCost = priorLedger?.avgUnitCost ?? null;
       }
 

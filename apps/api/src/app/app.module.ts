@@ -23,6 +23,7 @@ import { DashboardModule } from './dashboard/dashboard.module.js';
 import { GoodsReceiptsModule } from './goods-receipts/goods-receipts.module.js';
 import { SalesModule } from './sales/sales.module.js';
 import { SchedulerModule } from './scheduler/scheduler.module.js';
+import { SupplierReturnsModule } from './supplier-returns/supplier-returns.module.js';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { SchedulerModule } from './scheduler/scheduler.module.js';
     ActivityLogModule,
     PurchasesModule,
     GoodsReceiptsModule,
+    SupplierReturnsModule,
   ],
   controllers: [AppController],
   providers: [

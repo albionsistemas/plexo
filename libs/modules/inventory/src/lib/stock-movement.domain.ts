@@ -11,6 +11,7 @@ export function computeStockDelta(type: MovementType, quantity: number): number 
   switch (type) {
     case 'SALE_OUT':
     case 'PRODUCTION_OUT':
+    case 'SUPPLIER_RETURN':
       return -quantity;
     case 'PURCHASE_IN':
     case 'RETURN':

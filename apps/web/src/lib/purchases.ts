@@ -59,6 +59,21 @@ export interface GoodsReceiptLineDetail {
   purchaseOrderLine: { id: string; articleVariantId: string; unitCost: string };
 }
 
+export interface SupplierReturnLineDetail {
+  id: string;
+  quantity: string;
+  goodsReceiptLineId: string;
+}
+
+export interface SupplierReturnDetail {
+  id: string;
+  reason: string;
+  notes: string | null;
+  createdAt: string;
+  returnedBy: { id: string; name: string | null; email: string };
+  lines: SupplierReturnLineDetail[];
+}
+
 export interface GoodsReceiptDetail {
   id: string;
   supplierDocNumber: string | null;
@@ -67,6 +82,7 @@ export interface GoodsReceiptDetail {
   notes: string | null;
   receivedBy: { id: string; name: string | null; email: string };
   lines: GoodsReceiptLineDetail[];
+  returns: SupplierReturnDetail[];
 }
 
 export interface QuoteRequestLineInput {
@@ -243,6 +259,18 @@ export interface CreateGoodsReceiptInput {
   lines: GoodsReceiptLineInput[];
 }
 
+export interface SupplierReturnLineInput {
+  goodsReceiptLineId: string;
+  quantity: number;
+}
+
+export interface CreateSupplierReturnInput {
+  goodsReceiptId: string;
+  reason: string;
+  notes?: string;
+  lines: SupplierReturnLineInput[];
+}
+
 /** GET .../pdf needs the Authorization header, so a plain <a href> or
  * window.open(url) won't work (no way to attach a header to a bare
  * navigation) - fetch as a blob through axios (which does attach it via
@@ -333,4 +361,9 @@ export const goodsReceiptsApi = {
       .post<GoodsReceiptDetail>(`/purchases/goods-receipts/${receiptId}/attachment`, formData)
       .then((r) => r.data);
   },
+};
+
+export const supplierReturnsApi = {
+  create: (dto: CreateSupplierReturnInput) =>
+    api.post<SupplierReturnDetail>('/purchases/supplier-returns', dto).then((r) => r.data),
 };

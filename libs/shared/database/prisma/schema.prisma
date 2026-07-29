@@ -51,6 +51,11 @@ enum MovementType {
   ADJUSTMENT
   PRODUCTION_IN
   PRODUCTION_OUT
+  // Outbound - stock leaving because it's going back to the supplier (e.g.
+  // defective units). Opposite direction of RETURN, which is inbound
+  // (restocking after a customer credit note) - kept as a separate value
+  // instead of reusing RETURN so computeStockDelta's sign isn't ambiguous.
+  SUPPLIER_RETURN
 }
 
 enum AuditAction {
@@ -202,6 +207,7 @@ model User {
   createdQuoteRequests  QuoteRequest[]
   createdPurchaseOrders PurchaseOrder[]
   receivedGoodsReceipts GoodsReceipt[]
+  returnedSupplierReturns SupplierReturn[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -1219,6 +1225,7 @@ model GoodsReceipt {
   createdAt         DateTime @default(now())
 
   lines GoodsReceiptLine[]
+  returns SupplierReturn[]
 
   @@index([tenantId, purchaseOrderId])
   @@map("goods_receipts")
@@ -1233,9 +1240,50 @@ model GoodsReceiptLine {
   purchaseOrderLine   PurchaseOrderLine @relation(fields: [purchaseOrderLineId], references: [id])
   quantity            Decimal           @db.Decimal(14, 3)
 
-  stockMovements StockMovement[]
+  stockMovements      StockMovement[]
+  supplierReturnLines SupplierReturnLine[]
 
   @@index([tenantId])
   @@index([purchaseOrderLineId])
   @@map("goods_receipt_lines")
+}
+
+// Goods sent back to the supplier out of a specific remito (e.g. a
+// defective unit) - always scoped to one GoodsReceipt, same reasoning as
+// GoodsReceipt itself being scoped to one warehouse: no depósito/receipt
+// picker here, it's implied by which remito the returned line belongs to.
+// Reopens "pending" on the PurchaseOrder line it traces back to (see
+// GoodsReceiptService.getReceivedQuantitiesByLine, which nets returns out
+// of received) - a supplier owing replacement units shows up the same way
+// a partial delivery does.
+model SupplierReturn {
+  id               String   @id @default(uuid())
+  tenantId         String
+  goodsReceiptId   String
+  goodsReceipt     GoodsReceipt @relation(fields: [goodsReceiptId], references: [id])
+  // Why it's being returned - required, same criterion as CreditNote.reason.
+  reason           String
+  notes            String?
+  returnedByUserId String
+  returnedBy       User     @relation(fields: [returnedByUserId], references: [id])
+  createdAt        DateTime @default(now())
+
+  lines SupplierReturnLine[]
+
+  @@index([tenantId, goodsReceiptId])
+  @@map("supplier_returns")
+}
+
+model SupplierReturnLine {
+  id                 String           @id @default(uuid())
+  tenantId           String
+  supplierReturnId   String
+  supplierReturn     SupplierReturn   @relation(fields: [supplierReturnId], references: [id])
+  goodsReceiptLineId String
+  goodsReceiptLine   GoodsReceiptLine @relation(fields: [goodsReceiptLineId], references: [id])
+  quantity           Decimal          @db.Decimal(14, 3)
+
+  @@index([tenantId])
+  @@index([goodsReceiptLineId])
+  @@map("supplier_return_lines")
 }
