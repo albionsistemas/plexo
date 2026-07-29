@@ -134,13 +134,22 @@ describe('QuoteRequestService.convert', () => {
           deliveryTimeId: null,
           notes: 'urgente',
           status: 'DRAFT',
-          lines: [{ articleVariantId: 'variant-1', quantity: 3, estimatedUnitCost: new Prisma.Decimal(15), notes: null }],
+          lines: [{ articleVariantId: 'variant-1', quantity: new Prisma.Decimal(3), estimatedUnitCost: new Prisma.Decimal(15), notes: null }],
         }),
         update: jest.fn().mockResolvedValue({}),
       },
       purchaseOrder: {
-        create: jest.fn((args) => Promise.resolve({ id: 'po-1', ...args.data })),
+        create: jest.fn((args) =>
+          Promise.resolve({
+            id: 'po-1',
+            ...args.data,
+            lines: args.data.lines.createMany.data.map(
+              (l: Record<string, unknown>, i: number) => ({ id: `line-${i + 1}`, ...l }),
+            ),
+          }),
+        ),
       },
+      goodsReceiptLine: { groupBy: jest.fn().mockResolvedValue([]) },
     };
     const numbering = makeNumbering('OC-000005');
     const service = new QuoteRequestService(numbering, makePdfGenerator());

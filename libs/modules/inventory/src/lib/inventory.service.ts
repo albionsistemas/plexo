@@ -432,6 +432,7 @@ export class InventoryService {
         sourceId: dto.purchaseOrderId ?? dto.sourceId,
         invoiceId: dto.invoiceId,
         invoiceLineId: dto.invoiceLineId,
+        goodsReceiptLineId: dto.goodsReceiptLineId,
       },
     });
 

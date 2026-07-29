@@ -1,6 +1,6 @@
 'use client';
 
-import { purchaseOrdersApi } from '@/lib/purchases';
+import { describeReceiptStatus, purchaseOrdersApi } from '@/lib/purchases';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import PurchaseOrderDetailPanel from './PurchaseOrderDetailPanel';
@@ -68,9 +68,21 @@ export default function OrdenesTab() {
                     {new Date(po.createdAt).toLocaleDateString('es-AR')}
                   </td>
                   <td className="p-3">
-                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[po.status]}`}>
-                      {STATUS_LABELS[po.status] ?? po.status}
-                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[po.status]}`}>
+                        {STATUS_LABELS[po.status] ?? po.status}
+                      </span>
+                      {(() => {
+                        const receipt = describeReceiptStatus(po);
+                        return (
+                          receipt && (
+                            <span className={`rounded px-2 py-0.5 text-xs font-medium ${receipt.colorClass}`}>
+                              {receipt.label}
+                            </span>
+                          )
+                        );
+                      })()}
+                    </div>
                   </td>
                   <td className="p-3 text-slate-600 dark:text-slate-400">
                     {po.sentVia ? CHANNEL_LABELS[po.sentVia] ?? po.sentVia : '—'}

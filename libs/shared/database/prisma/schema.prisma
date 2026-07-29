@@ -201,6 +201,7 @@ model User {
   createdJournalEntries JournalEntry[]
   createdQuoteRequests  QuoteRequest[]
   createdPurchaseOrders PurchaseOrder[]
+  receivedGoodsReceipts GoodsReceipt[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -527,9 +528,10 @@ model Warehouse {
   name     String
   location String?
 
-  stockLedger   StockLedger[]
-  minimumStocks MinimumStock[]
-  movements     StockMovement[]
+  stockLedger    StockLedger[]
+  minimumStocks  MinimumStock[]
+  movements      StockMovement[]
+  goodsReceipts  GoodsReceipt[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -604,6 +606,12 @@ model StockMovement {
   // PURCHASE_IN/ADJUSTMENT/etc.).
   invoiceLineId    String?
   invoiceLine      InvoiceLine?   @relation(fields: [invoiceLineId], references: [id])
+  // Which GoodsReceiptLine (remito) this PURCHASE_IN movement came from -
+  // same role as invoiceLineId above but for the purchases side. Set by
+  // GoodsReceiptsService (apps/api) when it drives recordMovement() per
+  // line of a received remito. Null for movements entered manually.
+  goodsReceiptLineId String?
+  goodsReceiptLine   GoodsReceiptLine? @relation(fields: [goodsReceiptLineId], references: [id])
   createdAt        DateTime       @default(now())
 
   @@index([tenantId])
@@ -1156,6 +1164,9 @@ model PurchaseOrder {
   // PURCHASE_IN stock movement referenced this order - see
   // InventoryService.recordMovement.
   priceHistoryEntries PriceHistory[]
+  // Remitos (goods receipts) recorded against this order - see
+  // GoodsReceiptService. Zero, one, or many (partial deliveries).
+  receipts            GoodsReceipt[]
 
   @@unique([tenantId, number])
   @@index([tenantId, supplierId])
@@ -1173,6 +1184,58 @@ model PurchaseOrderLine {
   unitCost         Decimal        @db.Decimal(14, 2)
   notes            String?
 
+  goodsReceiptLines GoodsReceiptLine[]
+
   @@index([tenantId])
   @@map("purchase_order_lines")
+}
+
+// A single delivery event against a PurchaseOrder - "remito" in Argentine
+// terminology. Quantity-only per line on purpose: a supplier's delivery
+// note never carries price, the cost already lives on PurchaseOrderLine.
+// unitCost (see GoodsReceiptService, which reads it instead of asking the
+// user again). One warehouse per receipt - a delivery physically arrives
+// at one location; a supplier splitting a delivery across warehouses is
+// two receipts, not one with per-line warehouses.
+model GoodsReceipt {
+  id              String   @id @default(uuid())
+  tenantId        String
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  warehouseId     String
+  warehouse       Warehouse     @relation(fields: [warehouseId], references: [id])
+  // Free text - the supplier's own remito/comprobante number, not a Plexo-
+  // generated series (unlike QuoteRequest.number/PurchaseOrder.number).
+  supplierDocNumber String?
+  // Photo or scan of the supplier's remito - same pattern as
+  // Article.imageUrl/ArticleImageService (uploads/, served unauthenticated
+  // via @fastify/static's generic /uploads/ prefix), but also allows PDF
+  // (a remito is commonly scanned as one, not just photographed).
+  attachmentUrl     String?
+  receivedAt        DateTime @default(now())
+  notes             String?
+  receivedByUserId  String
+  receivedBy        User     @relation(fields: [receivedByUserId], references: [id])
+  createdAt         DateTime @default(now())
+
+  lines GoodsReceiptLine[]
+
+  @@index([tenantId, purchaseOrderId])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptLine {
+  id                  String            @id @default(uuid())
+  tenantId            String
+  goodsReceiptId      String
+  goodsReceipt        GoodsReceipt      @relation(fields: [goodsReceiptId], references: [id])
+  purchaseOrderLineId String
+  purchaseOrderLine   PurchaseOrderLine @relation(fields: [purchaseOrderLineId], references: [id])
+  quantity            Decimal           @db.Decimal(14, 3)
+
+  stockMovements StockMovement[]
+
+  @@index([tenantId])
+  @@index([purchaseOrderLineId])
+  @@map("goods_receipt_lines")
 }

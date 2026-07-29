@@ -4,6 +4,7 @@ import type { PdfStyle, PurchaseDocumentStatus, PurchaseSendChannel } from '@ple
 import type { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto.js';
 import type { UpdatePurchaseOrderDto } from './dto/update-purchase-order.dto.js';
 import { PURCHASE_EMAIL_SENDER, type PurchaseEmailSender } from './email/purchase-email-sender.port.js';
+import { getReceivedQuantitiesByLine } from './goods-receipt.service.js';
 import { buildPurchaseDocumentPdfData } from './pdf/build-pdf-data.js';
 import { PdfGeneratorService } from './pdf/pdf-generator.service.js';
 import { PurchaseNumberingService } from './purchase-numbering.service.js';
@@ -20,6 +21,12 @@ export const PURCHASE_ORDER_DETAIL_INCLUDE = {
   paymentTerm: true,
   deliveryTime: true,
   createdBy: { select: { id: true, name: true, email: true } },
+  // Remitos logged against this order - see GoodsReceiptService. Newest
+  // first so the detail panel shows the latest delivery on top.
+  receipts: {
+    include: { lines: true, receivedBy: { select: { id: true, name: true, email: true } } },
+    orderBy: { receivedAt: 'desc' },
+  },
 } satisfies Prisma.PurchaseOrderInclude;
 const DETAIL_INCLUDE = PURCHASE_ORDER_DETAIL_INCLUDE;
 
@@ -29,9 +36,34 @@ const LIST_INCLUDE = {
   currency: { select: { code: true } },
 } satisfies Prisma.PurchaseOrderInclude;
 
+type RawPurchaseOrderListRow = Prisma.PurchaseOrderGetPayload<{ include: typeof LIST_INCLUDE }>;
+type RawPurchaseOrderDetail = Prisma.PurchaseOrderGetPayload<{ include: typeof DETAIL_INCLUDE }>;
+
+/** Every PurchaseOrderLine, whatever shape it's fetched in, gains
+ * receivedQuantity/pendingQuantity derived from GoodsReceiptLine - never
+ * stored (see GoodsReceipt's schema comment on why: avoids a cached
+ * counter that could drift). Used by list()/get() below and by
+ * QuoteRequestService.convert() (a freshly-issued order has nothing
+ * received yet, but the frontend type expects the fields regardless of
+ * which endpoint produced the order). */
+export async function attachReceivingInfo<T extends { id: string; quantity: Prisma.Decimal }>(
+  lines: T[],
+): Promise<(T & { receivedQuantity: Prisma.Decimal; pendingQuantity: Prisma.Decimal })[]> {
+  const received = await getReceivedQuantitiesByLine(lines.map((l) => l.id));
+  return lines.map((line) => {
+    const receivedQuantity = received.get(line.id) ?? new Prisma.Decimal(0);
+    return { ...line, receivedQuantity, pendingQuantity: line.quantity.sub(receivedQuantity) };
+  });
+}
+
 // See QuoteRequestListRow's comment - tsc needs an explicit, nameable
 // return type to emit a .d.ts for this method.
-export type PurchaseOrderListRow = Prisma.PurchaseOrderGetPayload<{ include: typeof LIST_INCLUDE }>;
+export type PurchaseOrderListRow = Omit<RawPurchaseOrderListRow, 'lines'> & {
+  lines: Awaited<ReturnType<typeof attachReceivingInfo<RawPurchaseOrderListRow['lines'][number]>>>;
+};
+export type PurchaseOrderDetail = Omit<RawPurchaseOrderDetail, 'lines'> & {
+  lines: Awaited<ReturnType<typeof attachReceivingInfo<RawPurchaseOrderDetail['lines'][number]>>>;
+};
 
 @Injectable()
 export class PurchaseOrderService {
@@ -41,16 +73,20 @@ export class PurchaseOrderService {
     @Inject(PURCHASE_EMAIL_SENDER) private readonly emailSender: PurchaseEmailSender,
   ) {}
 
-  list(status?: PurchaseDocumentStatus, supplierId?: string): Promise<PurchaseOrderListRow[]> {
-    return getTenantDb().purchaseOrder.findMany({
+  async list(status?: PurchaseDocumentStatus, supplierId?: string): Promise<PurchaseOrderListRow[]> {
+    const orders = await getTenantDb().purchaseOrder.findMany({
       where: { status, supplierId },
       include: LIST_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
+    return Promise.all(
+      orders.map(async (order) => ({ ...order, lines: await attachReceivingInfo(order.lines) })),
+    );
   }
 
-  get(id: string) {
-    return this.findOrThrow(id);
+  async get(id: string): Promise<PurchaseOrderDetail> {
+    const order = await this.findOrThrow(id);
+    return { ...order, lines: await attachReceivingInfo(order.lines) };
   }
 
   async create(dto: CreatePurchaseOrderDto) {

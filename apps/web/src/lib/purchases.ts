@@ -46,6 +46,27 @@ export interface QuoteRequestLineDetail extends LineDetail {
 
 export interface PurchaseOrderLineDetail extends LineDetail {
   unitCost: string;
+  // Derived (never stored) - sum of GoodsReceiptLine.quantity logged
+  // against this line so far, and what's still left to receive. See
+  // PurchaseOrderService.attachReceivingInfo on the backend.
+  receivedQuantity: string;
+  pendingQuantity: string;
+}
+
+export interface GoodsReceiptLineDetail {
+  id: string;
+  quantity: string;
+  purchaseOrderLine: { id: string; articleVariantId: string; unitCost: string };
+}
+
+export interface GoodsReceiptDetail {
+  id: string;
+  supplierDocNumber: string | null;
+  attachmentUrl: string | null;
+  receivedAt: string;
+  notes: string | null;
+  receivedBy: { id: string; name: string | null; email: string };
+  lines: GoodsReceiptLineDetail[];
 }
 
 export interface QuoteRequestLineInput {
@@ -137,7 +158,27 @@ export interface PurchaseOrderSummary {
   createdAt: string;
   supplier: { id: string; name: string };
   currency: { code: string };
-  lines: { id: string }[];
+  lines: { id: string; quantity: string; receivedQuantity: string; pendingQuantity: string }[];
+}
+
+/** "Recibida total"/"Recibida parcial"/null (nothing received yet) -
+ * derived client-side from the same lines the table already has, same
+ * criterion as describeQuoteRequestStatus above (no backend enum for
+ * this - see GoodsReceipt's schema comment on why it's always derived). */
+export function describeReceiptStatus(
+  order: Pick<PurchaseOrderSummary, 'status' | 'lines'>,
+): { label: string; colorClass: string } | null {
+  if (order.status !== 'SENT') {
+    return null;
+  }
+  const totalPending = order.lines.reduce((sum, l) => sum + Number(l.pendingQuantity), 0);
+  const totalReceived = order.lines.reduce((sum, l) => sum + Number(l.receivedQuantity), 0);
+  if (totalReceived === 0) {
+    return null;
+  }
+  return totalPending <= 0
+    ? { label: 'Recibida total', colorClass: STATUS_COLOR_CLASSES.COMPRADO }
+    : { label: 'Recibida parcial', colorClass: STATUS_COLOR_CLASSES.ENVIADO };
 }
 
 export interface PurchaseOrderDetail {
@@ -156,6 +197,7 @@ export interface PurchaseOrderDetail {
   deliveryTime: CatalogRef | null;
   quoteRequest: { id: string; number: string } | null;
   lines: PurchaseOrderLineDetail[];
+  receipts: GoodsReceiptDetail[];
 }
 
 export interface PurchasePreferences {
@@ -185,6 +227,20 @@ export interface CreatePurchaseOrderInput {
   deliveryTimeId?: string;
   notes?: string;
   lines: PurchaseOrderLineInput[];
+}
+
+export interface GoodsReceiptLineInput {
+  purchaseOrderLineId: string;
+  quantity: number;
+}
+
+export interface CreateGoodsReceiptInput {
+  purchaseOrderId: string;
+  warehouseId: string;
+  supplierDocNumber?: string;
+  receivedAt?: string;
+  notes?: string;
+  lines: GoodsReceiptLineInput[];
 }
 
 /** GET .../pdf needs the Authorization header, so a plain <a href> or
@@ -265,4 +321,16 @@ export const purchaseOrdersApi = {
   markSentWhatsapp: (id: string) =>
     api.post<PurchaseOrderDetail>(`/purchases/purchase-orders/${id}/mark-sent-whatsapp`).then((r) => r.data),
   openPdf: (id: string, style?: PdfStyle) => openPdf(`/purchases/purchase-orders/${id}/pdf`, style),
+};
+
+export const goodsReceiptsApi = {
+  create: (dto: CreateGoodsReceiptInput) =>
+    api.post<GoodsReceiptDetail>('/purchases/goods-receipts', dto).then((r) => r.data),
+  uploadAttachment: (receiptId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api
+      .post<GoodsReceiptDetail>(`/purchases/goods-receipts/${receiptId}/attachment`, formData)
+      .then((r) => r.data);
+  },
 };

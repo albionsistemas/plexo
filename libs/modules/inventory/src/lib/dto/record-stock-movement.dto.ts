@@ -51,4 +51,14 @@ export class RecordStockMovementDto {
   @IsOptional()
   @IsUUID()
   purchaseOrderId?: string;
+
+  // Which GoodsReceiptLine (remito) this movement came from - set by
+  // GoodsReceiptsService (apps/api) when a received delivery drives this
+  // PURCHASE_IN. Same traceability role as invoiceLineId above, just for
+  // the purchases side. Not validated against purchaseOrderId here (the
+  // caller already validated the whole receipt against its order before
+  // calling recordMovement per line).
+  @IsOptional()
+  @IsUUID()
+  goodsReceiptLineId?: string;
 }

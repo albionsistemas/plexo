@@ -1,8 +1,10 @@
 'use client';
 
+import { resolveUploadUrl } from '@/lib/inventory';
 import { PDF_STYLES, purchaseOrdersApi, purchasePreferencesApi, type PdfStyle } from '@/lib/purchases';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import ReceiveGoodsModal from './ReceiveGoodsModal';
 import SendPurchaseOrderDialog from './SendPurchaseOrderDialog';
 
 interface Props {
@@ -29,6 +31,7 @@ export default function PurchaseOrderDetailPanel({ purchaseOrderId, onClose }: P
   const [visible, setVisible] = useState(false);
   const [pdfStyle, setPdfStyle] = useState<PdfStyle>('MODERNO');
   const [sending, setSending] = useState(false);
+  const [receiving, setReceiving] = useState(false);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setVisible(true));
@@ -108,6 +111,8 @@ export default function PurchaseOrderDetailPanel({ purchaseOrderId, onClose }: P
                       <th className="p-2">Artículo</th>
                       <th className="p-2 text-right">Cant.</th>
                       <th className="p-2 text-right">Costo</th>
+                      <th className="p-2 text-right">Recibido</th>
+                      <th className="p-2 text-right">Pendiente</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -120,6 +125,12 @@ export default function PurchaseOrderDetailPanel({ purchaseOrderId, onClose }: P
                         <td className="p-2 text-right text-slate-700 dark:text-slate-300">{line.quantity}</td>
                         <td className="p-2 text-right text-slate-700 dark:text-slate-300">
                           ${Number(line.unitCost).toFixed(2)}
+                        </td>
+                        <td className="p-2 text-right text-slate-700 dark:text-slate-300">{line.receivedQuantity}</td>
+                        <td
+                          className={`p-2 text-right ${Number(line.pendingQuantity) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}`}
+                        >
+                          {line.pendingQuantity}
                         </td>
                       </tr>
                     ))}
@@ -135,6 +146,46 @@ export default function PurchaseOrderDetailPanel({ purchaseOrderId, onClose }: P
               <section>
                 <h3 className="mb-1 text-sm font-medium text-slate-600 dark:text-slate-400">Notas</h3>
                 <p className="text-sm text-slate-700 dark:text-slate-300">{data.notes}</p>
+              </section>
+            )}
+
+            {data.receipts.length > 0 && (
+              <section>
+                <h3 className="mb-2 text-sm font-medium text-slate-600 dark:text-slate-400">Recepciones</h3>
+                <div className="flex flex-col gap-2">
+                  {data.receipts.map((receipt) => (
+                    <div
+                      key={receipt.id}
+                      className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className="text-slate-800 dark:text-slate-200">
+                          {/* receivedAt comes from a date-only <input type="date"> (ReceiveGoodsModal),
+                              stored as UTC midnight - display with timeZone: 'UTC' too, otherwise a
+                              viewer behind UTC (e.g. Argentina) sees it roll back a day. Same pitfall
+                              already fixed once for Reportes' date-range filters (see PROGRESS.md). */}
+                          {new Date(receipt.receivedAt).toLocaleDateString('es-AR', { timeZone: 'UTC' })}
+                          {receipt.supplierDocNumber && ` — Remito ${receipt.supplierDocNumber}`}
+                        </p>
+                        {receipt.attachmentUrl && (
+                          <a
+                            href={resolveUploadUrl(receipt.attachmentUrl) ?? '#'}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                          >
+                            Ver comprobante
+                          </a>
+                        )}
+                      </div>
+                      <p className="mt-1 text-slate-500">
+                        {receipt.lines.length} línea{receipt.lines.length === 1 ? '' : 's'} · recibido por{' '}
+                        {receipt.receivedBy.name ?? receipt.receivedBy.email}
+                      </p>
+                      {receipt.notes && <p className="mt-1 text-slate-600 dark:text-slate-400">{receipt.notes}</p>}
+                    </div>
+                  ))}
+                </div>
               </section>
             )}
 
@@ -172,6 +223,15 @@ export default function PurchaseOrderDetailPanel({ purchaseOrderId, onClose }: P
                   >
                     {data.sentAt ? 'Reenviar' : 'Enviar'}
                   </button>
+                  {data.status === 'SENT' && data.lines.some((l) => Number(l.pendingQuantity) > 0) && (
+                    <button
+                      type="button"
+                      onClick={() => setReceiving(true)}
+                      className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-green-500"
+                    >
+                      Recibir mercadería
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => cancelMutation.mutate()}
@@ -202,6 +262,8 @@ export default function PurchaseOrderDetailPanel({ purchaseOrderId, onClose }: P
           }}
         />
       )}
+
+      {receiving && data && <ReceiveGoodsModal purchaseOrder={data} onClose={() => setReceiving(false)} />}
     </div>
   );
 }

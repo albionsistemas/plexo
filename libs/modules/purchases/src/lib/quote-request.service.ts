@@ -6,7 +6,7 @@ import type { QuoteRequestLineDto } from './dto/quote-request-line.dto.js';
 import type { UpdateQuoteRequestDto } from './dto/update-quote-request.dto.js';
 import { buildPurchaseDocumentPdfData } from './pdf/build-pdf-data.js';
 import { PdfGeneratorService } from './pdf/pdf-generator.service.js';
-import { PURCHASE_ORDER_DETAIL_INCLUDE } from './purchase-order.service.js';
+import { attachReceivingInfo, PURCHASE_ORDER_DETAIL_INCLUDE } from './purchase-order.service.js';
 import { PurchaseNumberingService } from './purchase-numbering.service.js';
 
 const DETAIL_INCLUDE = {
@@ -257,7 +257,11 @@ export class QuoteRequestService {
     });
 
     await db.quoteRequest.update({ where: { id }, data: { status: 'CONVERTED' } });
-    return purchaseOrder;
+    // A freshly-issued order has nothing received yet, but the frontend
+    // type (PurchaseOrderDetail) always expects receivedQuantity/
+    // pendingQuantity on each line - attachReceivingInfo resolves them to
+    // 0/full for a brand new order, same call get() makes.
+    return { ...purchaseOrder, lines: await attachReceivingInfo(purchaseOrder.lines) };
   }
 
   async cancel(id: string) {

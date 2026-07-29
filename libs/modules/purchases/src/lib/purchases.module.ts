@@ -2,6 +2,8 @@ import { Logger, Module } from '@nestjs/common';
 import { ConsolePurchaseEmailSender } from './email/console-purchase-email-sender.js';
 import { PURCHASE_EMAIL_SENDER, type PurchaseEmailSender } from './email/purchase-email-sender.port.js';
 import { ResendPurchaseEmailSender } from './email/resend-purchase-email-sender.js';
+import { GoodsReceiptAttachmentService } from './goods-receipt-attachment.service.js';
+import { GoodsReceiptService } from './goods-receipt.service.js';
 import { PdfGeneratorService } from './pdf/pdf-generator.service.js';
 import { PurchaseCatalogsController } from './purchase-catalogs.controller.js';
 import { PurchaseCatalogsService } from './purchase-catalogs.service.js';
@@ -46,8 +48,14 @@ function createPurchaseEmailSender(): PurchaseEmailSender {
     PdfGeneratorService,
     QuoteRequestService,
     PurchaseOrderService,
+    GoodsReceiptService,
+    GoodsReceiptAttachmentService,
     { provide: PURCHASE_EMAIL_SENDER, useFactory: createPurchaseEmailSender },
   ],
-  exports: [QuoteRequestService, PurchaseOrderService],
+  // GoodsReceiptService/GoodsReceiptAttachmentService have no controller of
+  // their own here - apps/api's GoodsReceiptsModule composes them with
+  // InventoryService (see that module's own doc comment for why that
+  // composition can't live inside this lib).
+  exports: [QuoteRequestService, PurchaseOrderService, GoodsReceiptService, GoodsReceiptAttachmentService],
 })
 export class PurchasesModule {}
