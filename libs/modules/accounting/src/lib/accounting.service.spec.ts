@@ -536,3 +536,33 @@ describe('AccountingService.postSupplierPaymentJournalEntry', () => {
     expect(db.journalEntry.create).not.toHaveBeenCalled();
   });
 });
+
+describe('AccountingService.postReceiptJournalEntry', () => {
+  it('books debit Caja / credit Deudores por Ventas for the collected amount', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postReceiptJournalEntry({ receiptId: 'receipt-1', amount: 300 }),
+    );
+
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.receiptId).toBe('receipt-1');
+    expect(createArgs.data.lines.createMany.data).toEqual([
+      { tenantId: 'tenant-1', accountId: 'acc-1.1.03', direction: 'DEBIT', amount: 300 },
+      { tenantId: 'tenant-1', accountId: 'acc-1.1.02', direction: 'CREDIT', amount: 300 },
+    ]);
+  });
+
+  it('skips posting entirely for a zero amount', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    const result = await runInTenant(db, () =>
+      service.postReceiptJournalEntry({ receiptId: 'receipt-2', amount: 0 }),
+    );
+
+    expect(result).toBeUndefined();
+    expect(db.journalEntry.create).not.toHaveBeenCalled();
+  });
+});

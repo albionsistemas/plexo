@@ -108,7 +108,7 @@ export const invoicingApi = {
   listCurrencies: () => api.get<Currency[]>('/invoicing/currencies').then((r) => r.data),
   createSale: (dto: CreateSaleInput) => api.post<Invoice>('/sales/invoices', dto).then((r) => r.data),
   recordReceipt: (dto: RecordReceiptInput) =>
-    api.post('/invoicing/receipts', dto).then((r) => r.data),
+    api.post('/sales/receipts', dto).then((r) => r.data),
   createCreditNote: (dto: CreateCreditNoteInput) =>
     api.post('/sales/credit-notes', dto).then((r) => r.data),
 };

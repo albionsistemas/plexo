@@ -488,3 +488,58 @@ describe('SalesService.voidSale', () => {
     expect(inventoryService.recordMovement).not.toHaveBeenCalled();
   });
 });
+
+describe('SalesService.recordReceipt', () => {
+  function makeReceipt(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'receipt-1',
+      invoiceId: 'invoice-1',
+      amount: new Prisma.Decimal(300),
+      method: 'CASH',
+      paidAt: new Date('2026-02-05'),
+      ...overrides,
+    };
+  }
+
+  it('records the receipt then posts its journal entry', async () => {
+    const receipt = makeReceipt();
+    const invoicingService = {
+      recordReceipt: jest.fn().mockResolvedValue(receipt),
+    } as unknown as InvoicingService;
+    const inventoryService = {} as unknown as InventoryService;
+    const accountingService = {
+      postReceiptJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-3', lines: [] }),
+    } as unknown as AccountingService;
+
+    const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
+    const dto = { invoiceId: 'invoice-1', amount: 300, method: 'CASH' };
+
+    const result = await service.recordReceipt(dto);
+
+    expect(invoicingService.recordReceipt).toHaveBeenCalledWith(dto);
+    expect(accountingService.postReceiptJournalEntry).toHaveBeenCalledWith({
+      receiptId: 'receipt-1',
+      amount: receipt.amount,
+      date: receipt.paidAt,
+    });
+    expect(result).toBe(receipt);
+  });
+
+  it('propagates a journal-posting failure without swallowing it', async () => {
+    const receipt = makeReceipt();
+    const invoicingService = {
+      recordReceipt: jest.fn().mockResolvedValue(receipt),
+    } as unknown as InvoicingService;
+    const inventoryService = {} as unknown as InventoryService;
+    const failure = new Error('Receipt journal entry is not balanced');
+    const accountingService = {
+      postReceiptJournalEntry: jest.fn().mockRejectedValue(failure),
+    } as unknown as AccountingService;
+
+    const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService());
+
+    await expect(
+      service.recordReceipt({ invoiceId: 'invoice-1', amount: 300, method: 'CASH' }),
+    ).rejects.toThrow(failure);
+  });
+});

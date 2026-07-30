@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { AccountingService } from '@plexo/accounting';
 import { getTenantDb, Prisma } from '@plexo/database';
 import { InventoryService } from '@plexo/inventory';
-import { InvoicingService, type CreateCreditNoteDto } from '@plexo/invoicing';
+import { InvoicingService, type CreateCreditNoteDto, type RecordReceiptDto } from '@plexo/invoicing';
 import { resolveEmailFrom, TenantSettingsService } from '@plexo/tenant-settings';
 import type { CreateSaleDto } from './dto/create-sale.dto.js';
 
@@ -184,5 +184,23 @@ export class SalesService {
     }
 
     return creditNote;
+  }
+
+  /**
+   * Composes InvoicingService.recordReceipt + its journal entry, same
+   * atomicity story as createSale/voidSale. This is the only place a
+   * receipt gets created (InvoicingController no longer exposes its own
+   * POST /invoicing/receipts) so there's no path that collects a payment
+   * without also crediting Deudores por Ventas - see
+   * AccountingService.postReceiptJournalEntry.
+   */
+  async recordReceipt(dto: RecordReceiptDto) {
+    const receipt = await this.invoicingService.recordReceipt(dto);
+    await this.accountingService.postReceiptJournalEntry({
+      receiptId: receipt.id,
+      amount: receipt.amount,
+      date: receipt.paidAt,
+    });
+    return receipt;
   }
 }

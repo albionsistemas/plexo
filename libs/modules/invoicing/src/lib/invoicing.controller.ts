@@ -2,10 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/commo
 import { Roles } from '@plexo/auth';
 import { CreateCurrencyDto } from './dto/create-currency.dto.js';
 import { RecordExchangeRateDto } from './dto/record-exchange-rate.dto.js';
-import { RecordReceiptDto } from './dto/record-receipt.dto.js';
 import { InvoicingService } from './invoicing.service.js';
-
-const WRITE_ROLES = ['OWNER', 'ADMIN', 'SALES'] as const;
 
 @Controller('invoicing')
 export class InvoicingController {
@@ -50,9 +47,11 @@ export class InvoicingController {
   // own route anymore, so there's no path that credits an invoice
   // without also closing out its GL entry.
 
-  @Roles(...WRITE_ROLES)
-  @Post('receipts')
-  recordReceipt(@Body() dto: RecordReceiptDto) {
-    return this.invoicingService.recordReceipt(dto);
-  }
+  // Receipts are recorded via POST /sales/receipts (SalesService), same
+  // reasoning as credit notes above - that's the composition that also
+  // posts the collection's journal entry (Dr Caja / Cr Deudores por
+  // Ventas). InvoicingService.recordReceipt() stays on this service for
+  // that composition to call; it's just not exposed as its own route
+  // anymore, so there's no path that collects a payment without also
+  // posting it to the ledger.
 }

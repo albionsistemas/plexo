@@ -139,6 +139,12 @@ export interface PostSupplierPaymentJournalEntryInput {
   date?: Date;
 }
 
+export interface PostReceiptJournalEntryInput {
+  receiptId: string;
+  amount: Prisma.Decimal | number | string;
+  date?: Date;
+}
+
 export interface TrialBalanceRow {
   accountId: string;
   code: string;
@@ -445,6 +451,7 @@ export class AccountingService {
       supplierReturnId?: string;
       purchaseInvoiceId?: string;
       supplierPaymentId?: string;
+      receiptId?: string;
     },
   ): Promise<JournalEntryWithLines> {
     const tenantId = getTenantId();
@@ -478,6 +485,7 @@ export class AccountingService {
         supplierReturnId: opts.supplierReturnId,
         purchaseInvoiceId: opts.purchaseInvoiceId,
         supplierPaymentId: opts.supplierPaymentId,
+        receiptId: opts.receiptId,
         createdById,
         lines: {
           createMany: {
@@ -624,12 +632,11 @@ export class AccountingService {
   /**
    * Posted when a SupplierPayment is recorded (see apps/api's
    * PurchaseInvoicesService.recordPayment) - debit Proveedores (we owe
-   * less), credit Caja for the amount paid. Unlike Receipt (the AR
-   * equivalent, whose recordReceipt does NOT post anything today - a
-   * separate, already-flagged gap), this posts every time: without it,
-   * Proveedores would only ever grow from postPurchaseInvoiceJournalEntry
-   * and never shrink, reproducing the exact same class of bug this whole
-   * feature exists to fix for Mercaderías.
+   * less), credit Caja for the amount paid. This posts every time: without
+   * it, Proveedores would only ever grow from
+   * postPurchaseInvoiceJournalEntry and never shrink, reproducing the exact
+   * same class of bug this whole feature exists to fix for Mercaderías. See
+   * postReceiptJournalEntry below for the AR-side mirror of this same fix.
    */
   async postSupplierPaymentJournalEntry(
     input: PostSupplierPaymentJournalEntryInput,
@@ -649,6 +656,35 @@ export class AccountingService {
         { accountId: cash.id, direction: 'CREDIT', amount: amount.toNumber() },
       ],
       { date: input.date, supplierPaymentId: input.supplierPaymentId },
+    );
+  }
+
+  /**
+   * Posted when a Receipt (cobro a cliente) is recorded (see apps/api's
+   * SalesService.recordReceipt) - debit Caja (cash in), credit Deudores por
+   * Ventas (they owe less). AR-side mirror of postSupplierPaymentJournalEntry
+   * above: Deudores por Ventas was only ever debited by
+   * postInvoiceJournalEntry and never credited on collection, same
+   * structural gap Compras had for Mercaderías before this feature existed.
+   */
+  async postReceiptJournalEntry(
+    input: PostReceiptJournalEntryInput,
+  ): Promise<JournalEntryWithLines | undefined> {
+    const amount = new Prisma.Decimal(input.amount);
+    if (amount.lte(0)) {
+      return undefined;
+    }
+    const [cash, receivable] = await Promise.all([
+      this.getOrCreateAccount(CASH_ACCOUNT),
+      this.getOrCreateAccount(ACCOUNTS_RECEIVABLE_ACCOUNT),
+    ]);
+    return this.createBalancedEntry(
+      `Cobro a cliente - ${input.receiptId}`,
+      [
+        { accountId: cash.id, direction: 'DEBIT', amount: amount.toNumber() },
+        { accountId: receivable.id, direction: 'CREDIT', amount: amount.toNumber() },
+      ],
+      { date: input.date, receiptId: input.receiptId },
     );
   }
 

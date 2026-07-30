@@ -867,6 +867,8 @@ model Receipt {
   financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id])
   paidAt             DateTime          @default(now())
 
+  journalEntry JournalEntry?
+
   @@map("receipts")
 }
 
@@ -916,6 +918,11 @@ model JournalEntry {
   purchaseInvoice   PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id])
   supplierPaymentId String?          @unique
   supplierPayment   SupplierPayment? @relation(fields: [supplierPaymentId], references: [id])
+  // AR equivalent of supplierPaymentId above: one entry per customer
+  // Receipt (Dr Caja / Cr Deudores por Ventas). See
+  // AccountingService.postReceiptJournalEntry.
+  receiptId    String?       @unique
+  receipt      Receipt?      @relation(fields: [receiptId], references: [id])
   description  String
   date         DateTime      @default(now())
   createdById  String
