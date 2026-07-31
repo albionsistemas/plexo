@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { getTenantDb, getTenantId, getUserId, Prisma } from '@plexo/database';
 import type { PdfStyle, PurchaseDocumentStatus } from '@plexo/database';
 import type { CreateQuoteRequestDto } from './dto/create-quote-request.dto.js';
+import type { CreateQuoteRequestGroupDto } from './dto/create-quote-request-group.dto.js';
 import type { QuoteRequestLineDto } from './dto/quote-request-line.dto.js';
 import type { UpdateQuoteRequestDto } from './dto/update-quote-request.dto.js';
 import { buildPurchaseDocumentPdfData } from './pdf/build-pdf-data.js';
@@ -109,6 +111,119 @@ export class QuoteRequestService {
       },
       include: DETAIL_INCLUDE,
     });
+  }
+
+  /** "Pedir cotización a varios proveedores": creates one QuoteRequest per
+   * supplierId (reusing create() as-is, so numbering/validation/estimate
+   * logic doesn't get duplicated), then tags all of them with a freshly
+   * generated rfqGroupId so compareGroup/selectWinner can find them
+   * together. No parent document - the group only exists as this shared
+   * label, see the schema comment on QuoteRequest.rfqGroupId. */
+  async createGroup(dto: CreateQuoteRequestGroupDto) {
+    const db = getTenantDb();
+    const rfqGroupId = randomUUID();
+    const { supplierIds, ...rest } = dto;
+
+    const createdIds: string[] = [];
+    for (const supplierId of supplierIds) {
+      const created = await this.create({ ...rest, supplierId });
+      createdIds.push(created.id);
+    }
+
+    await db.quoteRequest.updateMany({ where: { id: { in: createdIds } }, data: { rfqGroupId } });
+
+    return {
+      rfqGroupId,
+      quoteRequests: await db.quoteRequest.findMany({
+        where: { id: { in: createdIds } },
+        include: DETAIL_INCLUDE,
+      }),
+    };
+  }
+
+  /** Pivots every QuoteRequest in a group into one row per article variant,
+   * one column per supplier - what the comparison screen renders directly.
+   * A variant only some suppliers quoted still shows up (with null for the
+   * ones that didn't), it's not dropped from the comparison. */
+  async compareGroup(rfqGroupId: string) {
+    const db = getTenantDb();
+    const requests = await db.quoteRequest.findMany({
+      where: { rfqGroupId },
+      include: DETAIL_INCLUDE,
+      orderBy: { createdAt: 'asc' },
+    });
+    if (requests.length === 0) {
+      throw new NotFoundException('No quote requests found for this group');
+    }
+
+    const variantsById = new Map<string, (typeof requests)[number]['lines'][number]['articleVariant']>();
+    for (const request of requests) {
+      for (const line of request.lines) {
+        variantsById.set(line.articleVariantId, line.articleVariant);
+      }
+    }
+
+    const rows = Array.from(variantsById.entries()).map(([articleVariantId, articleVariant]) => ({
+      articleVariantId,
+      articleVariant,
+      quotes: requests.map((request) => {
+        const line = request.lines.find((l) => l.articleVariantId === articleVariantId);
+        if (!line) {
+          return { quoteRequestId: request.id, quantity: null, unitCost: null, lineTotal: null };
+        }
+        const lineTotal =
+          line.estimatedUnitCost != null
+            ? new Prisma.Decimal(line.estimatedUnitCost).mul(line.quantity)
+            : null;
+        return {
+          quoteRequestId: request.id,
+          quantity: line.quantity,
+          unitCost: line.estimatedUnitCost,
+          lineTotal,
+        };
+      }),
+    }));
+
+    return {
+      rfqGroupId,
+      suppliers: requests.map((request) => ({
+        quoteRequestId: request.id,
+        number: request.number,
+        supplier: request.supplier,
+        status: request.status,
+        estimatedTotal: request.estimatedTotal,
+      })),
+      rows,
+    };
+  }
+
+  /** "Elegimos este proveedor": converts the winner (via the existing
+   * convert(), unchanged) and cancels every other still-DRAFT sibling in
+   * the group - a sibling already CANCELLED by hand earlier stays as-is.
+   * Winner-take-all for the whole request, not per line (see PROGRESS.md /
+   * the plan this feature came from for why splitting lines across
+   * suppliers was explicitly ruled out for v1). */
+  async selectWinner(rfqGroupId: string, winningQuoteRequestId: string) {
+    const db = getTenantDb();
+    const requests = await db.quoteRequest.findMany({ where: { rfqGroupId } });
+    if (requests.length === 0) {
+      throw new NotFoundException('No quote requests found for this group');
+    }
+    const winner = requests.find((r) => r.id === winningQuoteRequestId);
+    if (!winner) {
+      throw new BadRequestException('This quote request does not belong to the given group');
+    }
+
+    const purchaseOrder = await this.convert(winningQuoteRequestId);
+
+    const siblingIds = requests
+      .filter((r) => r.id !== winningQuoteRequestId && r.status === 'DRAFT')
+      .map((r) => r.id);
+    if (siblingIds.length > 0) {
+      await db.quoteRequest.updateMany({ where: { id: { in: siblingIds } }, data: { status: 'CANCELLED' } });
+    }
+
+    return purchaseOrder;
   }
 
   async update(id: string, dto: UpdateQuoteRequestDto) {

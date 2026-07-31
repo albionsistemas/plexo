@@ -176,12 +176,15 @@ export class PurchaseInvoiceService {
     return { invoice, grniClearedAmount, nonGrniAmount };
   }
 
-  /** Creates the SupplierPayment row and updates balanceDue/status - does
-   * NOT post the accounting entry itself (see apps/api's
-   * PurchaseInvoicesService.recordPayment, which calls this then
-   * AccountingService.postSupplierPaymentJournalEntry in the same
+  /** Creates the SupplierPayment row (plus any withholding lines) and
+   * updates balanceDue/status - does NOT post the accounting entry itself
+   * (see apps/api's PurchaseInvoicesService.recordPayment, which calls this
+   * then AccountingService.postSupplierPaymentJournalEntry in the same
    * transaction). Mirrors InvoicingService.recordReceipt's balance/status
-   * update exactly. */
+   * update, extended for withholdings: `amount` is still "cash/bank paid",
+   * but what actually clears the invoice is amount + totalWithheld (the
+   * withheld money doesn't reach the supplier, but it does extinguish the
+   * debt - it's now owed to the tax authority on their behalf instead). */
   async recordPayment(invoiceId: string, dto: RecordSupplierPaymentDto) {
     const db = getTenantDb();
     const tenantId = getTenantId();
@@ -192,7 +195,13 @@ export class PurchaseInvoiceService {
       throw new NotFoundException('Purchase invoice not found');
     }
     const amount = new Prisma.Decimal(dto.amount);
-    if (amount.gt(invoice.balanceDue)) {
+    const withholdings = dto.withholdings ?? [];
+    const totalWithheld = withholdings.reduce(
+      (sum, w) => sum.add(new Prisma.Decimal(w.amount)),
+      new Prisma.Decimal(0),
+    );
+    const appliedAmount = amount.add(totalWithheld);
+    if (appliedAmount.gt(invoice.balanceDue)) {
       throw new BadRequestException('Payment amount exceeds the invoice balance due');
     }
 
@@ -205,10 +214,24 @@ export class PurchaseInvoiceService {
         financialAccountId: dto.financialAccountId,
         paidAt: dto.paidAt ? new Date(dto.paidAt) : undefined,
         recordedByUserId,
+        withholdings: {
+          createMany: {
+            data: withholdings.map((w) => ({
+              tenantId,
+              regimeId: w.regimeId,
+              taxType: w.taxType,
+              jurisdiction: w.jurisdiction,
+              concept: w.concept,
+              amount: w.amount,
+              certificateNumber: w.certificateNumber,
+            })),
+          },
+        },
       },
+      include: { withholdings: true },
     });
 
-    const balanceDue = invoice.balanceDue.sub(amount);
+    const balanceDue = invoice.balanceDue.sub(appliedAmount);
     await db.purchaseInvoice.update({
       where: { id: invoiceId },
       data: { balanceDue, status: balanceDue.isZero() ? 'PAID' : 'PARTIALLY_PAID' },

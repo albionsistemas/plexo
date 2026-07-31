@@ -9,6 +9,7 @@ import {
   type AccountType,
   type JournalEntry,
   type JournalEntryLine,
+  type WithholdingTaxType,
 } from '@plexo/database';
 import type { CreateAccountDto } from './dto/create-account.dto.js';
 import type { CreateReversingEntryDto } from './dto/create-reversing-entry.dto.js';
@@ -76,6 +77,35 @@ const PURCHASES_NO_RECEIPT_ACCOUNT = {
 // session already created manually in this chart of accounts.
 const CASH_ACCOUNT = { code: '1.1.03', name: 'Caja', type: 'ASSET' as const };
 
+// Retenciones que EL TENANT practica a sus proveedores al pagarles
+// (Ganancias/IVA/IIBB) - ver postSupplierPaymentJournalEntry. Pasivo: lo
+// retenido no es nuestro, hay que depositarlo en AFIP/ARBA/etc. (ese
+// depósito queda para más adelante, vía un asiento manual - ver
+// PROGRESS.md). Una cuenta agregada por tipo de impuesto, sin desagregar
+// por jurisdicción en el caso de IIBB - mismo criterio que
+// PERCEPTIONS_ACCOUNT arriba (el detalle por jurisdicción vive en
+// SupplierPaymentWithholding, no multiplica cuentas contables).
+const WITHHOLDING_INCOME_TAX_ACCOUNT = {
+  code: '2.1.06',
+  name: 'Retenciones de Ganancias a depositar',
+  type: 'LIABILITY' as const,
+};
+const WITHHOLDING_VAT_ACCOUNT = {
+  code: '2.1.07',
+  name: 'Retenciones de IVA a depositar',
+  type: 'LIABILITY' as const,
+};
+const WITHHOLDING_GROSS_INCOME_ACCOUNT = {
+  code: '2.1.08',
+  name: 'Retenciones de IIBB a depositar',
+  type: 'LIABILITY' as const,
+};
+const WITHHOLDING_ACCOUNT_BY_TAX_TYPE: Record<WithholdingTaxType, typeof WITHHOLDING_INCOME_TAX_ACCOUNT> = {
+  INCOME_TAX: WITHHOLDING_INCOME_TAX_ACCOUNT,
+  VAT: WITHHOLDING_VAT_ACCOUNT,
+  GROSS_INCOME: WITHHOLDING_GROSS_INCOME_ACCOUNT,
+};
+
 export interface PostInvoiceJournalEntryInput {
   invoiceId: string;
   subtotal: Prisma.Decimal | number | string;
@@ -133,9 +163,20 @@ export interface PostPurchaseInvoiceJournalEntryInput {
   date?: Date;
 }
 
+export interface SupplierPaymentWithholdingInput {
+  taxType: WithholdingTaxType;
+  amount: Prisma.Decimal | number | string;
+}
+
 export interface PostSupplierPaymentJournalEntryInput {
   supplierPaymentId: string;
+  // Cash/bank actually paid - unchanged meaning even when withholdings is
+  // non-empty (see PurchaseInvoiceService.recordPayment's own comment).
   amount: Prisma.Decimal | number | string;
+  // One entry per withholding line already recorded on the SupplierPayment
+  // - grouped/summed here by taxType (the composition root doesn't need to
+  // pre-aggregate, see apps/api's PurchaseInvoicesService.recordPayment).
+  withholdings?: SupplierPaymentWithholdingInput[];
   date?: Date;
 }
 
@@ -631,9 +672,14 @@ export class AccountingService {
 
   /**
    * Posted when a SupplierPayment is recorded (see apps/api's
-   * PurchaseInvoicesService.recordPayment) - debit Proveedores (we owe
-   * less), credit Caja for the amount paid. This posts every time: without
-   * it, Proveedores would only ever grow from
+   * PurchaseInvoicesService.recordPayment) - debit Proveedores for the
+   * FULL amount cancelled (cash paid + anything withheld - withheld money
+   * doesn't reach the supplier, but it does extinguish what we owed them,
+   * now owed to the tax authority instead), credit Caja for the cash
+   * actually paid, and credit one liability account per withholding
+   * taxType for what was retained (conditional lines, same pattern as
+   * postPurchaseInvoiceJournalEntry's ivaCredito/percepciones). Without the
+   * Proveedores debit, Proveedores would only ever grow from
    * postPurchaseInvoiceJournalEntry and never shrink, reproducing the exact
    * same class of bug this whole feature exists to fix for Mercaderías. See
    * postReceiptJournalEntry below for the AR-side mirror of this same fix.
@@ -642,19 +688,46 @@ export class AccountingService {
     input: PostSupplierPaymentJournalEntryInput,
   ): Promise<JournalEntryWithLines | undefined> {
     const amount = new Prisma.Decimal(input.amount);
-    if (amount.lte(0)) {
+    const withheldByTaxType = new Map<WithholdingTaxType, Prisma.Decimal>();
+    for (const w of input.withholdings ?? []) {
+      const current = withheldByTaxType.get(w.taxType) ?? new Prisma.Decimal(0);
+      withheldByTaxType.set(w.taxType, current.add(new Prisma.Decimal(w.amount)));
+    }
+    let totalWithheld = new Prisma.Decimal(0);
+    for (const amt of withheldByTaxType.values()) {
+      totalWithheld = totalWithheld.add(amt);
+    }
+    const appliedAmount = amount.add(totalWithheld);
+    if (appliedAmount.lte(0)) {
       return undefined;
     }
+
     const [payable, cash] = await Promise.all([
       this.getOrCreateAccount(ACCOUNTS_PAYABLE_ACCOUNT),
-      this.getOrCreateAccount(CASH_ACCOUNT),
+      amount.gt(0) ? this.getOrCreateAccount(CASH_ACCOUNT) : Promise.resolve(undefined),
     ]);
+    const withholdingAccounts = await Promise.all(
+      Array.from(withheldByTaxType.entries()).map(async ([taxType, withheldAmount]) => ({
+        account: await this.getOrCreateAccount(WITHHOLDING_ACCOUNT_BY_TAX_TYPE[taxType]),
+        amount: withheldAmount,
+      })),
+    );
+
+    const lines: PostJournalEntryDto['lines'] = [
+      { accountId: payable.id, direction: 'DEBIT', amount: appliedAmount.toNumber() },
+    ];
+    if (cash && amount.gt(0)) {
+      lines.push({ accountId: cash.id, direction: 'CREDIT', amount: amount.toNumber() });
+    }
+    for (const { account, amount: withheldAmount } of withholdingAccounts) {
+      if (withheldAmount.gt(0)) {
+        lines.push({ accountId: account.id, direction: 'CREDIT', amount: withheldAmount.toNumber() });
+      }
+    }
+
     return this.createBalancedEntry(
       `Pago a proveedor - ${input.supplierPaymentId}`,
-      [
-        { accountId: payable.id, direction: 'DEBIT', amount: amount.toNumber() },
-        { accountId: cash.id, direction: 'CREDIT', amount: amount.toNumber() },
-      ],
+      lines,
       { date: input.date, supplierPaymentId: input.supplierPaymentId },
     );
   }

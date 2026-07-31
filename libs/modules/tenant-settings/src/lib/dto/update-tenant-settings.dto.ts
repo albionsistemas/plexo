@@ -1,5 +1,6 @@
 import { EmailSenderMode, ReminderTone } from '@plexo/database';
 import {
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsInt,
@@ -56,4 +57,19 @@ export class UpdateTenantSettingsDto {
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsEmail()
   reminderCcEmail?: string | null;
+
+  // El tenant declara ser agente de retención ante AFIP/ARBA/etc. para
+  // cada impuesto - ver el comentario del modelo TenantSettings. Gatilla
+  // qué WithholdingRegime puede usarse al registrar un pago a proveedor.
+  @IsOptional()
+  @IsBoolean()
+  withholdingAgentIncomeTax?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  withholdingAgentVat?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  withholdingAgentGrossIncome?: boolean;
 }

@@ -217,4 +217,56 @@ describe('PurchaseInvoiceService.recordPayment', () => {
     expect(updateArgs.data.status).toBe('PARTIALLY_PAID');
     expect(updateArgs.data.balanceDue.toNumber()).toBe(60);
   });
+
+  it('rejects when cash + withheld together exceed the balance due, even if cash alone would fit', async () => {
+    const db = {
+      purchaseInvoice: { findUnique: jest.fn().mockResolvedValue({ id: 'pinv-1', balanceDue: new Prisma.Decimal(100) }) },
+    };
+    const service = new PurchaseInvoiceService();
+
+    await expect(
+      runAsUser(db, () =>
+        service.recordPayment('pinv-1', {
+          amount: 80,
+          method: 'Efectivo',
+          withholdings: [{ taxType: 'INCOME_TAX', concept: 'Ganancias', amount: 30 }],
+        }),
+      ),
+    ).rejects.toThrow('exceeds the invoice balance due');
+  });
+
+  it('reduces balanceDue by cash + withheld together and persists the withholding snapshot', async () => {
+    const db = {
+      purchaseInvoice: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'pinv-1', balanceDue: new Prisma.Decimal(100) }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      supplierPayment: {
+        create: jest.fn((args) =>
+          Promise.resolve({
+            id: 'pay-1',
+            amount: args.data.amount,
+            withholdings: args.data.withholdings.createMany.data,
+          }),
+        ),
+      },
+    };
+    const service = new PurchaseInvoiceService();
+
+    const payment = await runAsUser(db, () =>
+      service.recordPayment('pinv-1', {
+        amount: 70,
+        method: 'Transferencia',
+        withholdings: [
+          { taxType: 'INCOME_TAX', concept: 'Retención Ganancias', amount: 20 },
+          { taxType: 'GROSS_INCOME', jurisdiction: 'CABA', concept: 'Retención IIBB CABA', amount: 10 },
+        ],
+      }),
+    );
+
+    const updateArgs = (db.purchaseInvoice.update as jest.Mock).mock.calls[0][0];
+    expect(updateArgs.data.balanceDue.toNumber()).toBe(0);
+    expect(updateArgs.data.status).toBe('PAID');
+    expect((payment as { withholdings: unknown[] }).withholdings).toHaveLength(2);
+  });
 });

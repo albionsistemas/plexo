@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import type { ArgentineJurisdiction, WithholdingTaxType } from '@/lib/taxes';
 
 export type PurchaseDocumentStatus = 'DRAFT' | 'CONVERTED' | 'SENT' | 'CANCELLED';
 export type PurchaseSendChannel = 'EMAIL' | 'WHATSAPP';
@@ -116,6 +117,7 @@ export interface QuoteRequestSummary {
   supplier: { id: string; name: string };
   currency: { code: string };
   purchaseOrders: LinkedPurchaseOrderRef[];
+  rfqGroupId: string | null;
 }
 
 export interface QuoteRequestDetail {
@@ -133,6 +135,50 @@ export interface QuoteRequestDetail {
   deliveryTime: CatalogRef | null;
   lines: QuoteRequestLineDetail[];
   purchaseOrders: LinkedPurchaseOrderRef[];
+  rfqGroupId: string | null;
+}
+
+export interface CreateQuoteRequestGroupInput {
+  supplierIds: string[];
+  currencyId: string;
+  transportModeId?: string;
+  paymentTermId?: string;
+  deliveryTimeId?: string;
+  validUntil?: string;
+  notes?: string;
+  lines: QuoteRequestLineInput[];
+}
+
+export interface QuoteRequestGroupCreateResult {
+  rfqGroupId: string;
+  quoteRequests: QuoteRequestDetail[];
+}
+
+export interface QuoteRequestComparisonQuote {
+  quoteRequestId: string;
+  quantity: string | null;
+  unitCost: string | null;
+  lineTotal: string | null;
+}
+
+export interface QuoteRequestComparisonRow {
+  articleVariantId: string;
+  articleVariant: { sku: string; article: { name: string } };
+  quotes: QuoteRequestComparisonQuote[];
+}
+
+export interface QuoteRequestComparisonSupplier {
+  quoteRequestId: string;
+  number: string;
+  supplier: { id: string; name: string };
+  status: PurchaseDocumentStatus;
+  estimatedTotal: string | null;
+}
+
+export interface QuoteRequestComparison {
+  rfqGroupId: string;
+  suppliers: QuoteRequestComparisonSupplier[];
+  rows: QuoteRequestComparisonRow[];
 }
 
 /** DRAFT/CANCELLED map straight to their own label. CONVERTED splits in
@@ -327,6 +373,18 @@ export const quoteRequestsApi = {
     api.post<PurchaseOrderDetail>(`/purchases/quote-requests/${id}/convert`).then((r) => r.data),
   cancel: (id: string) => api.patch(`/purchases/quote-requests/${id}/cancel`).then(() => undefined),
   openPdf: (id: string, style?: PdfStyle) => openPdf(`/purchases/quote-requests/${id}/pdf`, style),
+  createGroup: (dto: CreateQuoteRequestGroupInput) =>
+    api.post<QuoteRequestGroupCreateResult>('/purchases/quote-requests/groups', dto).then((r) => r.data),
+  compareGroup: (rfqGroupId: string) =>
+    api
+      .get<QuoteRequestComparison>(`/purchases/quote-requests/groups/${rfqGroupId}/compare`)
+      .then((r) => r.data),
+  selectWinner: (rfqGroupId: string, winningQuoteRequestId: string) =>
+    api
+      .post<PurchaseOrderDetail>(`/purchases/quote-requests/groups/${rfqGroupId}/select-winner`, {
+        winningQuoteRequestId,
+      })
+      .then((r) => r.data),
 };
 
 export const purchaseOrdersApi = {
@@ -407,11 +465,31 @@ export interface PurchaseInvoiceTaxLineInput {
   amount: number;
 }
 
+export interface SupplierPaymentWithholdingDetail {
+  id: string;
+  regimeId: string | null;
+  taxType: WithholdingTaxType;
+  jurisdiction: ArgentineJurisdiction | null;
+  concept: string;
+  amount: string;
+  certificateNumber: string | null;
+}
+
+export interface SupplierPaymentWithholdingInput {
+  regimeId?: string;
+  taxType: WithholdingTaxType;
+  jurisdiction?: ArgentineJurisdiction;
+  concept: string;
+  amount: number;
+  certificateNumber?: string;
+}
+
 export interface SupplierPaymentDetail {
   id: string;
   amount: string;
   method: string;
   paidAt: string;
+  withholdings: SupplierPaymentWithholdingDetail[];
 }
 
 export interface PurchaseInvoiceSummary {
@@ -454,6 +532,7 @@ export interface RecordSupplierPaymentInput {
   method: string;
   financialAccountId?: string;
   paidAt?: string;
+  withholdings?: SupplierPaymentWithholdingInput[];
 }
 
 export const purchaseInvoicesApi = {

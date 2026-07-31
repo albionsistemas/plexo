@@ -59,5 +59,7 @@ export type {
   PurchaseInvoiceTaxLine,
   PurchaseInvoiceReceipt,
   SupplierPayment,
+  WithholdingRegime,
+  SupplierPaymentWithholding,
 } from './generated/client.js';
 export * from './generated/enums.js';

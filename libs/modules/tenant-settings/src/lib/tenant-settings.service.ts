@@ -14,6 +14,9 @@ export interface TenantSettingsView {
   domainStatus: string | null;
   reminderTone: ReminderTone;
   reminderCcEmail: string | null;
+  withholdingAgentIncomeTax: boolean;
+  withholdingAgentVat: boolean;
+  withholdingAgentGrossIncome: boolean;
 }
 
 export interface DomainRegistrationResult {
@@ -44,6 +47,9 @@ export class TenantSettingsService {
       domainStatus: row?.domainStatus ?? null,
       reminderTone: row?.reminderTone ?? 'NEUTRAL',
       reminderCcEmail: row?.reminderCcEmail ?? null,
+      withholdingAgentIncomeTax: row?.withholdingAgentIncomeTax ?? false,
+      withholdingAgentVat: row?.withholdingAgentVat ?? false,
+      withholdingAgentGrossIncome: row?.withholdingAgentGrossIncome ?? false,
     };
   }
 
@@ -61,6 +67,9 @@ export class TenantSettingsService {
         emailFromLocalPart: dto.emailFromLocalPart,
         reminderTone: dto.reminderTone,
         reminderCcEmail: dto.reminderCcEmail ?? null,
+        withholdingAgentIncomeTax: dto.withholdingAgentIncomeTax,
+        withholdingAgentVat: dto.withholdingAgentVat,
+        withholdingAgentGrossIncome: dto.withholdingAgentGrossIncome,
       },
       update: {
         arReminderIntervalDays: dto.arReminderIntervalDays,
@@ -69,6 +78,9 @@ export class TenantSettingsService {
         emailFromLocalPart: dto.emailFromLocalPart,
         reminderTone: dto.reminderTone,
         reminderCcEmail: dto.reminderCcEmail,
+        withholdingAgentIncomeTax: dto.withholdingAgentIncomeTax,
+        withholdingAgentVat: dto.withholdingAgentVat,
+        withholdingAgentGrossIncome: dto.withholdingAgentGrossIncome,
       },
     });
     return {
@@ -80,6 +92,9 @@ export class TenantSettingsService {
       domainStatus: row.domainStatus,
       reminderTone: row.reminderTone,
       reminderCcEmail: row.reminderCcEmail,
+      withholdingAgentIncomeTax: row.withholdingAgentIncomeTax,
+      withholdingAgentVat: row.withholdingAgentVat,
+      withholdingAgentGrossIncome: row.withholdingAgentGrossIncome,
     };
   }
 

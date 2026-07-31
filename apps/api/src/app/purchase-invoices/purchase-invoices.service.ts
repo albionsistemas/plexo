@@ -70,6 +70,7 @@ export class PurchaseInvoicesService {
     await this.accountingService.postSupplierPaymentJournalEntry({
       supplierPaymentId: payment.id,
       amount: payment.amount,
+      withholdings: payment.withholdings.map((w) => ({ taxType: w.taxType, amount: w.amount })),
     });
     return payment;
   }

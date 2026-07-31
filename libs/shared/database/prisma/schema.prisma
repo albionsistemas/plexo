@@ -163,6 +163,16 @@ model TenantSettings {
   // hoy no está disponible). null = no mandar copia a nadie.
   reminderCcEmail String?
 
+  // El tenant es agente de retención de Ganancias/IVA/IIBB ante
+  // AFIP/ARBA/etc. - eso lo otorga el fisco, no es automático (mismo motivo
+  // por el que existe este flag y no se infiere de otra cosa). Gatilla si
+  // WithholdingRegime de ese taxType puede crearse/aplicarse (ver
+  // libs/modules/taxes's WithholdingRegimeService) - false por defecto, un
+  // tenant que no toca esto sigue sin ver nada de retenciones en la UI.
+  withholdingAgentIncomeTax   Boolean @default(false)
+  withholdingAgentVat         Boolean @default(false)
+  withholdingAgentGrossIncome Boolean @default(false)
+
   updatedAt DateTime @updatedAt
 
   @@map("tenant_settings")
@@ -200,15 +210,15 @@ model User {
   purchaseDocumentPdfStyle PdfStyle @default(MODERNO)
   createdAt                DateTime @default(now())
 
-  moduleAccess          UserModuleAccess[]
-  issuedInvoices        Invoice[]
-  issuedCreditNotes     CreditNote[]
-  createdJournalEntries JournalEntry[]
-  createdQuoteRequests  QuoteRequest[]
-  createdPurchaseOrders PurchaseOrder[]
-  receivedGoodsReceipts GoodsReceipt[]
-  returnedSupplierReturns SupplierReturn[]
-  createdPurchaseInvoices PurchaseInvoice[]
+  moduleAccess             UserModuleAccess[]
+  issuedInvoices           Invoice[]
+  issuedCreditNotes        CreditNote[]
+  createdJournalEntries    JournalEntry[]
+  createdQuoteRequests     QuoteRequest[]
+  createdPurchaseOrders    PurchaseOrder[]
+  receivedGoodsReceipts    GoodsReceipt[]
+  returnedSupplierReturns  SupplierReturn[]
+  createdPurchaseInvoices  PurchaseInvoice[]
   recordedSupplierPayments SupplierPayment[]
 
   @@unique([tenantId, email])
@@ -538,10 +548,10 @@ model Warehouse {
   name     String
   location String?
 
-  stockLedger    StockLedger[]
-  minimumStocks  MinimumStock[]
-  movements      StockMovement[]
-  goodsReceipts  GoodsReceipt[]
+  stockLedger   StockLedger[]
+  minimumStocks MinimumStock[]
+  movements     StockMovement[]
+  goodsReceipts GoodsReceipt[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -591,38 +601,38 @@ model MinimumStock {
 // a real FK for the sales path specifically, since Invoice already models
 // that relation elsewhere (Invoice.movements).
 model StockMovement {
-  id               String         @id @default(uuid())
-  tenantId         String
-  warehouseId      String
-  warehouse        Warehouse      @relation(fields: [warehouseId], references: [id])
-  articleVariantId String
-  articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
-  type             MovementType
-  quantity         Decimal        @db.Decimal(14, 3)
+  id                 String            @id @default(uuid())
+  tenantId           String
+  warehouseId        String
+  warehouse          Warehouse         @relation(fields: [warehouseId], references: [id])
+  articleVariantId   String
+  articleVariant     ArticleVariant    @relation(fields: [articleVariantId], references: [id])
+  type               MovementType
+  quantity           Decimal           @db.Decimal(14, 3)
   // Cost snapshot for this specific movement: for costed inbound types,
   // the unit cost provided by the caller; for SALE_OUT/PRODUCTION_OUT, the
   // StockLedger.avgUnitCost consumed at that moment (never recomputed
   // later). Null for ADJUSTMENT and any uncosted movement.
-  unitCost         Decimal?       @db.Decimal(14, 4)
-  sourceType       String?
-  sourceId         String?
-  invoiceId        String?
-  invoice          Invoice?       @relation(fields: [invoiceId], references: [id])
+  unitCost           Decimal?          @db.Decimal(14, 4)
+  sourceType         String?
+  sourceId           String?
+  invoiceId          String?
+  invoice            Invoice?          @relation(fields: [invoiceId], references: [id])
   // Which invoice line this SALE_OUT movement came out of - set by
   // SalesService.createSale. Lets voidSale find "the movement for THIS
   // line" instead of only "all movements for this invoice", which partial
   // credit notes need (restock/re-cost just the credited quantity, not the
   // whole invoice). Null for movements with no invoice line (manual
   // PURCHASE_IN/ADJUSTMENT/etc.).
-  invoiceLineId    String?
-  invoiceLine      InvoiceLine?   @relation(fields: [invoiceLineId], references: [id])
+  invoiceLineId      String?
+  invoiceLine        InvoiceLine?      @relation(fields: [invoiceLineId], references: [id])
   // Which GoodsReceiptLine (remito) this PURCHASE_IN movement came from -
   // same role as invoiceLineId above but for the purchases side. Set by
   // GoodsReceiptsService (apps/api) when it drives recordMovement() per
   // line of a received remito. Null for movements entered manually.
   goodsReceiptLineId String?
   goodsReceiptLine   GoodsReceiptLine? @relation(fields: [goodsReceiptLineId], references: [id])
-  createdAt        DateTime       @default(now())
+  createdAt          DateTime          @default(now())
 
   @@index([tenantId])
   @@index([tenantId, articleVariantId])
@@ -890,18 +900,18 @@ model AccountingAccount {
 // correcting one is a reversing entry (same lines, DEBIT/CREDIT swapped),
 // linked via reversalOfId, never an UPDATE to the original.
 model JournalEntry {
-  id           String        @id @default(uuid())
-  tenantId     String
-  invoiceId    String?       @unique
-  invoice      Invoice?      @relation(fields: [invoiceId], references: [id])
+  id                String           @id @default(uuid())
+  tenantId          String
+  invoiceId         String?          @unique
+  invoice           Invoice?         @relation(fields: [invoiceId], references: [id])
   // One entry per credit note, resolved-or-created the same way the sale's
   // entry is resolved by invoiceId - NOT via reversalOfId/createReversingEntry,
   // since a credit note posts its own independently-balanced (possibly
   // partial) entry rather than a 100% mirror of a prior one, and both
   // invoiceId/reversalOfId being @unique would block a second partial
   // credit note from ever linking back to the same original sale entry.
-  creditNoteId String?       @unique
-  creditNote   CreditNote?   @relation(fields: [creditNoteId], references: [id])
+  creditNoteId      String?          @unique
+  creditNote        CreditNote?      @relation(fields: [creditNoteId], references: [id])
   // Compras/Cuentas a Pagar - same one-entry-per-document precedent as
   // invoiceId/creditNoteId above, not a polymorphic sourceType/sourceId:
   // each of these needs its own uniqueness guarantee (a goods receipt's
@@ -921,15 +931,15 @@ model JournalEntry {
   // AR equivalent of supplierPaymentId above: one entry per customer
   // Receipt (Dr Caja / Cr Deudores por Ventas). See
   // AccountingService.postReceiptJournalEntry.
-  receiptId    String?       @unique
-  receipt      Receipt?      @relation(fields: [receiptId], references: [id])
-  description  String
-  date         DateTime      @default(now())
-  createdById  String
-  createdBy    User          @relation(fields: [createdById], references: [id])
-  reversalOfId String?       @unique
-  reversalOf   JournalEntry? @relation("EntryReversal", fields: [reversalOfId], references: [id])
-  reversedBy   JournalEntry? @relation("EntryReversal")
+  receiptId         String?          @unique
+  receipt           Receipt?         @relation(fields: [receiptId], references: [id])
+  description       String
+  date              DateTime         @default(now())
+  createdById       String
+  createdBy         User             @relation(fields: [createdById], references: [id])
+  reversalOfId      String?          @unique
+  reversalOf        JournalEntry?    @relation("EntryReversal", fields: [reversalOfId], references: [id])
+  reversedBy        JournalEntry?    @relation("EntryReversal")
 
   lines JournalEntryLine[]
 
@@ -979,6 +989,118 @@ model TaxDefinition {
   @@unique([tenantId, code, validFrom])
   @@index([tenantId])
   @@map("tax_definitions")
+}
+
+enum WithholdingTaxType {
+  INCOME_TAX
+  VAT
+  GROSS_INCOME
+}
+
+// The 24 Argentine fiscal jurisdictions (CABA + 23 provincias) - only
+// meaningful on a GROSS_INCOME regime, since IIBB rates/minimums are set
+// per-jurisdiction (Ganancias/IVA are national, jurisdiction is always
+// null there). Not reused anywhere else in the schema (Company.
+// fiscalAddress stays free text, see its own comment) - this enum exists
+// purely to classify WithholdingRegime/SupplierPaymentWithholding rows.
+enum ArgentineJurisdiction {
+  CABA
+  BUENOS_AIRES
+  CATAMARCA
+  CHACO
+  CHUBUT
+  CORDOBA
+  CORRIENTES
+  ENTRE_RIOS
+  FORMOSA
+  JUJUY
+  LA_PAMPA
+  LA_RIOJA
+  MENDOZA
+  MISIONES
+  NEUQUEN
+  RIO_NEGRO
+  SALTA
+  SAN_JUAN
+  SAN_LUIS
+  SANTA_CRUZ
+  SANTA_FE
+  SANTIAGO_DEL_ESTERO
+  TIERRA_DEL_FUEGO
+  TUCUMAN
+}
+
+// Retenciones que EL TENANT practica a sus proveedores (Ganancias/IVA/IIBB)
+// al pagarles - dirección opuesta a Company.withholdsVat/withholdsIncomeTax/
+// withholdsGrossIncome (esos son sobre cuando un CLIENTE nos retiene a
+// nosotros, lado Cuentas a Cobrar, todavía sin lógica). Catálogo versionado
+// igual que TaxDefinition arriba (mismo motivo: no se puede editar la tasa
+// de un régimen ya usado en un pago existente, hay que cerrar con validTo y
+// crear una fila nueva) - ver WithholdingRegimeService.reviseRegime, mismo
+// patrón que TaxesService.reviseTaxDefinition. rate/minTaxableAmount son
+// las tasas/mínimos reales de AFIP/ARBA/etc. que el contador tipea a mano;
+// el sistema no persigue la tabla oficial de cada jurisdicción (24
+// jurisdicciones, tablas que cambian con el tiempo) - mismo criterio que
+// AFIP WSFE quedó stub por ahora (ver RealAfipPadronService vs. CAE falso).
+model WithholdingRegime {
+  id       String @id @default(uuid())
+  tenantId String
+  code     String
+  name     String
+
+  taxType      WithholdingTaxType
+  // Sólo se espera valor si taxType = GROSS_INCOME - no hay constraint a
+  // nivel DB forzándolo (mismo nivel de confianza que el resto de este
+  // catálogo, delegado al contador que lo configura).
+  jurisdiction ArgentineJurisdiction?
+
+  rate             Decimal @db.Decimal(5, 2)
+  // Mínimo no imponible: por debajo de esta base, no corresponde retener.
+  // 0 = siempre retiene (algunos regímenes no tienen piso).
+  minTaxableAmount Decimal @default(0) @db.Decimal(14, 2)
+
+  validFrom           DateTime  @default(now())
+  validTo             DateTime?
+  managedByAccountant Boolean   @default(false)
+
+  withholdingLines SupplierPaymentWithholding[]
+
+  @@unique([tenantId, code, validFrom])
+  @@index([tenantId, taxType])
+  @@map("withholding_regimes")
+}
+
+// Retención puntual aplicada a un SupplierPayment - análogo a
+// PurchaseInvoiceTaxLine pero del lado del pago (ver AccountingService.
+// postSupplierPaymentJournalEntry, que la lee agrupada por taxType).
+// taxType/jurisdiction/concept son un snapshot (no leen del regime en
+// runtime) - un pago ya registrado no puede cambiar de significado si el
+// régimen se edita/desactiva después, mismo criterio que
+// PurchaseInvoice.supplierName/supplierTaxId congelan el dato del
+// proveedor al momento de facturar.
+model SupplierPaymentWithholding {
+  id                String          @id @default(uuid())
+  tenantId          String
+  supplierPaymentId String
+  supplierPayment   SupplierPayment @relation(fields: [supplierPaymentId], references: [id])
+
+  // Null si se tipeó a mano sin elegir un régimen del catálogo - igual que
+  // PurchaseInvoiceTaxLine no exige un TaxDefinition detrás.
+  regimeId String?
+  regime   WithholdingRegime? @relation(fields: [regimeId], references: [id])
+
+  taxType      WithholdingTaxType
+  jurisdiction ArgentineJurisdiction?
+  concept      String
+  amount       Decimal                @db.Decimal(14, 2)
+
+  // Nº de certificado de retención entregado al proveedor (comprobante que
+  // AFIP/ARBA exige emitir) - texto libre, opcional; no hay generación de
+  // PDF/numeración propia para esto todavía.
+  certificateNumber String?
+
+  @@index([tenantId, supplierPaymentId])
+  @@map("supplier_payment_withholdings")
 }
 
 model FinancialAccount {
@@ -1126,6 +1248,14 @@ model QuoteRequest {
   // a cost estimate (there's nothing meaningful to sum in that case).
   estimatedTotal Decimal?  @db.Decimal(14, 2)
 
+  // Shared tag across N QuoteRequest rows (one per supplier) created
+  // together via QuoteRequestService.createGroup, to compare quotes for the
+  // same purchase need. Null for a QuoteRequest created the regular
+  // single-supplier way - grouping is opt-in, not the default. No parent
+  // table on purpose (see QuoteRequestService.compareGroup/selectWinner) -
+  // this is just a label, not a new document type.
+  rfqGroupId String?
+
   createdByUserId String
   createdBy       User     @relation(fields: [createdByUserId], references: [id])
   createdAt       DateTime @default(now())
@@ -1137,6 +1267,7 @@ model QuoteRequest {
 
   @@unique([tenantId, number])
   @@index([tenantId, supplierId])
+  @@index([tenantId, rfqGroupId])
   @@map("quote_requests")
 }
 
@@ -1237,12 +1368,12 @@ model PurchaseOrderLine {
 // at one location; a supplier splitting a delivery across warehouses is
 // two receipts, not one with per-line warehouses.
 model GoodsReceipt {
-  id              String   @id @default(uuid())
-  tenantId        String
-  purchaseOrderId String
-  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
-  warehouseId     String
-  warehouse       Warehouse     @relation(fields: [warehouseId], references: [id])
+  id                String        @id @default(uuid())
+  tenantId          String
+  purchaseOrderId   String
+  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  warehouseId       String
+  warehouse         Warehouse     @relation(fields: [warehouseId], references: [id])
   // Free text - the supplier's own remito/comprobante number, not a Plexo-
   // generated series (unlike QuoteRequest.number/PurchaseOrder.number).
   supplierDocNumber String?
@@ -1251,14 +1382,14 @@ model GoodsReceipt {
   // via @fastify/static's generic /uploads/ prefix), but also allows PDF
   // (a remito is commonly scanned as one, not just photographed).
   attachmentUrl     String?
-  receivedAt        DateTime @default(now())
+  receivedAt        DateTime      @default(now())
   notes             String?
   receivedByUserId  String
-  receivedBy        User     @relation(fields: [receivedByUserId], references: [id])
-  createdAt         DateTime @default(now())
+  receivedBy        User          @relation(fields: [receivedByUserId], references: [id])
+  createdAt         DateTime      @default(now())
 
-  lines GoodsReceiptLine[]
-  returns SupplierReturn[]
+  lines        GoodsReceiptLine[]
+  returns      SupplierReturn[]
   // The GRNI accrual entry posted when this receipt was recorded (Dr
   // Mercaderías / Cr Mercadería Recibida No Facturada) - see
   // AccountingService.postGoodsReceiptAccrual, called from
@@ -1300,7 +1431,7 @@ model GoodsReceiptLine {
 // of received) - a supplier owing replacement units shows up the same way
 // a partial delivery does.
 model SupplierReturn {
-  id               String   @id @default(uuid())
+  id               String       @id @default(uuid())
   tenantId         String
   goodsReceiptId   String
   goodsReceipt     GoodsReceipt @relation(fields: [goodsReceiptId], references: [id])
@@ -1308,10 +1439,10 @@ model SupplierReturn {
   reason           String
   notes            String?
   returnedByUserId String
-  returnedBy       User     @relation(fields: [returnedByUserId], references: [id])
-  createdAt        DateTime @default(now())
+  returnedBy       User         @relation(fields: [returnedByUserId], references: [id])
+  createdAt        DateTime     @default(now())
 
-  lines SupplierReturnLine[]
+  lines        SupplierReturnLine[]
   // The GRNI reversal entry posted when this return was recorded (Dr
   // Mercadería Recibida No Facturada / Cr Mercaderías, proportional to the
   // returned quantity) - see AccountingService.reverseSupplierReturnAccrual.
@@ -1359,17 +1490,17 @@ enum PurchaseInvoiceTaxLineType {
 }
 
 model PurchaseInvoice {
-  id              String        @id @default(uuid())
-  tenantId        String
-  purchaseOrderId String
-  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
-  supplierId      String
-  supplier        Company       @relation(fields: [supplierId], references: [id])
+  id                    String                @id @default(uuid())
+  tenantId              String
+  purchaseOrderId       String
+  purchaseOrder         PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id])
+  supplierId            String
+  supplier              Company               @relation(fields: [supplierId], references: [id])
   // Snapshot at entry time - same reasoning as Invoice.customerName/
   // customerTaxId: Company.name/taxId can change later, this record
   // (backing an IVA Crédito claim) must not silently change with it.
-  supplierName    String
-  supplierTaxId   String?
+  supplierName          String
+  supplierTaxId         String?
   // The supplier's own invoice number/date - free text, NOT a Plexo-
   // generated series (same convention as GoodsReceipt.supplierDocNumber;
   // unlike QuoteRequest.number/PurchaseOrder.number, Plexo isn't the one
@@ -1386,19 +1517,19 @@ model PurchaseInvoice {
   currencyId            String
   currency              Currency              @relation(fields: [currencyId], references: [id])
   // Net amount before tax, as written on the supplier's invoice.
-  subtotal    Decimal               @db.Decimal(14, 2)
+  subtotal              Decimal               @db.Decimal(14, 2)
   // Sum of taxLines (IVA Crédito + Percepciones).
-  taxTotal    Decimal               @db.Decimal(14, 2)
-  total       Decimal               @db.Decimal(14, 2)
-  balanceDue  Decimal               @db.Decimal(14, 2)
-  status      PurchaseInvoiceStatus @default(ISSUED)
+  taxTotal              Decimal               @db.Decimal(14, 2)
+  total                 Decimal               @db.Decimal(14, 2)
+  balanceDue            Decimal               @db.Decimal(14, 2)
+  status                PurchaseInvoiceStatus @default(ISSUED)
   // Photo or scan of the supplier's invoice - same pattern as
   // GoodsReceipt.attachmentUrl.
-  attachmentUrl   String?
-  notes           String?
-  createdByUserId String
-  createdBy       User     @relation(fields: [createdByUserId], references: [id])
-  createdAt       DateTime @default(now())
+  attachmentUrl         String?
+  notes                 String?
+  createdByUserId       String
+  createdBy             User                  @relation(fields: [createdByUserId], references: [id])
+  createdAt             DateTime              @default(now())
 
   taxLines     PurchaseInvoiceTaxLine[]
   receiptLinks PurchaseInvoiceReceipt[]
@@ -1470,6 +1601,7 @@ model SupplierPayment {
   recordedBy         User              @relation(fields: [recordedByUserId], references: [id])
 
   journalEntry JournalEntry?
+  withholdings SupplierPaymentWithholding[]
 
   @@index([tenantId, purchaseInvoiceId])
   @@map("supplier_payments")

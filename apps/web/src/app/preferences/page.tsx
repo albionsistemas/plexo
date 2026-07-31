@@ -86,7 +86,10 @@ export default function PreferencesPage() {
       {isLoading || !settings ? (
         <div className="text-slate-500">Cargando...</div>
       ) : (
-        <EmailSettingsCard settings={settings} />
+        <>
+          <EmailSettingsCard settings={settings} />
+          <WithholdingAgentCard settings={settings} />
+        </>
       )}
       <ActivityLogCard />
     </div>
@@ -169,6 +172,74 @@ function ActivityLogCard() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** El fisco (AFIP/ARBA/etc.) es quien otorga el carácter de agente de
+ * retención, no es algo que se active solo - por eso estos 3 flags son un
+ * checkbox explícito, no un default en true. Gatillan si puede
+ * crearse/aplicarse un WithholdingRegime de ese taxType (ver /taxes ->
+ * Retenciones y el formulario de pago en Compras). */
+function WithholdingAgentCard({ settings }: { settings: TenantSettings }) {
+  const queryClient = useQueryClient();
+  const [incomeTax, setIncomeTax] = useState(settings.withholdingAgentIncomeTax);
+  const [vat, setVat] = useState(settings.withholdingAgentVat);
+  const [grossIncome, setGrossIncome] = useState(settings.withholdingAgentGrossIncome);
+  const [message, setMessage] = useState('');
+
+  const mutation = useMutation({
+    mutationFn: (patch: Partial<{ withholdingAgentIncomeTax: boolean; withholdingAgentVat: boolean; withholdingAgentGrossIncome: boolean }>) =>
+      tenantSettingsApi.update(patch),
+    onSuccess: () => {
+      setMessage('Guardado');
+      void queryClient.invalidateQueries({ queryKey: ['tenant-settings'] });
+    },
+  });
+
+  function toggle(
+    field: 'withholdingAgentIncomeTax' | 'withholdingAgentVat' | 'withholdingAgentGrossIncome',
+    current: boolean,
+    setter: (v: boolean) => void,
+  ) {
+    setter(!current);
+    setMessage('');
+    mutation.mutate({ [field]: !current });
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6">
+      <h2 className="mb-1 text-sm font-medium text-slate-600 dark:text-slate-400">
+        Retenciones a proveedores
+      </h2>
+      <p className="mb-4 text-xs text-slate-500">
+        Marcá sólo los impuestos para los que AFIP/ARBA (u otro organismo provincial) ya te otorgó el
+        carácter de agente de retención. Habilita el catálogo de regímenes en Impuestos → Retenciones
+        y la opción de retener al registrar un pago en Compras.
+      </p>
+      <div className="flex flex-col gap-2">
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+          <input
+            type="checkbox"
+            checked={incomeTax}
+            onChange={() => toggle('withholdingAgentIncomeTax', incomeTax, setIncomeTax)}
+          />
+          Somos agentes de retención de Ganancias
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+          <input type="checkbox" checked={vat} onChange={() => toggle('withholdingAgentVat', vat, setVat)} />
+          Somos agentes de retención de IVA
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+          <input
+            type="checkbox"
+            checked={grossIncome}
+            onChange={() => toggle('withholdingAgentGrossIncome', grossIncome, setGrossIncome)}
+          />
+          Somos agentes de retención de Ingresos Brutos (IIBB)
+        </label>
+      </div>
+      {message && <p className="mt-3 text-xs text-green-600 dark:text-green-400">{message}</p>}
     </div>
   );
 }

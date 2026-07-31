@@ -13,6 +13,8 @@ import {
 import { Roles } from '@plexo/auth';
 import { AuditEntity, PdfStyle, type PurchaseDocumentStatus } from '@plexo/database';
 import { CreateQuoteRequestDto } from './dto/create-quote-request.dto.js';
+import { CreateQuoteRequestGroupDto } from './dto/create-quote-request-group.dto.js';
+import { SelectQuoteRequestWinnerDto } from './dto/select-quote-request-winner.dto.js';
 import { UpdateQuoteRequestDto } from './dto/update-quote-request.dto.js';
 import { QuoteRequestService } from './quote-request.service.js';
 
@@ -44,6 +46,37 @@ export class QuoteRequestController {
   @Post()
   create(@Body() dto: CreateQuoteRequestDto) {
     return this.quoteRequestService.create(dto);
+  }
+
+  // "Pedir cotización a varios proveedores" - creates N QuoteRequest (one
+  // per supplier), see QuoteRequestService.createGroup. idParam: null, same
+  // reasoning as create() above - and the response isn't a single entity
+  // anyway (it's { rfqGroupId, quoteRequests }), so entityId/entityLabel
+  // just come out empty here, which is fine for a bulk create.
+  @AuditEntity('quoteRequest', { idParam: null })
+  @Roles(...WRITE_ROLES)
+  @Post('groups')
+  createGroup(@Body() dto: CreateQuoteRequestGroupDto) {
+    return this.quoteRequestService.createGroup(dto);
+  }
+
+  @Get('groups/:rfqGroupId/compare')
+  compareGroup(@Param('rfqGroupId') rfqGroupId: string) {
+    return this.quoteRequestService.compareGroup(rfqGroupId);
+  }
+
+  // Audited as a `purchaseOrder` create, same reasoning as convert() below
+  // - selectWinner's real effect from the composition root's point of view
+  // is "a new PurchaseOrder exists", the sibling cancellations are a side
+  // effect (mirrors convert()'s own comment on this exact tradeoff).
+  @AuditEntity('purchaseOrder', { labelFields: ['number'], idParam: null })
+  @Roles(...WRITE_ROLES)
+  @Post('groups/:rfqGroupId/select-winner')
+  selectWinner(
+    @Param('rfqGroupId') rfqGroupId: string,
+    @Body() dto: SelectQuoteRequestWinnerDto,
+  ) {
+    return this.quoteRequestService.selectWinner(rfqGroupId, dto.winningQuoteRequestId);
   }
 
   @AuditEntity('quoteRequest', { labelFields: ['number'] })

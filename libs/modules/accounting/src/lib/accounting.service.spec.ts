@@ -535,6 +535,57 @@ describe('AccountingService.postSupplierPaymentJournalEntry', () => {
     expect(result).toBeUndefined();
     expect(db.journalEntry.create).not.toHaveBeenCalled();
   });
+
+  it('debits Proveedores for cash + withheld, credits Caja for cash only, and one liability account per taxType', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postSupplierPaymentJournalEntry({
+        supplierPaymentId: 'pay-3',
+        amount: 700,
+        withholdings: [
+          { taxType: 'INCOME_TAX', amount: 100 },
+          { taxType: 'GROSS_INCOME', amount: 50 },
+          { taxType: 'GROSS_INCOME', amount: 25 },
+        ],
+      }),
+    );
+
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    const lines = createArgs.data.lines.createMany.data;
+    // Proveedores debited for the full 875 cancelled (700 cash + 175
+    // withheld) - always balanced by construction.
+    expect(lines).toContainEqual({ tenantId: 'tenant-1', accountId: 'acc-2.1.05', direction: 'DEBIT', amount: 875 });
+    expect(lines).toContainEqual({ tenantId: 'tenant-1', accountId: 'acc-1.1.03', direction: 'CREDIT', amount: 700 });
+    expect(lines).toContainEqual({ tenantId: 'tenant-1', accountId: 'acc-2.1.06', direction: 'CREDIT', amount: 100 });
+    // Two GROSS_INCOME lines (different jurisdictions in real usage) summed
+    // into a single 2.1.08 credit line - one aggregate account, not one per
+    // withholding line.
+    expect(lines).toContainEqual({ tenantId: 'tenant-1', accountId: 'acc-2.1.08', direction: 'CREDIT', amount: 75 });
+    expect(lines).toHaveLength(4);
+    expect(db._created.some((a) => a.code === '2.1.07')).toBe(false);
+  });
+
+  it('books only the withheld liability lines when the cash amount is zero (fully withheld payment)', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postSupplierPaymentJournalEntry({
+        supplierPaymentId: 'pay-4',
+        amount: 0,
+        withholdings: [{ taxType: 'VAT', amount: 50 }],
+      }),
+    );
+
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    const lines = createArgs.data.lines.createMany.data;
+    expect(lines).toEqual([
+      { tenantId: 'tenant-1', accountId: 'acc-2.1.05', direction: 'DEBIT', amount: 50 },
+      { tenantId: 'tenant-1', accountId: 'acc-2.1.07', direction: 'CREDIT', amount: 50 },
+    ]);
+  });
 });
 
 describe('AccountingService.postReceiptJournalEntry', () => {

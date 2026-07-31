@@ -12,6 +12,9 @@ export interface TenantSettings {
   domainStatus: string | null;
   reminderTone: ReminderTone;
   reminderCcEmail: string | null;
+  withholdingAgentIncomeTax: boolean;
+  withholdingAgentVat: boolean;
+  withholdingAgentGrossIncome: boolean;
 }
 
 export interface ReminderStatus {
@@ -49,6 +52,9 @@ export const tenantSettingsApi = {
       emailFromLocalPart: string;
       reminderTone: ReminderTone;
       reminderCcEmail: string | null;
+      withholdingAgentIncomeTax: boolean;
+      withholdingAgentVat: boolean;
+      withholdingAgentGrossIncome: boolean;
     }>,
   ) => api.patch<TenantSettings>('/tenant-settings', dto).then((r) => r.data),
 };

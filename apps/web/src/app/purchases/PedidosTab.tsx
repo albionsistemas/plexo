@@ -9,17 +9,21 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import PurchaseOrderDetailPanel from './PurchaseOrderDetailPanel';
+import QuoteRequestComparisonPanel from './QuoteRequestComparisonPanel';
 import QuoteRequestDetailPanel from './QuoteRequestDetailPanel';
 import QuoteRequestFormModal from './QuoteRequestFormModal';
+import QuoteRequestGroupFormModal from './QuoteRequestGroupFormModal';
 import SendPurchaseOrderDialog from './SendPurchaseOrderDialog';
 
 export default function PedidosTab() {
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [editing, setEditing] = useState<QuoteRequestDetail | null>(null);
   const [pendingSend, setPendingSend] = useState<PurchaseOrderDetail | null>(null);
   const [viewOrderId, setViewOrderId] = useState<string | null>(null);
+  const [comparingGroupId, setComparingGroupId] = useState<string | null>(null);
 
   const { data: quoteRequests, isLoading } = useQuery({
     queryKey: ['quote-requests'],
@@ -33,7 +37,14 @@ export default function PedidosTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-3">
+        <button
+          type="button"
+          onClick={() => setCreatingGroup(true)}
+          className="rounded-lg border border-indigo-300 dark:border-indigo-700 px-4 py-2 text-sm font-semibold text-indigo-600 dark:text-indigo-400 transition hover:bg-indigo-50 dark:hover:bg-indigo-950"
+        >
+          Pedir a varios proveedores
+        </button>
         <button
           type="button"
           onClick={() => setCreating(true)}
@@ -80,6 +91,11 @@ export default function PedidosTab() {
                           {purchaseOrder.number}
                         </button>
                       )}
+                      {qr.rfqGroupId && (
+                        <span className="ml-2 rounded bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                          Comparación
+                        </span>
+                      )}
                     </td>
                     <td className="p-3 text-right text-slate-800 dark:text-slate-200">
                       {qr.estimatedTotal != null ? `$${Number(qr.estimatedTotal).toFixed(2)}` : '—'}{' '}
@@ -87,6 +103,14 @@ export default function PedidosTab() {
                     </td>
                     <td className="p-3">
                       <div className="flex justify-end gap-3 text-xs">
+                        {qr.rfqGroupId ? (
+                          <button
+                            onClick={() => setComparingGroupId(qr.rfqGroupId)}
+                            className="text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300"
+                          >
+                            Comparar
+                          </button>
+                        ) : null}
                         <button
                           onClick={() => setDetailId(qr.id)}
                           className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
@@ -111,6 +135,7 @@ export default function PedidosTab() {
       )}
 
       {creating && <QuoteRequestFormModal onClose={() => setCreating(false)} />}
+      {creatingGroup && <QuoteRequestGroupFormModal onClose={() => setCreatingGroup(false)} />}
       {editing && <QuoteRequestFormModal quoteRequest={editing} onClose={() => setEditing(null)} />}
       {detailId && (
         <QuoteRequestDetailPanel
@@ -140,6 +165,16 @@ export default function PedidosTab() {
       )}
       {viewOrderId && (
         <PurchaseOrderDetailPanel purchaseOrderId={viewOrderId} onClose={() => setViewOrderId(null)} />
+      )}
+      {comparingGroupId && (
+        <QuoteRequestComparisonPanel
+          rfqGroupId={comparingGroupId}
+          onClose={() => setComparingGroupId(null)}
+          onWinnerSelected={(purchaseOrder) => {
+            setComparingGroupId(null);
+            setPendingSend(purchaseOrder);
+          }}
+        />
       )}
     </div>
   );

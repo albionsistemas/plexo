@@ -35,6 +35,9 @@ describe('TenantSettingsService.getSettings', () => {
       domainStatus: null,
       reminderTone: 'NEUTRAL',
       reminderCcEmail: null,
+      withholdingAgentIncomeTax: false,
+      withholdingAgentVat: false,
+      withholdingAgentGrossIncome: false,
     });
   });
 
@@ -50,6 +53,9 @@ describe('TenantSettingsService.getSettings', () => {
           domainStatus: 'verified',
           reminderTone: 'FIRM',
           reminderCcEmail: 'cobranzas@acme.com',
+          withholdingAgentIncomeTax: true,
+          withholdingAgentVat: false,
+          withholdingAgentGrossIncome: true,
         }),
       },
     };
@@ -66,6 +72,9 @@ describe('TenantSettingsService.getSettings', () => {
       domainStatus: 'verified',
       reminderTone: 'FIRM',
       reminderCcEmail: 'cobranzas@acme.com',
+      withholdingAgentIncomeTax: true,
+      withholdingAgentVat: false,
+      withholdingAgentGrossIncome: true,
     });
   });
 });
@@ -96,6 +105,9 @@ describe('TenantSettingsService.updateSettings', () => {
         emailFromLocalPart: undefined,
         reminderTone: undefined,
         reminderCcEmail: null,
+        withholdingAgentIncomeTax: undefined,
+        withholdingAgentVat: undefined,
+        withholdingAgentGrossIncome: undefined,
       },
       update: {
         arReminderIntervalDays: 5,
@@ -104,6 +116,9 @@ describe('TenantSettingsService.updateSettings', () => {
         emailFromLocalPart: undefined,
         reminderTone: undefined,
         reminderCcEmail: undefined,
+        withholdingAgentIncomeTax: undefined,
+        withholdingAgentVat: undefined,
+        withholdingAgentGrossIncome: undefined,
       },
     });
     expect(result.arReminderIntervalDays).toBe(5);
