@@ -7,6 +7,7 @@ import { ActivityLogModule } from '@plexo/activity-log';
 import { JwtAuthGuard, ModuleAccessGuard, RolesGuard } from '@plexo/auth';
 import { CompaniesModule } from '@plexo/companies';
 import { DatabaseModule } from '@plexo/database';
+import { EncryptionModule } from '@plexo/encryption';
 import { InventoryModule } from '@plexo/inventory';
 import { InvoicingModule } from '@plexo/invoicing';
 import { PayablesModule } from '@plexo/payables';
@@ -32,6 +33,7 @@ import { SupplierReturnsModule } from './supplier-returns/supplier-returns.modul
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
     DatabaseModule,
+    EncryptionModule,
     AuthModule,
     CompaniesModule,
     InventoryModule,

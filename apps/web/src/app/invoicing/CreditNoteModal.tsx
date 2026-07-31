@@ -1,8 +1,10 @@
 'use client';
 
 import { invoicingApi, type Invoice } from '@/lib/invoicing';
+import { tenantSettingsApi } from '@/lib/tenantSettings';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 interface Props {
@@ -26,6 +28,11 @@ export default function CreditNoteModal({ invoice, onClose }: Props) {
     queryKey: ['invoice-detail', invoice.id],
     queryFn: () => invoicingApi.getInvoice(invoice.id),
   });
+  const tenantSettingsQuery = useQuery({
+    queryKey: ['tenant-settings'],
+    queryFn: tenantSettingsApi.get,
+  });
+  const afipConfigured = tenantSettingsQuery.data?.afipConfigured ?? false;
 
   useEffect(() => {
     if (detailQuery.data) {
@@ -121,6 +128,17 @@ export default function CreditNoteModal({ invoice, onClose }: Props) {
               placeholder="Devolución de mercadería..."
             />
           </div>
+          {!afipConfigured && (
+            <p className="text-sm text-amber-600 dark:text-amber-400">
+              Todavía no configuraste el certificado AFIP de esta empresa - la nota de crédito no va
+              a poder pedir CAE hasta que lo cargues en{' '}
+              <Link href="/preferences" className="font-medium underline">
+                Preferencias → Certificado AFIP
+              </Link>
+              .
+            </p>
+          )}
+
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           <div className="mt-2 flex justify-end gap-3">
             <button
@@ -132,7 +150,8 @@ export default function CreditNoteModal({ invoice, onClose }: Props) {
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending || detailQuery.isLoading}
+              disabled={mutation.isPending || detailQuery.isLoading || !afipConfigured}
+              title={!afipConfigured ? 'Configurá el certificado AFIP en Preferencias primero' : undefined}
               className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-600 disabled:opacity-50"
             >
               {mutation.isPending ? 'Emitiendo...' : 'Emitir nota de crédito'}

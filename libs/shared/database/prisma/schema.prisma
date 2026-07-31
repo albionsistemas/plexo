@@ -116,6 +116,15 @@ model Tenant {
   @@map("tenants")
 }
 
+// "homologacion" (sandbox de AFIP) vs "producción" - controla qué WSDL/URL
+// de AFIP usa el tenant (ver afip-wsaa-client.ts). Antes era una única
+// variable de entorno de proceso (AFIP_ENV); ahora es por tenant, igual que
+// el certificado/clave de abajo.
+enum AfipEnvironment {
+  HOMOLOGACION
+  PRODUCCION
+}
+
 // Tenant-wide business-policy toggles, as opposed to User (per-person
 // preferences like theme/density, which live in the frontend's localStorage
 // today, not the DB) - this is the first one, deliberately its own table
@@ -172,6 +181,22 @@ model TenantSettings {
   withholdingAgentIncomeTax   Boolean @default(false)
   withholdingAgentVat         Boolean @default(false)
   withholdingAgentGrossIncome Boolean @default(false)
+
+  // AFIP WSFE (facturación electrónica) - certificado y clave privada del
+  // tenant, cifrados con EncryptionService (AES-256-GCM) antes de persistir
+  // (ver TenantSettingsService). Reemplaza AFIP_CERT_PATH/AFIP_KEY_PATH/
+  // AFIP_ENV, que hoy son variables de entorno del proceso: un solo CUIT
+  // para toda la instancia, incompatible con multi-tenant. El CUIT en sí ya
+  // vive en Tenant.taxId y el Punto de Venta en Company.pointOfSaleNumber
+  // (la sucursal BRANCH bajo la que se factura) - acá sólo falta lo que
+  // identifica *cómo* hablarle a AFIP.
+  afipEnv           AfipEnvironment @default(HOMOLOGACION)
+  afipCertEncrypted String?
+  afipKeyEncrypted  String?
+  // Vencimiento del certificado, en claro (no es secreto) - permite avisar
+  // "vence en N días" en Preferencias sin descifrar el certificado en cada
+  // carga de pantalla.
+  afipCertExpiresAt DateTime?
 
   updatedAt DateTime @updatedAt
 

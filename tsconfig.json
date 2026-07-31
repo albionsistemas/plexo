@@ -68,6 +68,12 @@
     },
     {
       "path": "./libs/modules/payables"
+    },
+    {
+      "path": "./libs/shared/encryption"
+    },
+    {
+      "path": "./libs/shared/afip-credentials"
     }
   ],
   "compilerOptions": {}

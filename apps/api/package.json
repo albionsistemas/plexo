@@ -14,6 +14,7 @@
     "@plexo/auth": "^0.0.1",
     "@plexo/companies": "^0.0.1",
     "@plexo/database": "^0.0.1",
+    "@plexo/encryption": "^0.0.1",
     "@plexo/inventory": "^0.0.1",
     "@plexo/invoicing": "^0.0.1",
     "@plexo/payables": "^0.0.1",

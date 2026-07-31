@@ -4,8 +4,10 @@ import CompanyFormModal from '@/app/companies/CompanyFormModal';
 import { companiesApi } from '@/lib/companies';
 import { inventoryApi } from '@/lib/inventory';
 import { invoicingApi, type CreateSaleLineInput } from '@/lib/invoicing';
+import { tenantSettingsApi } from '@/lib/tenantSettings';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
+import Link from 'next/link';
 import { useState } from 'react';
 
 interface Props {
@@ -39,6 +41,12 @@ export default function NewInvoiceModal({ onClose }: Props) {
   const currenciesQuery = useQuery({
     queryKey: ['invoicing-currencies'],
     queryFn: invoicingApi.listCurrencies,
+  });
+  // Same query key as Preferencias, so this reads the cached value there
+  // instead of firing its own request most of the time.
+  const tenantSettingsQuery = useQuery({
+    queryKey: ['tenant-settings'],
+    queryFn: tenantSettingsApi.get,
   });
 
   const customers = customersQuery.data ?? [];
@@ -125,6 +133,10 @@ export default function NewInvoiceModal({ onClose }: Props) {
   // "+ nuevo cliente"/"+ nueva sucursal" arriba), así que sólo bloquea la
   // falta de depósito, que no tiene un atajo inline todavía.
   const missingData = ready && warehouses.length === 0;
+  // undefined mientras carga (aún no sabemos) se trata como "no
+  // configurado" - más seguro bloquear el submit un instante de más que
+  // dejarlo habilitado y que el POST falle recién en el backend.
+  const afipConfigured = tenantSettingsQuery.data?.afipConfigured ?? false;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -281,6 +293,17 @@ export default function NewInvoiceModal({ onClose }: Props) {
               ))}
             </div>
 
+            {!afipConfigured && (
+              <p className="text-sm text-amber-600 dark:text-amber-400">
+                Todavía no configuraste el certificado AFIP de esta empresa - la factura no va a
+                poder pedir CAE hasta que lo cargues en{' '}
+                <Link href="/preferences" className="font-medium underline">
+                  Preferencias → Certificado AFIP
+                </Link>
+                .
+              </p>
+            )}
+
             {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
             <div className="mt-2 flex justify-end gap-3">
@@ -293,7 +316,8 @@ export default function NewInvoiceModal({ onClose }: Props) {
               </button>
               <button
                 type="submit"
-                disabled={mutation.isPending}
+                disabled={mutation.isPending || !afipConfigured}
+                title={!afipConfigured ? 'Configurá el certificado AFIP en Preferencias primero' : undefined}
                 className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
               >
                 {mutation.isPending ? 'Emitiendo...' : 'Emitir factura'}

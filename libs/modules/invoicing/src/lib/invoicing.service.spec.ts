@@ -164,8 +164,14 @@ describe('InvoicingService.createInvoice', () => {
       tenantId: 'tenant-1',
       number: '00000001',
       customerName: 'Acme',
+      customerTaxId: '20-1-1',
+      documentLetter: 'B',
+      pointOfSale: '0001',
       status: 'ISSUED',
       issueDate: new Date('2026-01-01'),
+      exchangeRate: new Prisma.Decimal(2),
+      subtotal: new Prisma.Decimal(324),
+      taxTotal: new Prisma.Decimal(34.02),
       total: new Prisma.Decimal(358.02),
       lines: [],
     };
@@ -214,7 +220,26 @@ describe('InvoicingService.createInvoice', () => {
     expect(lineB.netAmount.toNumber()).toBeCloseTo(180, 6);
     expect(lineB.lineTotal.toNumber()).toBeCloseTo(162, 6);
 
-    expect(electronicInvoicing.requestCae).toHaveBeenCalled();
+    const caeRequest = (electronicInvoicing.requestCae as jest.Mock).mock.calls[0][0];
+    expect(caeRequest.kind).toBe('FACTURA');
+    expect(caeRequest.documentLetter).toBe('B');
+    expect(caeRequest.customerTaxId).toBe('20-1-1');
+    expect(caeRequest.currencyCode).toBe('ARS');
+    // One tax group per distinct rate present on the lines (21% and 0%),
+    // not one row per line - and their sum reproduces the invoice totals.
+    expect(caeRequest.taxLines).toHaveLength(2);
+    expect(caeRequest.taxLines.map((l: { rate: Prisma.Decimal }) => l.rate.toNumber()).sort()).toEqual([0, 21]);
+    const taxLineNetTotal = caeRequest.taxLines.reduce(
+      (sum: Prisma.Decimal, l: { netAmount: Prisma.Decimal }) => sum.add(l.netAmount),
+      new Prisma.Decimal(0),
+    );
+    const taxLineTaxTotal = caeRequest.taxLines.reduce(
+      (sum: Prisma.Decimal, l: { taxAmount: Prisma.Decimal }) => sum.add(l.taxAmount),
+      new Prisma.Decimal(0),
+    );
+    expect(taxLineNetTotal.toNumber()).toBeCloseTo(324, 6);
+    expect(taxLineTaxTotal.toNumber()).toBeCloseTo(34.02, 6);
+
     expect(emailSender.sendInvoiceEmail).toHaveBeenCalledWith({
       to: 'buyer@example.com',
       invoiceNumber: '0001-00000001',
@@ -250,6 +275,7 @@ describe('InvoicingService.createCreditNote', () => {
     quantity: new Prisma.Decimal(2),
     netAmount: new Prisma.Decimal(100),
     lineTotal: new Prisma.Decimal(121),
+    taxRate: new Prisma.Decimal(21),
   };
 
   function dbWithInvoice(invoice: Record<string, unknown>, overrides: Record<string, unknown> = {}) {
@@ -260,11 +286,25 @@ describe('InvoicingService.createCreditNote', () => {
       },
       creditNote: {
         count: jest.fn().mockResolvedValue(0),
-        create: jest.fn().mockResolvedValue({ id: 'cn-1', number: '00000001', lines: [] }),
+        create: jest.fn().mockResolvedValue({
+          id: 'cn-1',
+          number: '00000001',
+          documentLetter: 'B',
+          pointOfSale: '0001',
+          issueDate: new Date('2026-01-01'),
+          exchangeRate: new Prisma.Decimal(2),
+          subtotal: new Prisma.Decimal(50),
+          taxTotal: new Prisma.Decimal(10.5),
+          total: new Prisma.Decimal(60.5),
+          lines: [],
+        }),
         update: jest.fn().mockResolvedValue({ id: 'cn-1', number: '00000001', lines: [] }),
       },
       creditNoteLine: {
         groupBy: jest.fn().mockResolvedValue([]),
+      },
+      currency: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'currency-1', code: 'ARS' }),
       },
       $queryRaw: jest.fn().mockResolvedValue(undefined),
       ...overrides,
@@ -353,8 +393,10 @@ describe('InvoicingService.createCreditNote', () => {
     const invoice = {
       id: 'invoice-1',
       afipCae: 'CAE-ORIGINAL',
+      number: '00000042',
       pointOfSale: '0001',
       documentLetter: 'B',
+      customerTaxId: '20-1-1',
       currencyId: 'currency-1',
       exchangeRate: new Prisma.Decimal(2),
       balanceDue: new Prisma.Decimal(121),
@@ -378,7 +420,17 @@ describe('InvoicingService.createCreditNote', () => {
     expect(createArgs.data.reason).toBe('return');
     expect(createArgs.data.subtotal.toNumber()).toBe(50);
     expect(createArgs.data.total.toNumber()).toBe(60.5);
-    expect(electronicInvoicing.requestCae).toHaveBeenCalled();
+
+    const caeRequest = (electronicInvoicing.requestCae as jest.Mock).mock.calls[0][0];
+    expect(caeRequest.kind).toBe('NOTA_CREDITO');
+    expect(caeRequest.customerTaxId).toBe('20-1-1');
+    expect(caeRequest.associatedVoucher).toEqual({
+      documentLetter: 'B',
+      pointOfSale: '0001',
+      number: '00000042',
+    });
+    expect(caeRequest.taxLines).toHaveLength(1);
+    expect(caeRequest.taxLines[0].rate.toNumber()).toBe(21);
   });
 
   it('rejects a credit note whose total exceeds the invoice balance due', async () => {

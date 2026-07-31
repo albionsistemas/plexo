@@ -25,7 +25,11 @@ import type { CreateInvoiceDto } from './dto/create-invoice.dto.js';
 import type { RecordExchangeRateDto } from './dto/record-exchange-rate.dto.js';
 import type { RecordReceiptDto } from './dto/record-receipt.dto.js';
 import { EMAIL_SENDER, type EmailSender } from './email-sender.port.js';
-import { ELECTRONIC_INVOICING, type ElectronicInvoicingPort } from './electronic-invoicing.port.js';
+import {
+  ELECTRONIC_INVOICING,
+  type ElectronicInvoicingPort,
+  type ElectronicInvoiceTaxLine,
+} from './electronic-invoicing.port.js';
 
 type InvoiceWithLines = Invoice & { lines: InvoiceLine[] };
 type InvoiceLineDetail = InvoiceLine & { articleVariant: ArticleVariant & { article: Article } };
@@ -202,6 +206,7 @@ export class InvoicingService {
     const globalDiscountAmount = subtotal.mul(globalDiscountPercent).div(100);
     let taxTotal = new Prisma.Decimal(0);
     const lineInputs: Prisma.InvoiceLineCreateManyInvoiceInput[] = [];
+    const taxLineRows: { taxRate: Prisma.Decimal; netAmount: Prisma.Decimal; taxAmount: Prisma.Decimal }[] = [];
 
     for (const calc of lineCalculations) {
       const share = subtotal.isZero() ? new Prisma.Decimal(0) : calc.netAmount.div(subtotal);
@@ -209,6 +214,7 @@ export class InvoicingService {
       const afterGlobalDiscount = calc.netAmount.sub(lineGlobalDiscount);
       const lineTax = afterGlobalDiscount.mul(calc.taxRate).div(100);
       taxTotal = taxTotal.add(lineTax);
+      taxLineRows.push({ taxRate: calc.taxRate, netAmount: afterGlobalDiscount, taxAmount: lineTax });
 
       lineInputs.push({
         tenantId,
@@ -252,8 +258,18 @@ export class InvoicingService {
     });
 
     const { cae, caeExpiry } = await this.electronicInvoicing.requestCae({
+      kind: 'FACTURA',
+      documentLetter: created.documentLetter,
+      pointOfSale: created.pointOfSale,
       number: created.number,
+      issueDate: created.issueDate,
+      customerTaxId: created.customerTaxId,
+      currencyCode: currency.code,
+      exchangeRate: created.exchangeRate,
+      netAmount: created.subtotal,
+      taxAmount: created.taxTotal,
       total: created.total,
+      taxLines: this.groupTaxLines(taxLineRows),
     });
 
     const finalInvoice = await db.invoice.update({
@@ -338,6 +354,7 @@ export class InvoicingService {
       taxAmount: Prisma.Decimal;
       lineTotal: Prisma.Decimal;
     }[] = [];
+    const taxLineRows: { taxRate: Prisma.Decimal; netAmount: Prisma.Decimal; taxAmount: Prisma.Decimal }[] = [];
 
     for (const requested of dto.lines) {
       const invoiceLine = invoiceLinesById.get(requested.invoiceLineId);
@@ -364,6 +381,7 @@ export class InvoicingService {
       const lineTotal = netAmount.add(taxAmount);
 
       linesToCreate.push({ invoiceLineId: invoiceLine.id, quantity, netAmount, taxAmount, lineTotal });
+      taxLineRows.push({ taxRate: invoiceLine.taxRate, netAmount, taxAmount });
       subtotal = subtotal.add(netAmount);
       taxTotal = taxTotal.add(taxAmount);
       total = total.add(lineTotal);
@@ -394,9 +412,25 @@ export class InvoicingService {
       include: { lines: true },
     });
 
+    const currency = await db.currency.findUniqueOrThrow({ where: { id: invoice.currencyId } });
     const { cae, caeExpiry } = await this.electronicInvoicing.requestCae({
+      kind: 'NOTA_CREDITO',
+      documentLetter: created.documentLetter,
+      pointOfSale: created.pointOfSale,
       number: created.number,
+      issueDate: created.issueDate,
+      customerTaxId: invoice.customerTaxId,
+      currencyCode: currency.code,
+      exchangeRate: created.exchangeRate,
+      netAmount: created.subtotal,
+      taxAmount: created.taxTotal,
       total: created.total,
+      taxLines: this.groupTaxLines(taxLineRows),
+      associatedVoucher: {
+        documentLetter: invoice.documentLetter,
+        pointOfSale: invoice.pointOfSale,
+        number: invoice.number,
+      },
     });
 
     const balanceDue = invoice.balanceDue.sub(total);
@@ -517,6 +551,26 @@ export class InvoicingService {
       );
     }
     return taxDefinition.rate ?? new Prisma.Decimal(0);
+  }
+
+  /** Collapses per-line (rate, netAmount, taxAmount) rows into one entry per
+   * distinct rate - AFIP's FECAESolicitar wants IVA discriminated by
+   * alicuota (Iva[]), not one row per invoice line. */
+  private groupTaxLines(
+    rows: { taxRate: Prisma.Decimal; netAmount: Prisma.Decimal; taxAmount: Prisma.Decimal }[],
+  ): ElectronicInvoiceTaxLine[] {
+    const byRate = new Map<string, ElectronicInvoiceTaxLine>();
+    for (const row of rows) {
+      const key = row.taxRate.toFixed(2);
+      const existing = byRate.get(key);
+      if (existing) {
+        existing.netAmount = existing.netAmount.add(row.netAmount);
+        existing.taxAmount = existing.taxAmount.add(row.taxAmount);
+      } else {
+        byRate.set(key, { rate: row.taxRate, netAmount: row.netAmount, taxAmount: row.taxAmount });
+      }
+    }
+    return Array.from(byRate.values());
   }
 
   /**

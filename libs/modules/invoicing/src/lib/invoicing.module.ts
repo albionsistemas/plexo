@@ -1,12 +1,13 @@
 import { Logger, Module } from '@nestjs/common';
+import { AfipCredentialsModule } from '@plexo/afip-credentials';
 import { ConsoleEmailSender } from './console-email-sender.js';
 import type { EmailSender } from './email-sender.port.js';
 import { EMAIL_SENDER } from './email-sender.port.js';
 import { ELECTRONIC_INVOICING } from './electronic-invoicing.port.js';
 import { InvoicingController } from './invoicing.controller.js';
 import { InvoicingService } from './invoicing.service.js';
+import { RealElectronicInvoicingService } from './real-electronic-invoicing.js';
 import { ResendEmailSender } from './resend-email-sender.js';
-import { StubElectronicInvoicingService } from './stub-electronic-invoicing.js';
 
 const logger = new Logger('InvoicingModule');
 
@@ -29,11 +30,12 @@ function createEmailSender(): EmailSender {
 }
 
 @Module({
+  imports: [AfipCredentialsModule],
   controllers: [InvoicingController],
   providers: [
     InvoicingService,
     { provide: EMAIL_SENDER, useFactory: createEmailSender },
-    { provide: ELECTRONIC_INVOICING, useClass: StubElectronicInvoicingService },
+    { provide: ELECTRONIC_INVOICING, useClass: RealElectronicInvoicingService },
   ],
   exports: [InvoicingService],
 })

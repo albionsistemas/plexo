@@ -13,8 +13,13 @@ const AUDIT_FIELD_DENYLIST = new Set([
 
 /** Defense-in-depth: excludes any field matching this regardless of the
  * denylist above, so a future entity with e.g. an `apiSecret` column never
- * leaks into a diff just because nobody remembered to denylist it by name. */
-const SENSITIVE_FIELD_PATTERN = /password|secret|token|hash/i;
+ * leaks into a diff just because nobody remembered to denylist it by name.
+ * `encrypted` covers EncryptionService-backed columns (e.g.
+ * TenantSettings.afipCertEncrypted) - even though what's stored is
+ * ciphertext, not plaintext, it's still not something a secondary audit
+ * copy needs, and the convention is that anything named *Encrypted holds
+ * exactly the kind of secret this pattern exists to keep out. */
+const SENSITIVE_FIELD_PATTERN = /password|secret|token|hash|encrypted/i;
 
 function auditableKeys(entity: Record<string, unknown>): string[] {
   return Object.keys(entity).filter(

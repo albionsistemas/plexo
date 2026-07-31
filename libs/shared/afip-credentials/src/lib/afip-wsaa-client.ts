@@ -1,7 +1,7 @@
 import forge from 'node-forge';
 import { XMLParser } from 'fast-xml-parser';
 
-export interface AfipCredentials {
+export interface AfipWsaaCredentials {
   certPem: string;
   keyPem: string;
   env: 'homologacion' | 'produccion';
@@ -13,7 +13,7 @@ interface WsaaTicket {
   expiresAt: Date;
 }
 
-const WSAA_URL: Record<AfipCredentials['env'], string> = {
+const WSAA_URL: Record<AfipWsaaCredentials['env'], string> = {
   homologacion: 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms',
   produccion: 'https://wsaa.afip.gov.ar/ws/services/LoginCms',
 };
@@ -26,11 +26,17 @@ const xmlParser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true 
  * first, obtained by CMS-signing a short-lived XML request with the
  * tenant's own AFIP certificate/key. Tickets are valid ~12h and AFIP asks
  * integrators not to request a new one on every call, hence the cache.
+ *
+ * Lives in this shared lib (not inside companies, where it originated)
+ * because both the padrón lookup (companies) and WSFE (invoicing) need the
+ * exact same auth mechanism against different, separately-authorized AFIP
+ * services - see AfipCredentialsService's docstring for why credentials
+ * themselves are resolved per-call rather than baked into either module.
  */
 export class AfipWsaaClient {
   private readonly ticketCache = new Map<string, WsaaTicket>();
 
-  constructor(private readonly credentials: AfipCredentials) {}
+  constructor(private readonly credentials: AfipWsaaCredentials) {}
 
   async getTicket(service: string): Promise<WsaaTicket> {
     const cached = this.ticketCache.get(service);

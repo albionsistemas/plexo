@@ -1,8 +1,12 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { getTenantDb, getTenantId } from '@plexo/database';
-import type { EmailSenderMode, ReminderTone } from '@plexo/database';
+import type { AfipEnvironment, EmailSenderMode, ReminderTone, TenantSettings } from '@plexo/database';
+import { EncryptionService } from '@plexo/encryption';
 import type { DomainRecords } from 'resend';
+import { parseAndValidateAfipCertificate } from './afip-certificate.js';
+import type { UpdateTenantInfoDto } from './dto/update-tenant-info.dto.js';
 import type { UpdateTenantSettingsDto } from './dto/update-tenant-settings.dto.js';
+import type { UploadAfipCertificateDto } from './dto/upload-afip-certificate.dto.js';
 import { RESEND_DOMAIN_CLIENT, type ResendDomainsClient } from './resend-domain-client.provider.js';
 
 export interface TenantSettingsView {
@@ -17,6 +21,16 @@ export interface TenantSettingsView {
   withholdingAgentIncomeTax: boolean;
   withholdingAgentVat: boolean;
   withholdingAgentGrossIncome: boolean;
+  afipEnv: AfipEnvironment;
+  // Never the decrypted cert/key themselves - just whether one is on file,
+  // so the frontend can show "certificado cargado" vs. an upload prompt.
+  afipConfigured: boolean;
+  afipCertExpiresAt: Date | null;
+  // Tenant.taxId (the tenant's OWN CUIT - who the AFIP certificate is
+  // registered under), surfaced here because Preferencias/AFIP is the only
+  // screen that needs to show/edit it today - see updateTenantInfo. Not a
+  // TenantSettings column; it lives on Tenant, joined in on every read.
+  tenantTaxId: string | null;
 }
 
 export interface DomainRegistrationResult {
@@ -28,6 +42,7 @@ export interface DomainRegistrationResult {
 export class TenantSettingsService {
   constructor(
     @Inject(RESEND_DOMAIN_CLIENT) private readonly domains: ResendDomainsClient | null,
+    private readonly encryption: EncryptionService,
   ) {}
 
   /** No row yet (tenant never visited Preferencias) reads as "everything
@@ -35,9 +50,32 @@ export class TenantSettingsService {
    * tenant that never opens this screen sees nothing change. The row is
    * only created lazily, on the first PATCH. */
   async getSettings(): Promise<TenantSettingsView> {
-    const row = await getTenantDb().tenantSettings.findUnique({
-      where: { tenantId: getTenantId() },
-    });
+    const tenantId = getTenantId();
+    const db = getTenantDb();
+    const [row, tenant] = await Promise.all([
+      db.tenantSettings.findUnique({ where: { tenantId } }),
+      db.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
+    ]);
+    return this.toView(row, tenant.taxId);
+  }
+
+  private async getTenantTaxId(): Promise<string | null> {
+    const tenant = await getTenantDb().tenant.findUniqueOrThrow({ where: { id: getTenantId() } });
+    return tenant.taxId;
+  }
+
+  /** The tenant's own CUIT - lives on Tenant, not TenantSettings, but this
+   * is the only screen that edits it, so it's exposed through this service
+   * rather than adding a whole separate module for one field. */
+  async updateTenantInfo(dto: UpdateTenantInfoDto): Promise<TenantSettingsView> {
+    const tenantId = getTenantId();
+    const db = getTenantDb();
+    await db.tenant.update({ where: { id: tenantId }, data: { taxId: dto.taxId } });
+    const row = await db.tenantSettings.findUnique({ where: { tenantId } });
+    return this.toView(row, dto.taxId);
+  }
+
+  private toView(row: TenantSettings | null, tenantTaxId: string | null): TenantSettingsView {
     return {
       arReminderIntervalDays: row?.arReminderIntervalDays ?? null,
       emailSenderMode: row?.emailSenderMode ?? 'SHARED',
@@ -50,6 +88,14 @@ export class TenantSettingsService {
       withholdingAgentIncomeTax: row?.withholdingAgentIncomeTax ?? false,
       withholdingAgentVat: row?.withholdingAgentVat ?? false,
       withholdingAgentGrossIncome: row?.withholdingAgentGrossIncome ?? false,
+      afipEnv: row?.afipEnv ?? 'HOMOLOGACION',
+      // Mirrors AfipCredentialsService.getCurrent()'s own "configured"
+      // check exactly (cert+key AND the tenant's own CUIT) - otherwise this
+      // flag could say "listo" while WSFE calls still fail for missing the
+      // CUIT half of it.
+      afipConfigured: Boolean(row?.afipCertEncrypted && row?.afipKeyEncrypted && tenantTaxId),
+      afipCertExpiresAt: row?.afipCertExpiresAt ?? null,
+      tenantTaxId,
     };
   }
 
@@ -83,19 +129,7 @@ export class TenantSettingsService {
         withholdingAgentGrossIncome: dto.withholdingAgentGrossIncome,
       },
     });
-    return {
-      arReminderIntervalDays: row.arReminderIntervalDays,
-      emailSenderMode: row.emailSenderMode,
-      emailFromName: row.emailFromName,
-      emailFromLocalPart: row.emailFromLocalPart,
-      emailCustomDomain: row.emailCustomDomain,
-      domainStatus: row.domainStatus,
-      reminderTone: row.reminderTone,
-      reminderCcEmail: row.reminderCcEmail,
-      withholdingAgentIncomeTax: row.withholdingAgentIncomeTax,
-      withholdingAgentVat: row.withholdingAgentVat,
-      withholdingAgentGrossIncome: row.withholdingAgentGrossIncome,
-    };
+    return this.toView(row, await this.getTenantTaxId());
   }
 
   /** Registers (or, if this tenant already registered this exact domain,
@@ -151,6 +185,51 @@ export class TenantSettingsService {
     }
     await this.persistDomain(tenantId, existing.emailCustomDomain, data.id, data.status);
     return { status: data.status, records: data.records };
+  }
+
+  /** Validates the cert/key pair, encrypts both with EncryptionService and
+   * upserts them - the plaintext PEMs never touch the database or a log
+   * line, only this in-memory validation step. Overwrites whatever was
+   * there before, if anything (re-uploading is how a tenant rotates an
+   * expiring certificate). */
+  async uploadAfipCertificate(dto: UploadAfipCertificateDto): Promise<TenantSettingsView> {
+    let expiresAt: Date;
+    try {
+      ({ expiresAt } = parseAndValidateAfipCertificate(dto.certPem, dto.keyPem));
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
+
+    const tenantId = getTenantId();
+    const afipCertEncrypted = this.encryption.encrypt(dto.certPem);
+    const afipKeyEncrypted = this.encryption.encrypt(dto.keyPem);
+    const row = await getTenantDb().tenantSettings.upsert({
+      where: { tenantId },
+      create: {
+        tenantId,
+        afipEnv: dto.env,
+        afipCertEncrypted,
+        afipKeyEncrypted,
+        afipCertExpiresAt: expiresAt,
+      },
+      update: {
+        afipEnv: dto.env,
+        afipCertEncrypted,
+        afipKeyEncrypted,
+        afipCertExpiresAt: expiresAt,
+      },
+    });
+    return this.toView(row, await this.getTenantTaxId());
+  }
+
+  async removeAfipCertificate(): Promise<TenantSettingsView> {
+    const tenantId = getTenantId();
+    const row = await getTenantDb().tenantSettings.upsert({
+      where: { tenantId },
+      create: { tenantId },
+      update: { afipCertEncrypted: null, afipKeyEncrypted: null, afipCertExpiresAt: null },
+    });
+    return this.toView(row, await this.getTenantTaxId());
   }
 
   private async persistDomain(

@@ -2,6 +2,7 @@ import { api } from '@/lib/api';
 
 export type EmailSenderMode = 'SHARED' | 'CUSTOM_DOMAIN';
 export type ReminderTone = 'FRIENDLY' | 'NEUTRAL' | 'FIRM';
+export type AfipEnvironment = 'HOMOLOGACION' | 'PRODUCCION';
 
 export interface TenantSettings {
   arReminderIntervalDays: number | null;
@@ -15,6 +16,10 @@ export interface TenantSettings {
   withholdingAgentIncomeTax: boolean;
   withholdingAgentVat: boolean;
   withholdingAgentGrossIncome: boolean;
+  afipEnv: AfipEnvironment;
+  afipConfigured: boolean;
+  afipCertExpiresAt: string | null;
+  tenantTaxId: string | null;
 }
 
 export interface ReminderStatus {
@@ -57,6 +62,18 @@ export const tenantSettingsApi = {
       withholdingAgentGrossIncome: boolean;
     }>,
   ) => api.patch<TenantSettings>('/tenant-settings', dto).then((r) => r.data),
+};
+
+export const tenantInfoApi = {
+  update: (taxId: string) =>
+    api.patch<TenantSettings>('/tenant-settings/tenant-info', { taxId }).then((r) => r.data),
+};
+
+export const afipCertificateApi = {
+  upload: (dto: { certPem: string; keyPem: string; env: AfipEnvironment }) =>
+    api.post<TenantSettings>('/tenant-settings/afip-certificate', dto).then((r) => r.data),
+  remove: () =>
+    api.delete<TenantSettings>('/tenant-settings/afip-certificate').then((r) => r.data),
 };
 
 export const emailDomainApi = {

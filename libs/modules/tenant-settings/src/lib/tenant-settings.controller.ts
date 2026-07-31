@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Patch, Post } from '@nestjs/common';
 import { Roles } from '@plexo/auth';
 import { AuditEntity } from '@plexo/database';
 import { RegisterDomainDto } from './dto/register-domain.dto.js';
+import { UpdateTenantInfoDto } from './dto/update-tenant-info.dto.js';
 import { UpdateTenantSettingsDto } from './dto/update-tenant-settings.dto.js';
+import { UploadAfipCertificateDto } from './dto/upload-afip-certificate.dto.js';
 import { TenantSettingsService } from './tenant-settings.service.js';
 
 // Tenant-wide business policy, not a personal preference like theme/density
@@ -36,5 +38,26 @@ export class TenantSettingsController {
   @Post('email-domain/verify')
   verifyDomain() {
     return this.tenantSettingsService.refreshDomainStatus();
+  }
+
+  @AuditEntity('tenantSettings', { idParam: null })
+  @Roles(...WRITE_ROLES)
+  @Patch('tenant-info')
+  updateTenantInfo(@Body() dto: UpdateTenantInfoDto) {
+    return this.tenantSettingsService.updateTenantInfo(dto);
+  }
+
+  @AuditEntity('tenantSettings', { idParam: null })
+  @Roles(...WRITE_ROLES)
+  @Post('afip-certificate')
+  uploadAfipCertificate(@Body() dto: UploadAfipCertificateDto) {
+    return this.tenantSettingsService.uploadAfipCertificate(dto);
+  }
+
+  @AuditEntity('tenantSettings', { idParam: null })
+  @Roles(...WRITE_ROLES)
+  @Delete('afip-certificate')
+  removeAfipCertificate() {
+    return this.tenantSettingsService.removeAfipCertificate();
   }
 }

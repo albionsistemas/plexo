@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Logger, Module } from '@nestjs/common';
+import type { AfipWsaaCredentials } from '@plexo/afip-credentials';
 import { AFIP_PADRON, type AfipPadronPort } from './afip-padron.port.js';
-import type { AfipCredentials } from './afip-wsaa-client.js';
 import { CompaniesController } from './companies.controller.js';
 import { CompaniesService } from './companies.service.js';
 import { RealAfipPadronService } from './real-afip-padron.js';
@@ -20,7 +20,7 @@ function createAfipPadron(): AfipPadronPort {
   const certPath = process.env['AFIP_CERT_PATH'];
   const keyPath = process.env['AFIP_KEY_PATH'];
   const cuitRepresentada = process.env['AFIP_CUIT_REPRESENTADA'];
-  const env: AfipCredentials['env'] = process.env['AFIP_ENV'] === 'produccion' ? 'produccion' : 'homologacion';
+  const env: AfipWsaaCredentials['env'] = process.env['AFIP_ENV'] === 'produccion' ? 'produccion' : 'homologacion';
 
   if (!certPath || !keyPath || !cuitRepresentada) {
     logger.warn(

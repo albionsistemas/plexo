@@ -14,6 +14,7 @@ export * from './lib/account-balance.js';
 export { Prisma } from './generated/client.js';
 export type {
   Tenant,
+  TenantSettings,
   User,
   UserModuleAccess,
   Company,

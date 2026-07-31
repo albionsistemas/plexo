@@ -1,9 +1,23 @@
 import { tenantContextStorage } from '@plexo/database';
+import { EncryptionService } from '@plexo/encryption';
+import forge from 'node-forge';
 import type { ResendDomainsClient } from './resend-domain-client.provider.js';
 import { TenantSettingsService } from './tenant-settings.service.js';
 
 function runInTenant<T>(db: Record<string, unknown>, fn: () => T): T {
   return tenantContextStorage.run({ tenantId: 'tenant-1', userId: 'user-1', tx: db as never }, fn);
+}
+
+/** Every service method now also reads Tenant.taxId (see
+ * TenantSettingsService.getTenantTaxId) - this merges a default mock for it
+ * into whatever `db` object a test builds, so each test only overrides
+ * `tenantSettings`/`tenant` and stops paying attention to the join for
+ * everything else it's not about. */
+function withTenant(db: Record<string, unknown>, taxId: string | null = '20-11111111-2') {
+  return {
+    tenant: { findUniqueOrThrow: jest.fn().mockResolvedValue({ taxId }) },
+    ...db,
+  };
 }
 
 function makeDomainsClient(overrides: Partial<ResendDomainsClient> = {}): ResendDomainsClient {
@@ -18,10 +32,14 @@ function makeDomainsClient(overrides: Partial<ResendDomainsClient> = {}): Resend
   } as unknown as ResendDomainsClient;
 }
 
+// Never exercised by the non-AFIP describe blocks below - a fake is enough
+// so the constructor is satisfied without needing ENCRYPTION_MASTER_KEY set.
+const noopEncryption = {} as EncryptionService;
+
 describe('TenantSettingsService.getSettings', () => {
   it('reads defaults when no row exists yet', async () => {
-    const db = { tenantSettings: { findUnique: jest.fn().mockResolvedValue(null) } };
-    const service = new TenantSettingsService(null);
+    const db = withTenant({ tenantSettings: { findUnique: jest.fn().mockResolvedValue(null) } }, null);
+    const service = new TenantSettingsService(null, noopEncryption);
 
     const result = await runInTenant(db, () => service.getSettings());
 
@@ -38,11 +56,15 @@ describe('TenantSettingsService.getSettings', () => {
       withholdingAgentIncomeTax: false,
       withholdingAgentVat: false,
       withholdingAgentGrossIncome: false,
+      afipEnv: 'HOMOLOGACION',
+      afipConfigured: false,
+      afipCertExpiresAt: null,
+      tenantTaxId: null,
     });
   });
 
   it('reads back stored values', async () => {
-    const db = {
+    const db = withTenant({
       tenantSettings: {
         findUnique: jest.fn().mockResolvedValue({
           arReminderIntervalDays: 7,
@@ -56,10 +78,14 @@ describe('TenantSettingsService.getSettings', () => {
           withholdingAgentIncomeTax: true,
           withholdingAgentVat: false,
           withholdingAgentGrossIncome: true,
+          afipEnv: 'PRODUCCION',
+          afipCertEncrypted: 'cert-cipher',
+          afipKeyEncrypted: 'key-cipher',
+          afipCertExpiresAt: new Date('2027-01-01'),
         }),
       },
-    };
-    const service = new TenantSettingsService(null);
+    });
+    const service = new TenantSettingsService(null, noopEncryption);
 
     const result = await runInTenant(db, () => service.getSettings());
 
@@ -75,7 +101,53 @@ describe('TenantSettingsService.getSettings', () => {
       withholdingAgentIncomeTax: true,
       withholdingAgentVat: false,
       withholdingAgentGrossIncome: true,
+      afipEnv: 'PRODUCCION',
+      afipConfigured: true,
+      afipCertExpiresAt: new Date('2027-01-01'),
+      tenantTaxId: '20-11111111-2',
     });
+  });
+
+  it('afipConfigured is false when the certificate is set but the tenant has no CUIT yet', async () => {
+    const db = withTenant(
+      {
+        tenantSettings: {
+          findUnique: jest.fn().mockResolvedValue({
+            afipCertEncrypted: 'cert-cipher',
+            afipKeyEncrypted: 'key-cipher',
+          }),
+        },
+      },
+      null,
+    );
+    const service = new TenantSettingsService(null, noopEncryption);
+
+    const result = await runInTenant(db, () => service.getSettings());
+
+    expect(result.afipConfigured).toBe(false);
+    expect(result.tenantTaxId).toBeNull();
+  });
+});
+
+describe('TenantSettingsService.updateTenantInfo', () => {
+  it('updates Tenant.taxId and returns it in the view', async () => {
+    const update = jest.fn().mockResolvedValue({});
+    const db = withTenant(
+      {
+        tenant: { update },
+        tenantSettings: { findUnique: jest.fn().mockResolvedValue(null) },
+      },
+      null,
+    );
+    const service = new TenantSettingsService(null, noopEncryption);
+
+    const result = await runInTenant(db, () => service.updateTenantInfo({ taxId: '30-71659554-9' }));
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'tenant-1' },
+      data: { taxId: '30-71659554-9' },
+    });
+    expect(result.tenantTaxId).toBe('30-71659554-9');
   });
 });
 
@@ -90,8 +162,8 @@ describe('TenantSettingsService.updateSettings', () => {
       domainStatus: null,
       reminderTone: 'NEUTRAL',
     });
-    const db = { tenantSettings: { upsert } };
-    const service = new TenantSettingsService(null);
+    const db = withTenant({ tenantSettings: { upsert } });
+    const service = new TenantSettingsService(null, noopEncryption);
 
     const result = await runInTenant(db, () => service.updateSettings({ arReminderIntervalDays: 5 }));
 
@@ -134,8 +206,8 @@ describe('TenantSettingsService.updateSettings', () => {
       domainStatus: null,
       reminderTone: 'NEUTRAL',
     });
-    const db = { tenantSettings: { upsert } };
-    const service = new TenantSettingsService(null);
+    const db = withTenant({ tenantSettings: { upsert } });
+    const service = new TenantSettingsService(null, noopEncryption);
 
     await runInTenant(db, () => service.updateSettings({ arReminderIntervalDays: null }));
 
@@ -158,8 +230,8 @@ describe('TenantSettingsService.updateSettings', () => {
       domainStatus: null,
       reminderTone: 'FRIENDLY',
     });
-    const db = { tenantSettings: { upsert } };
-    const service = new TenantSettingsService(null);
+    const db = withTenant({ tenantSettings: { upsert } });
+    const service = new TenantSettingsService(null, noopEncryption);
 
     await runInTenant(db, () =>
       service.updateSettings({
@@ -199,8 +271,8 @@ describe('TenantSettingsService.updateSettings', () => {
       reminderTone: 'NEUTRAL',
       reminderCcEmail: 'cobranzas@acme.com',
     });
-    const db = { tenantSettings: { upsert } };
-    const service = new TenantSettingsService(null);
+    const db = withTenant({ tenantSettings: { upsert } });
+    const service = new TenantSettingsService(null, noopEncryption);
 
     const result = await runInTenant(db, () =>
       service.updateSettings({ reminderCcEmail: 'cobranzas@acme.com' }),
@@ -227,8 +299,8 @@ describe('TenantSettingsService.updateSettings', () => {
 
 describe('TenantSettingsService.registerCustomDomain', () => {
   it('throws when Resend is not configured in this environment', async () => {
-    const service = new TenantSettingsService(null);
-    const db = { tenantSettings: { findUnique: jest.fn() } };
+    const service = new TenantSettingsService(null, noopEncryption);
+    const db = withTenant({ tenantSettings: { findUnique: jest.fn() } });
 
     await expect(runInTenant(db, () => service.registerCustomDomain('acme.com'))).rejects.toThrow(
       /no está configurado/,
@@ -242,10 +314,10 @@ describe('TenantSettingsService.registerCustomDomain', () => {
     });
     const domains = makeDomainsClient({ create });
     const upsert = jest.fn().mockResolvedValue({});
-    const db = {
+    const db = withTenant({
       tenantSettings: { findUnique: jest.fn().mockResolvedValue(null), upsert },
-    };
-    const service = new TenantSettingsService(domains);
+    });
+    const service = new TenantSettingsService(domains, noopEncryption);
 
     const result = await runInTenant(db, () => service.registerCustomDomain('acme.com'));
 
@@ -270,15 +342,15 @@ describe('TenantSettingsService.registerCustomDomain', () => {
       error: null,
     });
     const domains = makeDomainsClient({ create, get });
-    const db = {
+    const db = withTenant({
       tenantSettings: {
         findUnique: jest
           .fn()
           .mockResolvedValue({ resendDomainId: 'dom_1', emailCustomDomain: 'acme.com' }),
         upsert: jest.fn().mockResolvedValue({}),
       },
-    };
-    const service = new TenantSettingsService(domains);
+    });
+    const service = new TenantSettingsService(domains, noopEncryption);
 
     await runInTenant(db, () => service.registerCustomDomain('acme.com'));
 
@@ -289,8 +361,8 @@ describe('TenantSettingsService.registerCustomDomain', () => {
   it('surfaces a Resend error as a BadRequestException', async () => {
     const create = jest.fn().mockResolvedValue({ data: null, error: { message: 'Domain taken' } });
     const domains = makeDomainsClient({ create });
-    const db = { tenantSettings: { findUnique: jest.fn().mockResolvedValue(null) } };
-    const service = new TenantSettingsService(domains);
+    const db = withTenant({ tenantSettings: { findUnique: jest.fn().mockResolvedValue(null) } });
+    const service = new TenantSettingsService(domains, noopEncryption);
 
     await expect(runInTenant(db, () => service.registerCustomDomain('acme.com'))).rejects.toThrow(
       'Domain taken',
@@ -301,8 +373,8 @@ describe('TenantSettingsService.registerCustomDomain', () => {
 describe('TenantSettingsService.refreshDomainStatus', () => {
   it('throws when no domain was registered yet', async () => {
     const domains = makeDomainsClient();
-    const db = { tenantSettings: { findUnique: jest.fn().mockResolvedValue(null) } };
-    const service = new TenantSettingsService(domains);
+    const db = withTenant({ tenantSettings: { findUnique: jest.fn().mockResolvedValue(null) } });
+    const service = new TenantSettingsService(domains, noopEncryption);
 
     await expect(runInTenant(db, () => service.refreshDomainStatus())).rejects.toThrow(
       /Todavía no registraste/,
@@ -317,15 +389,15 @@ describe('TenantSettingsService.refreshDomainStatus', () => {
     });
     const domains = makeDomainsClient({ verify, get });
     const upsert = jest.fn().mockResolvedValue({});
-    const db = {
+    const db = withTenant({
       tenantSettings: {
         findUnique: jest
           .fn()
           .mockResolvedValue({ resendDomainId: 'dom_1', emailCustomDomain: 'acme.com' }),
         upsert,
       },
-    };
-    const service = new TenantSettingsService(domains);
+    });
+    const service = new TenantSettingsService(domains, noopEncryption);
 
     const result = await runInTenant(db, () => service.refreshDomainStatus());
 
@@ -337,5 +409,96 @@ describe('TenantSettingsService.refreshDomainStatus', () => {
       }),
     );
     expect(result).toEqual({ status: 'verified', records: [{ record: 'DKIM' }] });
+  });
+});
+
+describe('TenantSettingsService.uploadAfipCertificate / removeAfipCertificate', () => {
+  // Self-signed pair generated once for the whole suite - these tests only
+  // care that the service validates/encrypts/persists correctly, not about
+  // AFIP's own certificate-issuance process.
+  const keys = forge.pki.rsa.generateKeyPair(2048);
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = keys.publicKey;
+  cert.serialNumber = '01';
+  cert.validity.notBefore = new Date('2026-01-01');
+  cert.validity.notAfter = new Date('2027-06-15');
+  const attrs = [{ name: 'commonName', value: 'tenant-1.plexo.test' }];
+  cert.setSubject(attrs);
+  cert.setIssuer(attrs);
+  cert.sign(keys.privateKey);
+  const certPem = forge.pki.certificateToPem(cert);
+  const keyPem = forge.pki.privateKeyToPem(keys.privateKey);
+
+  const otherKeyPem = forge.pki.privateKeyToPem(forge.pki.rsa.generateKeyPair(2048).privateKey);
+
+  function realEncryption(): EncryptionService {
+    process.env['ENCRYPTION_MASTER_KEY'] = '11'.repeat(32);
+    return new EncryptionService();
+  }
+
+  it('rejects an invalid certificate PEM', async () => {
+    const service = new TenantSettingsService(null, realEncryption());
+    const db = withTenant({ tenantSettings: { upsert: jest.fn() } });
+
+    await expect(
+      runInTenant(db, () =>
+        service.uploadAfipCertificate({ certPem: 'not a cert', keyPem, env: 'HOMOLOGACION' }),
+      ),
+    ).rejects.toThrow(/no es un PEM válido/);
+  });
+
+  it('rejects a key that does not match the certificate', async () => {
+    const service = new TenantSettingsService(null, realEncryption());
+    const db = withTenant({ tenantSettings: { upsert: jest.fn() } });
+
+    await expect(
+      runInTenant(db, () =>
+        service.uploadAfipCertificate({ certPem, keyPem: otherKeyPem, env: 'HOMOLOGACION' }),
+      ),
+    ).rejects.toThrow(/no corresponde al certificado/);
+  });
+
+  it('encrypts cert/key, extracts the expiry date, and never returns the plaintext', async () => {
+    const encryption = realEncryption();
+    const upsert = jest.fn().mockImplementation(({ create }) => Promise.resolve(create));
+    const db = withTenant({ tenantSettings: { upsert } });
+    const service = new TenantSettingsService(null, encryption);
+
+    const result = await runInTenant(db, () =>
+      service.uploadAfipCertificate({ certPem, keyPem, env: 'PRODUCCION' }),
+    );
+
+    const savedArgs = upsert.mock.calls[0][0];
+    expect(savedArgs.create.afipEnv).toBe('PRODUCCION');
+    expect(savedArgs.create.afipCertExpiresAt).toEqual(new Date('2027-06-15'));
+    expect(savedArgs.create.afipCertEncrypted).not.toContain('BEGIN CERTIFICATE');
+    expect(encryption.decrypt(savedArgs.create.afipCertEncrypted)).toBe(certPem);
+    expect(encryption.decrypt(savedArgs.create.afipKeyEncrypted)).toBe(keyPem);
+
+    expect(result).not.toHaveProperty('afipCertEncrypted');
+    expect(result).not.toHaveProperty('afipKeyEncrypted');
+    // Tenant already has a CUIT (see withTenant's default) - configured
+    // only goes true once both halves are in place.
+    expect(result.afipConfigured).toBe(true);
+  });
+
+  it('clears the stored certificate on remove', async () => {
+    const upsert = jest.fn().mockResolvedValue({
+      afipEnv: 'HOMOLOGACION',
+      afipCertEncrypted: null,
+      afipKeyEncrypted: null,
+      afipCertExpiresAt: null,
+    });
+    const db = withTenant({ tenantSettings: { upsert } });
+    const service = new TenantSettingsService(null, realEncryption());
+
+    const result = await runInTenant(db, () => service.removeAfipCertificate());
+
+    expect(upsert).toHaveBeenCalledWith({
+      where: { tenantId: 'tenant-1' },
+      create: { tenantId: 'tenant-1' },
+      update: { afipCertEncrypted: null, afipKeyEncrypted: null, afipCertExpiresAt: null },
+    });
+    expect(result.afipConfigured).toBe(false);
   });
 });

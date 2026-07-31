@@ -2,8 +2,11 @@
 
 import { activityLogApi, type TenantActivityEntry } from '@/lib/activityLog';
 import {
+  afipCertificateApi,
   emailDomainApi,
+  tenantInfoApi,
   tenantSettingsApi,
+  type AfipEnvironment,
   type DomainRecord,
   type EmailSenderMode,
   type ReminderTone,
@@ -88,6 +91,7 @@ export default function PreferencesPage() {
       ) : (
         <>
           <EmailSettingsCard settings={settings} />
+          <AfipCertificateCard settings={settings} />
           <WithholdingAgentCard settings={settings} />
         </>
       )}
@@ -172,6 +176,308 @@ function ActivityLogCard() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** Lee un input[type=file] como texto plano (FileReader, no upload a
+ * disco) - el certificado/clave viajan como PEM en el body del POST y se
+ * cifran recién en el backend (ver TenantSettingsService.
+ * uploadAfipCertificate). Nunca tocan almacenamiento propio. */
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error ?? new Error('No se pudo leer el archivo'));
+    reader.readAsText(file);
+  });
+}
+
+function daysUntil(iso: string): number {
+  const ms = new Date(iso).getTime() - Date.now();
+  return Math.ceil(ms / (1000 * 60 * 60 * 24));
+}
+
+/** Certificado/clave AFIP del tenant - reemplaza lo que antes eran
+ * variables de entorno del proceso (un solo CUIT para toda la instancia,
+ * ver companies.module.ts). Se pegan/suben como archivos .crt/.key, viajan
+ * como texto y el backend los cifra (AES-256-GCM) antes de guardarlos; acá
+ * nunca se ve ni se guarda el contenido descifrado más que en memoria
+ * mientras se arma el POST. */
+function AfipCertificateCard({ settings }: { settings: TenantSettings }) {
+  const queryClient = useQueryClient();
+  const [env, setEnv] = useState<AfipEnvironment>(settings.afipEnv);
+  const [certPem, setCertPem] = useState('');
+  const [keyPem, setKeyPem] = useState('');
+  const [certFileName, setCertFileName] = useState('');
+  const [keyFileName, setKeyFileName] = useState('');
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [taxId, setTaxId] = useState(settings.tenantTaxId ?? '');
+  const [taxIdMessage, setTaxIdMessage] = useState('');
+  const [taxIdError, setTaxIdError] = useState('');
+
+  function invalidateSettings() {
+    void queryClient.invalidateQueries({ queryKey: ['tenant-settings'] });
+  }
+
+  const taxIdMutation = useMutation({
+    mutationFn: () => tenantInfoApi.update(taxId),
+    onSuccess: () => {
+      setTaxIdError('');
+      setTaxIdMessage('Guardado');
+      invalidateSettings();
+    },
+    onError: (err: AxiosError<{ message?: string | string[] }>) => {
+      setTaxIdMessage('');
+      setTaxIdError(errorMessage(err, 'No se pudo guardar el CUIT'));
+    },
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: () => afipCertificateApi.upload({ certPem, keyPem, env }),
+    onSuccess: () => {
+      setError('');
+      setMessage('Certificado guardado');
+      setCertPem('');
+      setKeyPem('');
+      setCertFileName('');
+      setKeyFileName('');
+      invalidateSettings();
+    },
+    onError: (err: AxiosError<{ message?: string | string[] }>) => {
+      setMessage('');
+      setError(errorMessage(err, 'No se pudo guardar el certificado'));
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: () => afipCertificateApi.remove(),
+    onSuccess: () => {
+      setError('');
+      setMessage('Certificado eliminado');
+      invalidateSettings();
+    },
+    onError: (err: AxiosError<{ message?: string | string[] }>) => {
+      setError(errorMessage(err, 'No se pudo eliminar el certificado'));
+    },
+  });
+
+  async function handleCertFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCertPem(await readFileAsText(file));
+    setCertFileName(file.name);
+  }
+
+  async function handleKeyFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setKeyPem(await readFileAsText(file));
+    setKeyFileName(file.name);
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    uploadMutation.mutate();
+  }
+
+  const expiresInDays = settings.afipCertExpiresAt ? daysUntil(settings.afipCertExpiresAt) : null;
+
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6">
+      <h2 className="mb-1 text-sm font-medium text-slate-600 dark:text-slate-400">
+        Certificado AFIP (facturación electrónica)
+      </h2>
+      <p className="mb-4 text-xs text-slate-500">
+        Certificado digital (.crt) y clave privada (.key) propios de esta empresa, autorizados para
+        WSFE en el Administrador de Relaciones de Clave Fiscal de AFIP. El Punto de Venta se define
+        por sucursal (ver Empresas).
+      </p>
+
+      <div className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
+        <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+          CUIT de la empresa
+          <input
+            type="text"
+            value={taxId}
+            onChange={(e) => setTaxId(e.target.value)}
+            placeholder="30-71659554-9"
+            className={`${inputClass} w-40`}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => {
+            setTaxIdMessage('');
+            taxIdMutation.mutate();
+          }}
+          disabled={!taxId.trim() || taxIdMutation.isPending}
+          className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-50"
+        >
+          {taxIdMutation.isPending ? 'Guardando...' : 'Guardar CUIT'}
+        </button>
+        {taxIdError && <p className="text-xs text-red-600 dark:text-red-400">{taxIdError}</p>}
+        {taxIdMessage && <p className="text-xs text-green-600 dark:text-green-400">{taxIdMessage}</p>}
+        {!settings.tenantTaxId && (
+          <p className="w-full text-xs text-amber-600 dark:text-amber-400">
+            El certificado AFIP se registra a nombre de este CUIT - sin él, el certificado no queda
+            realmente configurado aunque lo hayas subido.
+          </p>
+        )}
+      </div>
+
+      <details className="mb-4 rounded-lg border border-slate-200 dark:border-slate-800 p-4 text-xs text-slate-600 dark:text-slate-400">
+        <summary className="cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-300">
+          ¿Cómo consigo el certificado AFIP? (guía paso a paso)
+        </summary>
+        <div className="mt-3 flex flex-col gap-4">
+          <div>
+            <p className="mb-1 font-medium text-slate-700 dark:text-slate-300">
+              1. Generá la clave privada y el pedido de certificado (CSR)
+            </p>
+            <p className="mb-2">
+              Con OpenSSL, en cualquier terminal (reemplazá el CUIT y el nombre):
+            </p>
+            <pre className="overflow-x-auto rounded-md bg-slate-200 dark:bg-slate-800 p-2 font-mono text-[11px]">
+{`openssl req -new -newkey rsa:2048 -nodes \\
+  -keyout empresa.key -out empresa.csr \\
+  -subj "/C=AR/O=Nombre Empresa/CN=empresa/serialNumber=CUIT 20XXXXXXXXX"`}
+            </pre>
+            <p className="mt-1">
+              Esto genera dos archivos: <span className="font-mono">empresa.key</span> (clave
+              privada - nunca se sube a AFIP, sólo acá) y{' '}
+              <span className="font-mono">empresa.csr</span> (pedido de certificado, ese sí va a
+              AFIP).
+            </p>
+          </div>
+          <div>
+            <p className="mb-1 font-medium text-slate-700 dark:text-slate-300">
+              2. Para probar primero (Homologación - recomendado)
+            </p>
+            <ol className="ml-4 list-decimal">
+              <li>Entrá a AFIP con Clave Fiscal → &quot;Administrador de Relaciones de Clave Fiscal&quot;.</li>
+              <li>
+                Buscá el servicio &quot;WSASS&quot; (Administración de Certificados Digitales),
+                sección de testing/homologación.
+              </li>
+              <li>
+                Subí el <span className="font-mono">.csr</span> del paso 1 y descargá el{' '}
+                <span className="font-mono">.crt</span> (se emite al toque, sin trámite adicional).
+              </li>
+              <li>Asociá ese certificado al web service &quot;wsfe&quot; para tu CUIT.</li>
+              <li>
+                Subí acá abajo el <span className="font-mono">.crt</span> descargado y el{' '}
+                <span className="font-mono">.key</span> del paso 1, ambiente
+                &quot;Homologación&quot;.
+              </li>
+            </ol>
+          </div>
+          <div>
+            <p className="mb-1 font-medium text-slate-700 dark:text-slate-300">
+              3. Para facturar de verdad (Producción)
+            </p>
+            <ol className="ml-4 list-decimal">
+              <li>
+                En &quot;Administrador de Relaciones de Clave Fiscal&quot; → &quot;Nueva
+                Relación&quot; → servicio &quot;wsfe&quot; (Facturación Electrónica), representado
+                tu propio CUIT.
+              </li>
+              <li>
+                En esa relación, adjuntá el certificado de producción (mismo{' '}
+                <span className="font-mono">.csr</span>, o generá uno nuevo con el comando de
+                arriba).
+              </li>
+              <li>
+                Subí acá el <span className="font-mono">.crt</span> de producción y su{' '}
+                <span className="font-mono">.key</span>, ambiente &quot;Producción&quot;.
+              </li>
+            </ol>
+          </div>
+          <p className="italic text-slate-500">
+            Homologación y Producción son certificados y trámites separados - no sirve el mismo
+            certificado para los dos ambientes.
+          </p>
+        </div>
+      </details>
+
+      {settings.afipConfigured ? (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
+          <span className="rounded-full bg-green-100 dark:bg-green-900/40 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
+            Certificado cargado
+          </span>
+          <span className="text-xs text-slate-600 dark:text-slate-400">
+            Ambiente: {settings.afipEnv === 'PRODUCCION' ? 'Producción' : 'Homologación'}
+          </span>
+          {settings.afipCertExpiresAt && (
+            <span className="text-xs text-slate-600 dark:text-slate-400">
+              Vence el {new Date(settings.afipCertExpiresAt).toLocaleDateString('es-AR')}
+              {expiresInDays !== null && expiresInDays <= 30 && (
+                <span className="ml-1 font-medium text-amber-600 dark:text-amber-400">
+                  ({expiresInDays <= 0 ? 'vencido' : `en ${expiresInDays} días`})
+                </span>
+              )}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => removeMutation.mutate()}
+            disabled={removeMutation.isPending}
+            className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-50"
+          >
+            {removeMutation.isPending ? 'Quitando...' : 'Quitar certificado'}
+          </button>
+        </div>
+      ) : (
+        <p className="mb-4 text-xs text-amber-600 dark:text-amber-400">
+          Todavía no hay un certificado cargado - la emisión de comprobantes con CAE real no va a
+          funcionar hasta que subas uno.
+        </p>
+      )}
+
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setEnv('HOMOLOGACION')}
+            className={pillClass(env === 'HOMOLOGACION')}
+          >
+            Homologación (sandbox)
+          </button>
+          <button
+            type="button"
+            onClick={() => setEnv('PRODUCCION')}
+            className={pillClass(env === 'PRODUCCION')}
+          >
+            Producción
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+            Certificado (.crt / .pem)
+            <input type="file" accept=".crt,.pem,.cer" onChange={handleCertFile} className="text-xs" />
+            {certFileName && <span className="text-slate-500">{certFileName}</span>}
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+            Clave privada (.key)
+            <input type="file" accept=".key,.pem" onChange={handleKeyFile} className="text-xs" />
+            {keyFileName && <span className="text-slate-500">{keyFileName}</span>}
+          </label>
+        </div>
+
+        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {message && <p className="text-sm text-green-600 dark:text-green-400">{message}</p>}
+        <button
+          type="submit"
+          disabled={!certPem || !keyPem || uploadMutation.isPending}
+          className="self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+        >
+          {uploadMutation.isPending ? 'Guardando...' : 'Guardar certificado'}
+        </button>
+      </form>
     </div>
   );
 }

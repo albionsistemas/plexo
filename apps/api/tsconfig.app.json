@@ -61,6 +61,9 @@
       "path": "../../libs/modules/inventory/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/shared/encryption/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/shared/database/tsconfig.lib.json"
     },
     {

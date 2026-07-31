@@ -15,6 +15,9 @@
     },
     {
       "path": "../../shared/auth/tsconfig.lib.json"
+    },
+    {
+      "path": "../../shared/afip-credentials/tsconfig.lib.json"
     }
   ],
   "exclude": [

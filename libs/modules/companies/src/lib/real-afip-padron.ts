@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { AfipWsaaClient, type AfipWsaaCredentials } from '@plexo/afip-credentials';
 import { XMLParser } from 'fast-xml-parser';
 import { AfipLookupError, type AfipPadronData, type AfipPadronPort } from './afip-padron.port.js';
-import { AfipWsaaClient, type AfipCredentials } from './afip-wsaa-client.js';
 
 const PADRON_SERVICE = 'ws_sr_padron_a13';
 
-const PADRON_URL: Record<AfipCredentials['env'], string> = {
+const PADRON_URL: Record<AfipWsaaCredentials['env'], string> = {
   homologacion: 'https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA13',
   produccion: 'https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA13',
 };
@@ -39,10 +39,10 @@ interface AfipPersona {
 export class RealAfipPadronService implements AfipPadronPort {
   private readonly logger = new Logger(RealAfipPadronService.name);
   private readonly wsaa: AfipWsaaClient;
-  private readonly env: AfipCredentials['env'];
+  private readonly env: AfipWsaaCredentials['env'];
 
   constructor(
-    credentials: AfipCredentials,
+    credentials: AfipWsaaCredentials,
     private readonly cuitRepresentada: string,
   ) {
     this.wsaa = new AfipWsaaClient(credentials);
