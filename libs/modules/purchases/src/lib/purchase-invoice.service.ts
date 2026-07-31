@@ -11,7 +11,7 @@ const INVOICE_DETAIL_INCLUDE = {
       goodsReceipt: { select: { id: true, supplierDocNumber: true, receivedAt: true } },
     },
   },
-  payments: { orderBy: { paidAt: 'desc' } },
+  payments: { orderBy: { paidAt: 'desc' }, include: { withholdings: true } },
   purchaseOrder: { select: { id: true, number: true } },
   createdBy: { select: { id: true, name: true, email: true } },
 } satisfies Prisma.PurchaseInvoiceInclude;

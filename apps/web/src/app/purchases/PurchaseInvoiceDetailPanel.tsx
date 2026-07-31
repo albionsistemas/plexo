@@ -247,11 +247,22 @@ export default function PurchaseInvoiceDetailPanel({ purchaseInvoiceId, onClose 
               ) : (
                 <div className="flex flex-col gap-1 text-sm">
                   {data.payments.map((p) => (
-                    <div key={p.id} className="flex justify-between text-slate-700 dark:text-slate-300">
-                      <span>
-                        {new Date(p.paidAt).toLocaleDateString('es-AR')} — {p.method}
-                      </span>
-                      <span>${Number(p.amount).toFixed(2)}</span>
+                    <div key={p.id} className="flex flex-col gap-0.5">
+                      <div className="flex justify-between text-slate-700 dark:text-slate-300">
+                        <span>
+                          {new Date(p.paidAt).toLocaleDateString('es-AR')} — {p.method}
+                        </span>
+                        <span>${Number(p.amount).toFixed(2)}</span>
+                      </div>
+                      {p.withholdings?.map((w) => (
+                        <div key={w.id} className="flex justify-between pl-3 text-xs text-amber-600 dark:text-amber-400">
+                          <span>
+                            Retención {WITHHOLDING_TAX_TYPE_LABELS[w.taxType]}
+                            {w.jurisdiction ? ` (${w.jurisdiction})` : ''} — {w.concept}
+                          </span>
+                          <span>${Number(w.amount).toFixed(2)}</span>
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
