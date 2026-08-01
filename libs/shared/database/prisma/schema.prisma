@@ -1358,6 +1358,11 @@ model PurchaseOrder {
   sentToEmail       String?
   sentToPhone       String?
   sentToContactName String?
+  // Same snapshot-at-send-time reasoning as sentToContactName above -
+  // copies Person.avatarUrl at the moment of the WhatsApp send (whatever
+  // it was then, whether uploaded to /uploads/people or a pasted URL).
+  // Null for EMAIL sends and for WhatsApp sends before this field existed.
+  sentToContactAvatarUrl String?
 
   createdByUserId String
   createdBy       User     @relation(fields: [createdByUserId], references: [id])

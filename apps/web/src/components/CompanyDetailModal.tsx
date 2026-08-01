@@ -1,10 +1,13 @@
 'use client';
 
 import { companiesApi, type Company, type CompanyRoleType, type Person } from '@/lib/companies';
+import { resolveUploadUrl } from '@/lib/inventory';
+import { initials } from '@/lib/profile';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import { useState } from 'react';
 import { ROLE_LABELS } from './CompanyFormModal';
+import PersonAvatarModal from './PersonAvatarModal';
 
 interface Props {
   company: Company;
@@ -339,6 +342,7 @@ function ContactRow({
 }) {
   const queryClient = useQueryClient();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [editingAvatar, setEditingAvatar] = useState(false);
 
   const deleteMutation = useMutation({
     mutationFn: () => companiesApi.removePerson(person.id),
@@ -347,18 +351,35 @@ function ContactRow({
     },
   });
 
+  const avatarUrl = resolveUploadUrl(person.avatarUrl);
+
   return (
     <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-200/50 dark:bg-slate-800/50 p-3 text-sm">
       <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-slate-800 dark:text-slate-200">
-            {person.firstName} {person.lastName}
-            {person.nickname && <span className="text-slate-500"> ({person.nickname})</span>}
-          </p>
-          <p className="text-xs text-slate-500">{person.jobTitle}</p>
-          <p className="text-xs text-slate-500">
-            {[person.email, person.whatsapp].filter(Boolean).join(' · ')}
-          </p>
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            onClick={() => !readOnly && setEditingAvatar(true)}
+            disabled={readOnly}
+            title={readOnly ? undefined : 'Cambiar foto'}
+            className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-300 dark:bg-slate-700 text-xs font-medium text-slate-600 dark:text-slate-300 disabled:cursor-default"
+          >
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              initials(`${person.firstName} ${person.lastName ?? ''}`.trim(), person.email ?? person.firstName)
+            )}
+          </button>
+          <div>
+            <p className="text-slate-800 dark:text-slate-200">
+              {person.firstName} {person.lastName}
+              {person.nickname && <span className="text-slate-500"> ({person.nickname})</span>}
+            </p>
+            <p className="text-xs text-slate-500">{person.jobTitle}</p>
+            <p className="text-xs text-slate-500">
+              {[person.email, person.whatsapp].filter(Boolean).join(' · ')}
+            </p>
+          </div>
         </div>
 
         {!readOnly &&
@@ -388,6 +409,9 @@ function ContactRow({
             </button>
           ))}
       </div>
+      {editingAvatar && (
+        <PersonAvatarModal person={person} companyId={companyId} onClose={() => setEditingAvatar(false)} />
+      )}
     </div>
   );
 }

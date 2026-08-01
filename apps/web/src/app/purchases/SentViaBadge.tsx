@@ -1,5 +1,6 @@
 'use client';
 
+import { resolveUploadUrl } from '@/lib/inventory';
 import type { PurchaseOrderSummary } from '@/lib/purchases';
 import { Mail, MessageCircle } from 'lucide-react';
 
@@ -19,6 +20,7 @@ export default function SentViaBadge({ order, onResend }: Props) {
 
   const isEmail = order.sentVia === 'EMAIL';
   const Icon = isEmail ? Mail : MessageCircle;
+  const avatarUrl = !isEmail ? resolveUploadUrl(order.sentToContactAvatarUrl) : null;
   const sentAtLabel = new Date(order.sentAt).toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'short' });
   const recipient = isEmail
     ? order.sentToEmail
@@ -26,17 +28,29 @@ export default function SentViaBadge({ order, onResend }: Props) {
 
   return (
     <div className="group relative inline-flex">
-      <Icon
-        className={
-          isEmail
-            ? 'h-4 w-4 text-indigo-600 dark:text-indigo-400'
-            : 'h-4 w-4 text-green-600 dark:text-green-400'
-        }
-      />
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt=""
+          title={order.sentToContactName ?? undefined}
+          className="h-4 w-4 rounded-full border border-green-500 object-cover"
+        />
+      ) : (
+        <Icon
+          className={
+            isEmail
+              ? 'h-4 w-4 text-indigo-600 dark:text-indigo-400'
+              : 'h-4 w-4 text-green-600 dark:text-green-400'
+          }
+        />
+      )}
       <div className="invisible absolute left-1/2 top-full z-30 mt-2 w-64 -translate-x-1/2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-left text-xs opacity-0 shadow-xl transition pointer-events-none group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto">
         <p className="font-medium text-slate-800 dark:text-slate-200">Enviada por {isEmail ? 'Email' : 'WhatsApp'}</p>
         <p className="mt-1 text-slate-500">{sentAtLabel}</p>
-        <p className="mt-1 text-slate-600 dark:text-slate-400">A: {recipient ?? 'No registrado (envío previo a esta función)'}</p>
+        <div className="mt-1 flex items-center gap-2 text-slate-600 dark:text-slate-400">
+          {avatarUrl && <img src={avatarUrl} alt="" className="h-5 w-5 rounded-full object-cover" />}
+          <span>A: {recipient ?? 'No registrado (envío previo a esta función)'}</span>
+        </div>
         <div className="mt-2 border-t border-slate-200 dark:border-slate-800 pt-2">
           <button
             type="button"

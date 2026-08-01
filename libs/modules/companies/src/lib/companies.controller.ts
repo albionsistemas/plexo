@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -9,7 +10,10 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
+import type { FastifyRequest } from 'fastify';
+import '@fastify/multipart';
 import { Roles } from '@plexo/auth';
 import { AuditEntity } from '@plexo/database';
 import type { CompanyRoleType } from '@plexo/database';
@@ -18,12 +22,16 @@ import { CreateCompanyDto } from './dto/create-company.dto.js';
 import { CreatePersonDto } from './dto/create-person.dto.js';
 import { UpdateCompanyDto } from './dto/update-company.dto.js';
 import { UpdatePersonDto } from './dto/update-person.dto.js';
+import { PersonAvatarService } from './person-avatar.service.js';
 
 const WRITE_ROLES = ['OWNER', 'ADMIN', 'SALES'] as const;
 
 @Controller('companies')
 export class CompaniesController {
-  constructor(private readonly companiesService: CompaniesService) {}
+  constructor(
+    private readonly companiesService: CompaniesService,
+    private readonly personAvatarService: PersonAvatarService,
+  ) {}
 
   @Roles(...WRITE_ROLES)
   @Post()
@@ -57,6 +65,25 @@ export class CompaniesController {
   @Delete('people/:id')
   deletePerson(@Param('id', ParseUUIDPipe) id: string) {
     return this.companiesService.deletePerson(id);
+  }
+
+  @AuditEntity('person', { labelFields: ['firstName', 'lastName'] })
+  @Roles(...WRITE_ROLES)
+  @Post('people/:id/avatar')
+  async uploadPersonAvatar(@Param('id', ParseUUIDPipe) id: string, @Req() req: FastifyRequest) {
+    const data = await req.file();
+    if (!data) {
+      throw new BadRequestException('No se recibió ningún archivo');
+    }
+    const buffer = await data.toBuffer();
+    return this.personAvatarService.setAvatar(id, data.mimetype, buffer);
+  }
+
+  @AuditEntity('person', { labelFields: ['firstName', 'lastName'] })
+  @Roles(...WRITE_ROLES)
+  @Delete('people/:id/avatar')
+  removePersonAvatar(@Param('id', ParseUUIDPipe) id: string) {
+    return this.personAvatarService.removeAvatar(id);
   }
 
   @Get('afip/:cuit')

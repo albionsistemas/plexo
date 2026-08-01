@@ -78,12 +78,25 @@ export default function OrdenesTab() {
                       </span>
                       {(() => {
                         const receipt = describeReceiptStatus(po);
-                        return (
-                          receipt && (
+                        if (!receipt) return null;
+                        if (receipt.percent >= 100) {
+                          return (
                             <span className={`rounded px-2 py-0.5 text-xs font-medium ${receipt.colorClass}`}>
                               {receipt.label}
                             </span>
-                          )
+                          );
+                        }
+                        return (
+                          <span
+                            className="relative overflow-hidden rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200"
+                            title={`${receipt.percent}% recibido`}
+                          >
+                            <span
+                              className="absolute inset-y-0 left-0 z-0 bg-indigo-300 dark:bg-indigo-700"
+                              style={{ width: `${receipt.percent}%` }}
+                            />
+                            <span className="relative z-10">{receipt.label}</span>
+                          </span>
                         );
                       })()}
                     </div>

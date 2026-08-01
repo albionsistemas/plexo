@@ -33,7 +33,7 @@ const LIST_INCLUDE = {
   // pairing two to-many relations in the same include (see DETAIL_INCLUDE
   // / get() below for why that pattern is avoided).
   purchaseOrders: {
-    select: { id: true, number: true, status: true, sentAt: true, sentVia: true },
+    select: { id: true, number: true, status: true, sentAt: true, sentVia: true, sentToContactAvatarUrl: true },
   },
 } satisfies Prisma.QuoteRequestInclude;
 
@@ -70,7 +70,7 @@ export class QuoteRequestService {
     }
     const purchaseOrders = await db.purchaseOrder.findMany({
       where: { quoteRequestId: id },
-      select: { id: true, number: true, status: true, sentAt: true, sentVia: true },
+      select: { id: true, number: true, status: true, sentAt: true, sentVia: true, sentToContactAvatarUrl: true },
     });
     return { ...quoteRequest, purchaseOrders };
   }

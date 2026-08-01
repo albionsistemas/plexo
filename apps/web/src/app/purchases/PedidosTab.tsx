@@ -1,5 +1,6 @@
 'use client';
 
+import { resolveUploadUrl } from '@/lib/inventory';
 import {
   describeQuoteRequestStatus,
   quoteRequestsApi,
@@ -86,8 +87,15 @@ export default function PedidosTab() {
                       {purchaseOrder && (
                         <button
                           onClick={() => setViewOrderId(purchaseOrder.id)}
-                          className="ml-2 font-mono text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                          className="ml-2 inline-flex items-center gap-1 font-mono text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
                         >
+                          {resolveUploadUrl(purchaseOrder.sentToContactAvatarUrl) && (
+                            <img
+                              src={resolveUploadUrl(purchaseOrder.sentToContactAvatarUrl) ?? undefined}
+                              alt=""
+                              className="h-4 w-4 rounded-full border border-green-500 object-cover"
+                            />
+                          )}
                           {purchaseOrder.number}
                         </button>
                       )}

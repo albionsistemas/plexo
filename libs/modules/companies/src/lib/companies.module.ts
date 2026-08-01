@@ -4,6 +4,7 @@ import type { AfipWsaaCredentials } from '@plexo/afip-credentials';
 import { AFIP_PADRON, type AfipPadronPort } from './afip-padron.port.js';
 import { CompaniesController } from './companies.controller.js';
 import { CompaniesService } from './companies.service.js';
+import { PersonAvatarService } from './person-avatar.service.js';
 import { RealAfipPadronService } from './real-afip-padron.js';
 import { StubAfipPadronService } from './stub-afip-padron.js';
 
@@ -41,7 +42,7 @@ function createAfipPadron(): AfipPadronPort {
 
 @Module({
   controllers: [CompaniesController],
-  providers: [CompaniesService, { provide: AFIP_PADRON, useFactory: createAfipPadron }],
+  providers: [CompaniesService, PersonAvatarService, { provide: AFIP_PADRON, useFactory: createAfipPadron }],
   exports: [CompaniesService],
 })
 export class CompaniesModule {}

@@ -1,6 +1,7 @@
 'use client';
 
 import { companiesApi } from '@/lib/companies';
+import { resolveUploadUrl } from '@/lib/inventory';
 import { purchaseOrdersApi } from '@/lib/purchases';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
@@ -28,6 +29,10 @@ export default function SendPurchaseOrderDialog({ purchaseOrder, onClose }: Prop
   const phone = selectedPhone || whatsappContacts[0]?.whatsapp || '';
   const selectedContact = whatsappContacts.find((c) => c.whatsapp === phone);
   const contactName = selectedContact ? `${selectedContact.firstName} ${selectedContact.lastName ?? ''}`.trim() : undefined;
+  // Absolute URL, not the relative /uploads/people/... path the API
+  // returns - this gets snapshotted as-is onto the order and rendered
+  // directly as an <img src>, potentially from a different session/host.
+  const contactAvatarUrl = selectedContact ? (resolveUploadUrl(selectedContact.avatarUrl) ?? undefined) : undefined;
 
   function invalidateAndReport(message: string) {
     void queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
@@ -49,7 +54,7 @@ export default function SendPurchaseOrderDialog({ purchaseOrder, onClose }: Prop
     mutationFn: async () => {
       const { url } = await purchaseOrdersApi.whatsappLink(purchaseOrder.id, phone);
       window.open(url, '_blank');
-      return purchaseOrdersApi.markSentWhatsapp(purchaseOrder.id, phone, contactName);
+      return purchaseOrdersApi.markSentWhatsapp(purchaseOrder.id, phone, contactName, contactAvatarUrl);
     },
     onSuccess: () => invalidateAndReport('Abrimos WhatsApp con el mensaje listo'),
     onError: (err: AxiosError<{ message?: string | string[] }>) => {

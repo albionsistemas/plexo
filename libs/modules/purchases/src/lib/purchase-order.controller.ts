@@ -75,7 +75,7 @@ export class PurchaseOrderController {
   @Roles(...WRITE_ROLES)
   @Post(':id/mark-sent-whatsapp')
   markSentWhatsapp(@Param('id', ParseUUIDPipe) id: string, @Body() dto: MarkSentWhatsappDto) {
-    return this.purchaseOrderService.markSentWhatsapp(id, dto.phone, dto.contactName);
+    return this.purchaseOrderService.markSentWhatsapp(id, dto.phone, dto.contactName, dto.contactAvatarUrl);
   }
 
   @Get(':id/pdf')

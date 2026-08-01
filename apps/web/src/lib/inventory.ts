@@ -52,11 +52,17 @@ export interface UpdateArticleInput {
   preferredSupplierId?: string | null;
 }
 
-/** Article images are served from @fastify/static at the API's root
- * (`/uploads/...`), not under the `/api` prefix everything else in `api`
- * (axios instance) uses - strip that suffix to get the plain origin. */
+/** Article images (and goods-receipt attachments, and Person avatars) are
+ * served from @fastify/static at the API's root (`/uploads/...`), not under
+ * the `/api` prefix everything else in `api` (axios instance) uses - strip
+ * that suffix to get the plain origin. Person.avatarUrl is the one field
+ * that can ALSO hold a value that never went through our own upload
+ * endpoint at all - a URL (or data: URI) the user pasted directly - so
+ * anything that already looks absolute passes through untouched instead of
+ * getting the origin prepended onto it. */
 export function resolveUploadUrl(path: string | null): string | null {
   if (!path) return null;
+  if (/^(https?:|data:|blob:)/.test(path)) return path;
   const origin = (api.defaults.baseURL ?? '').replace(/\/api\/?$/, '');
   return `${origin}${path}`;
 }

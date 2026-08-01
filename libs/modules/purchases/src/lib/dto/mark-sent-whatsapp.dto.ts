@@ -8,4 +8,8 @@ export class MarkSentWhatsappDto {
   @IsOptional()
   @IsString()
   contactName?: string;
+
+  @IsOptional()
+  @IsString()
+  contactAvatarUrl?: string;
 }

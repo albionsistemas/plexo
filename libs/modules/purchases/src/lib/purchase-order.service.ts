@@ -260,9 +260,13 @@ export class PurchaseOrderService {
     return { url: `https://wa.me/${digitsOnly}?text=${encodeURIComponent(message)}` };
   }
 
-  async markSentWhatsapp(id: string, phone: string, contactName?: string) {
+  async markSentWhatsapp(id: string, phone: string, contactName?: string, contactAvatarUrl?: string) {
     await this.findOrThrow(id);
-    return this.markSent(id, 'WHATSAPP', { sentToPhone: phone, sentToContactName: contactName ?? null });
+    return this.markSent(id, 'WHATSAPP', {
+      sentToPhone: phone,
+      sentToContactName: contactName ?? null,
+      sentToContactAvatarUrl: contactAvatarUrl ?? null,
+    });
   }
 
   async generatePdf(id: string, style?: PdfStyle): Promise<{ buffer: Buffer; filename: string }> {
@@ -306,7 +310,12 @@ export class PurchaseOrderService {
   private markSent(
     id: string,
     channel: PurchaseSendChannel,
-    recipient: { sentToEmail?: string | null; sentToPhone?: string | null; sentToContactName?: string | null },
+    recipient: {
+      sentToEmail?: string | null;
+      sentToPhone?: string | null;
+      sentToContactName?: string | null;
+      sentToContactAvatarUrl?: string | null;
+    },
   ) {
     return getTenantDb().purchaseOrder.update({
       where: { id },

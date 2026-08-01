@@ -100,6 +100,16 @@ export interface CreatePersonInput {
   jobTitle?: string;
 }
 
+export interface UpdatePersonInput {
+  firstName?: string;
+  lastName?: string;
+  nickname?: string;
+  email?: string;
+  whatsapp?: string;
+  avatarUrl?: string | null;
+  jobTitle?: string;
+}
+
 export interface AfipPadronData {
   cuit: string;
   personType: 'FISICA' | 'JURIDICA';
@@ -128,6 +138,14 @@ export const companiesApi = {
   listPeople: (companyId: string) =>
     api.get<Person[]>(`/companies/${companyId}/people`).then((r) => r.data),
   createPerson: (dto: CreatePersonInput) => api.post<Person>('/companies/people', dto).then((r) => r.data),
+  updatePerson: (id: string, dto: UpdatePersonInput) =>
+    api.patch<Person>(`/companies/people/${id}`, dto).then((r) => r.data),
+  uploadPersonAvatar: (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post<Person>(`/companies/people/${id}/avatar`, formData).then((r) => r.data);
+  },
+  removePersonAvatar: (id: string) => api.delete<Person>(`/companies/people/${id}/avatar`).then((r) => r.data),
   lookupAfip: (cuit: string) =>
     api.get<AfipPadronData>(`/companies/afip/${encodeURIComponent(cuit)}`).then((r) => r.data),
   removePerson: (id: string) => api.delete(`/companies/people/${id}`).then(() => undefined),

@@ -106,6 +106,7 @@ export interface LinkedPurchaseOrderRef {
   status: PurchaseDocumentStatus;
   sentAt: string | null;
   sentVia: PurchaseSendChannel | null;
+  sentToContactAvatarUrl: string | null;
 }
 
 export interface QuoteRequestSummary {
@@ -224,6 +225,7 @@ export interface PurchaseOrderSummary {
   sentToEmail: string | null;
   sentToPhone: string | null;
   sentToContactName: string | null;
+  sentToContactAvatarUrl: string | null;
   createdAt: string;
   supplier: { id: string; name: string; email: string | null };
   currency: { code: string };
@@ -236,18 +238,21 @@ export interface PurchaseOrderSummary {
  * this - see GoodsReceipt's schema comment on why it's always derived). */
 export function describeReceiptStatus(
   order: Pick<PurchaseOrderSummary, 'status' | 'lines'>,
-): { label: string; colorClass: string } | null {
+): { label: string; colorClass: string; percent: number } | null {
   if (order.status !== 'SENT') {
     return null;
   }
+  const totalOrdered = order.lines.reduce((sum, l) => sum + Number(l.quantity), 0);
   const totalPending = order.lines.reduce((sum, l) => sum + Number(l.pendingQuantity), 0);
   const totalReceived = order.lines.reduce((sum, l) => sum + Number(l.receivedQuantity), 0);
   if (totalReceived === 0) {
     return null;
   }
-  return totalPending <= 0
-    ? { label: 'Recibida total', colorClass: STATUS_COLOR_CLASSES.COMPRADO }
-    : { label: 'Recibida parcial', colorClass: STATUS_COLOR_CLASSES.ENVIADO };
+  if (totalPending <= 0) {
+    return { label: 'Recibida total', colorClass: STATUS_COLOR_CLASSES.COMPRADO, percent: 100 };
+  }
+  const percent = totalOrdered > 0 ? Math.min(100, Math.round((totalReceived / totalOrdered) * 100)) : 0;
+  return { label: `Recibida parcial · ${percent}%`, colorClass: STATUS_COLOR_CLASSES.ENVIADO, percent };
 }
 
 export interface PurchaseOrderDetail {
@@ -261,6 +266,7 @@ export interface PurchaseOrderDetail {
   sentToEmail: string | null;
   sentToPhone: string | null;
   sentToContactName: string | null;
+  sentToContactAvatarUrl: string | null;
   createdAt: string;
   supplier: SupplierRef;
   currency: { id: string; code: string; name: string };
@@ -414,9 +420,13 @@ export const purchaseOrdersApi = {
     api
       .get<{ url: string }>(`/purchases/purchase-orders/${id}/whatsapp-link`, { params: { phone } })
       .then((r) => r.data),
-  markSentWhatsapp: (id: string, phone: string, contactName?: string) =>
+  markSentWhatsapp: (id: string, phone: string, contactName?: string, contactAvatarUrl?: string) =>
     api
-      .post<PurchaseOrderDetail>(`/purchases/purchase-orders/${id}/mark-sent-whatsapp`, { phone, contactName })
+      .post<PurchaseOrderDetail>(`/purchases/purchase-orders/${id}/mark-sent-whatsapp`, {
+        phone,
+        contactName,
+        contactAvatarUrl,
+      })
       .then((r) => r.data),
   openPdf: (id: string, style?: PdfStyle) => openPdf(`/purchases/purchase-orders/${id}/pdf`, style),
 };

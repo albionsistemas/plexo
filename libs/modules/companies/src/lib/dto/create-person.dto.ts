@@ -24,7 +24,8 @@ export class CreatePersonDto {
   @IsString()
   whatsapp?: string;
 
-  // URL only - same convention as User.avatarUrl, no file storage infra.
+  // Either a pasted URL, or set later via PersonAvatarService's upload
+  // endpoint (POST people/:id/avatar) - both write to this same column.
   @IsOptional()
   @IsString()
   avatarUrl?: string;
