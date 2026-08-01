@@ -2,9 +2,11 @@
 
 import { describeReceiptStatus, purchaseOrdersApi } from '@/lib/purchases';
 import { useQuery } from '@tanstack/react-query';
+import { PackageCheck } from 'lucide-react';
 import { useState } from 'react';
 import PurchaseOrderDetailPanel from './PurchaseOrderDetailPanel';
 import PurchaseOrderFormModal from './PurchaseOrderFormModal';
+import ReceiveGoodsModal from './ReceiveGoodsModal';
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Borrador',
@@ -23,6 +25,7 @@ const CHANNEL_LABELS: Record<string, string> = { EMAIL: 'Email', WHATSAPP: 'What
 export default function OrdenesTab() {
   const [creating, setCreating] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [receivingId, setReceivingId] = useState<string | null>(null);
 
   const { data: purchaseOrders, isLoading } = useQuery({
     queryKey: ['purchase-orders'],
@@ -90,13 +93,24 @@ export default function OrdenesTab() {
                   <td className="p-3 text-right text-slate-800 dark:text-slate-200">
                     ${Number(po.total).toFixed(2)} {po.currency.code}
                   </td>
-                  <td className="p-3 text-right">
-                    <button
-                      onClick={() => setDetailId(po.id)}
-                      className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
-                    >
-                      Ver
-                    </button>
+                  <td className="p-3">
+                    <div className="flex items-center justify-end gap-2 text-xs">
+                      {po.status === 'SENT' && po.lines.some((l) => Number(l.pendingQuantity) > 0) && (
+                        <button
+                          onClick={() => setReceivingId(po.id)}
+                          title="Recibir mercadería"
+                          className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300"
+                        >
+                          <PackageCheck className="h-4 w-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setDetailId(po.id)}
+                        className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                      >
+                        Ver
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -107,6 +121,29 @@ export default function OrdenesTab() {
 
       {creating && <PurchaseOrderFormModal onClose={() => setCreating(false)} />}
       {detailId && <PurchaseOrderDetailPanel purchaseOrderId={detailId} onClose={() => setDetailId(null)} />}
+      {receivingId && <ReceiveGoodsLoader purchaseOrderId={receivingId} onClose={() => setReceivingId(null)} />}
     </div>
   );
+}
+
+/** El ícono de "Recibir mercadería" del listado sólo tiene el resumen de la
+ * orden (sin líneas con articleVariant/unitCost) - ReceiveGoodsModal necesita
+ * el detalle completo, así que lo trae primero. Misma queryKey que usa
+ * PurchaseOrderDetailPanel/ReceiveGoodsModal, así que si la orden ya se vio
+ * en esta sesión sale de caché al instante. */
+function ReceiveGoodsLoader({ purchaseOrderId, onClose }: { purchaseOrderId: string; onClose: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['purchase-order-detail', purchaseOrderId],
+    queryFn: () => purchaseOrdersApi.get(purchaseOrderId),
+  });
+
+  if (isLoading || !data) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+        <p className="text-sm text-slate-300">Cargando...</p>
+      </div>
+    );
+  }
+
+  return <ReceiveGoodsModal purchaseOrder={data} onClose={onClose} />;
 }
