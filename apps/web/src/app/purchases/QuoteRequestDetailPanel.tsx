@@ -63,6 +63,10 @@ export default function QuoteRequestDetailPanel({ quoteRequestId, onClose, onEdi
       void queryClient.invalidateQueries({ queryKey: ['quote-requests'] });
       onClose();
     },
+    onError: (err: AxiosError<{ message?: string | string[] }>) => {
+      const message = err.response?.data?.message ?? 'No se pudo clonar el pedido';
+      setError(Array.isArray(message) ? message.join(', ') : message);
+    },
   });
 
   const cancelMutation = useMutation({
@@ -70,6 +74,10 @@ export default function QuoteRequestDetailPanel({ quoteRequestId, onClose, onEdi
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['quote-requests'] });
       void queryClient.invalidateQueries({ queryKey: ['quote-request-detail', quoteRequestId] });
+    },
+    onError: (err: AxiosError<{ message?: string | string[] }>) => {
+      const message = err.response?.data?.message ?? 'No se pudo cancelar el pedido';
+      setError(Array.isArray(message) ? message.join(', ') : message);
     },
   });
 
