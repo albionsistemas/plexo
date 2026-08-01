@@ -1,6 +1,7 @@
 'use client';
 
 import { activityLogApi, type TenantActivityEntry } from '@/lib/activityLog';
+import CompanyListView from '@/components/CompanyListView';
 import {
   afipCertificateApi,
   emailDomainApi,
@@ -91,6 +92,13 @@ export default function PreferencesPage() {
       ) : (
         <>
           <EmailSettingsCard settings={settings} />
+          <CompanyListView
+            role="BRANCH"
+            editable
+            title="Mis sucursales"
+            newLabel="+ Nueva sucursal"
+            variant="card"
+          />
           <AfipCertificateCard settings={settings} />
           <WithholdingAgentCard settings={settings} />
         </>
@@ -294,7 +302,7 @@ function AfipCertificateCard({ settings }: { settings: TenantSettings }) {
       <p className="mb-4 text-xs text-slate-500">
         Certificado digital (.crt) y clave privada (.key) propios de esta empresa, autorizados para
         WSFE en el Administrador de Relaciones de Clave Fiscal de AFIP. El Punto de Venta se define
-        por sucursal (ver Empresas).
+        por sucursal (ver &quot;Mis sucursales&quot; más arriba).
       </p>
 
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 dark:border-slate-800 p-4">

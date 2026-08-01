@@ -4,22 +4,75 @@ import { initials, profileApi } from '@/lib/profile';
 import { disconnectSocket, getSocket } from '@/lib/socket';
 import { useDensity } from '@/providers/DensityProvider';
 import { useTheme } from '@/providers/ThemeProvider';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import { useQuery } from '@tanstack/react-query';
+import {
+  Building2,
+  Calculator,
+  ChevronDown,
+  LayoutDashboard,
+  Package,
+  ShoppingBag,
+  ShoppingCart,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-const NAV_LINKS = [
-  { href: '/dashboard', label: 'Tablero' },
-  { href: '/inventory', label: 'Inventario' },
-  { href: '/invoicing', label: 'Facturación' },
-  { href: '/receivables', label: 'Cuentas a Cobrar' },
-  { href: '/companies', label: 'Empresas' },
-  { href: '/purchases', label: 'Compras' },
-  { href: '/payables', label: 'Cuentas a Pagar' },
-  { href: '/accounting', label: 'Contabilidad' },
-  { href: '/taxes', label: 'Impuestos' },
-  { href: '/reports', label: 'Reportes' },
+interface NavLink {
+  href: string;
+  label: string;
+}
+
+interface NavLeaf extends NavLink {
+  kind: 'link';
+  icon: LucideIcon;
+}
+
+interface NavGroup {
+  kind: 'group';
+  label: string;
+  icon: LucideIcon;
+  items: NavLink[];
+}
+
+type NavEntry = NavLeaf | NavGroup;
+
+const NAV_ENTRIES: NavEntry[] = [
+  { kind: 'link', href: '/dashboard', label: 'Tablero', icon: LayoutDashboard },
+  { kind: 'link', href: '/inventory', label: 'Inventario', icon: Package },
+  {
+    kind: 'group',
+    label: 'Ventas',
+    icon: ShoppingCart,
+    items: [
+      { href: '/invoicing', label: 'Facturación' },
+      { href: '/receivables', label: 'Cuentas a Cobrar' },
+      { href: '/clients', label: 'Clientes' },
+    ],
+  },
+  {
+    kind: 'group',
+    label: 'Compras',
+    icon: ShoppingBag,
+    items: [
+      { href: '/purchases', label: 'Compras' },
+      { href: '/payables', label: 'Cuentas a Pagar' },
+      { href: '/suppliers', label: 'Proveedores' },
+    ],
+  },
+  {
+    kind: 'group',
+    label: 'Contabilidad',
+    icon: Calculator,
+    items: [
+      { href: '/accounting', label: 'Contabilidad' },
+      { href: '/taxes', label: 'Impuestos' },
+      { href: '/reports', label: 'Reportes' },
+    ],
+  },
+  { kind: 'link', href: '/companies', label: 'Empresas', icon: Building2 },
 ];
 
 interface PresenceUser {
@@ -81,19 +134,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-6">
           <span className="text-lg font-bold tracking-tight text-indigo-600 dark:text-indigo-400">PLEXO</span>
           <nav className="flex items-center gap-4">
-            {NAV_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`text-sm transition ${
-                  pathname?.startsWith(link.href)
-                    ? 'font-medium text-slate-900 dark:text-slate-100'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-                }`}
-              >
-                {link.label}
-              </Link>
-            ))}
+            {NAV_ENTRIES.map((entry) =>
+              entry.kind === 'link' ? (
+                <Link
+                  key={entry.href}
+                  href={entry.href}
+                  className={`flex items-center gap-1.5 text-sm transition ${
+                    pathname?.startsWith(entry.href)
+                      ? 'font-medium text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <entry.icon className="h-4 w-4" />
+                  {entry.label}
+                </Link>
+              ) : (
+                <NavDropdown key={entry.label} group={entry} active={pathname ?? ''} />
+              ),
+            )}
           </nav>
         </div>
         <div className="flex items-center gap-5">
@@ -103,6 +161,47 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </header>
       <main className="p-6">{children}</main>
     </div>
+  );
+}
+
+function NavDropdown({ group, active }: { group: NavGroup; active: string }) {
+  const isActive = group.items.some((item) => active.startsWith(item.href));
+
+  return (
+    <Menu as="div" className="relative">
+      <MenuButton
+        className={`flex items-center gap-1.5 text-sm transition ${
+          isActive
+            ? 'font-medium text-slate-900 dark:text-slate-100'
+            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+        }`}
+      >
+        <group.icon className="h-4 w-4" />
+        {group.label}
+        <ChevronDown className="h-3.5 w-3.5" />
+      </MenuButton>
+      <MenuItems
+        anchor="bottom start"
+        className="z-20 mt-2 w-48 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-2 shadow-xl focus:outline-none"
+      >
+        {group.items.map((item) => (
+          <MenuItem key={item.href}>
+            {({ focus }) => (
+              <Link
+                href={item.href}
+                className={`block px-4 py-2 text-sm transition ${
+                  active.startsWith(item.href)
+                    ? 'font-medium text-slate-900 dark:text-slate-100'
+                    : 'text-slate-700 dark:text-slate-300'
+                } ${focus ? 'bg-slate-100 dark:bg-slate-800' : ''}`}
+              >
+                {item.label}
+              </Link>
+            )}
+          </MenuItem>
+        ))}
+      </MenuItems>
+    </Menu>
   );
 }
 

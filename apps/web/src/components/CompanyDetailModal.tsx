@@ -1,21 +1,30 @@
 'use client';
 
-import { companiesApi, type Company, type Person } from '@/lib/companies';
+import { companiesApi, type Company, type CompanyRoleType, type Person } from '@/lib/companies';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import { useState } from 'react';
+import { ROLE_LABELS } from './CompanyFormModal';
 
 interface Props {
   company: Company;
   onClose: () => void;
-  onEdit: () => void;
+  /** Absent in the read-only "todas las empresas" view (/companies) -
+   * there's no full edit surface there anymore, only the roles mini-editor
+   * below. */
+  onEdit?: () => void;
+  /** Read-only "todas las empresas" view: hides edit/activate-deactivate,
+   * hides adding/removing contacts, but still allows the narrow "Editar
+   * roles" action (the only role-set editing surface left once /clients,
+   * /suppliers and "Mis sucursales" all lock their role). */
+  readOnly?: boolean;
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  CUSTOMER: 'Cliente',
-  SUPPLIER: 'Proveedor',
-  BRANCH: 'Sucursal',
-};
+const ROLE_OPTIONS: { value: CompanyRoleType; label: string }[] = [
+  { value: 'CUSTOMER', label: 'Cliente' },
+  { value: 'SUPPLIER', label: 'Proveedor' },
+  { value: 'BRANCH', label: 'Sucursal / punto de venta propio' },
+];
 
 const INDUSTRY_LABELS: Record<string, string> = {
   COMERCIO: 'Comercio',
@@ -35,12 +44,15 @@ const INDUSTRY_LABELS: Record<string, string> = {
 const inputClass =
   'rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500';
 
-export default function CompanyDetailModal({ company, onClose, onEdit }: Props) {
+export default function CompanyDetailModal({ company, onClose, onEdit, readOnly }: Props) {
   const queryClient = useQueryClient();
   const canHaveContacts = company.roles.some(
     (r) => r.role === 'CUSTOMER' || r.role === 'SUPPLIER',
   );
   const [activeError, setActiveError] = useState('');
+  const [editingRoles, setEditingRoles] = useState(false);
+  const [rolesDraft, setRolesDraft] = useState<CompanyRoleType[]>(company.roles.map((r) => r.role));
+  const [rolesError, setRolesError] = useState('');
 
   const { data: detail } = useQuery({
     queryKey: ['company', company.id],
@@ -51,6 +63,7 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
   // refetches; company.active is the row the list handed us when the
   // modal opened and never updates - detail is the source of truth here.
   const isActive = detail?.active ?? company.active;
+  const currentRoles = detail?.roles.map((r) => r.role) ?? company.roles.map((r) => r.role);
 
   const toggleActiveMutation = useMutation({
     mutationFn: () => companiesApi.update(company.id, { active: !isActive }),
@@ -63,6 +76,32 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
       setActiveError(Array.isArray(message) ? message.join(', ') : message);
     },
   });
+
+  const rolesMutation = useMutation({
+    mutationFn: () => companiesApi.update(company.id, { roles: rolesDraft }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['companies'] });
+      void queryClient.invalidateQueries({ queryKey: ['company', company.id] });
+      setEditingRoles(false);
+    },
+    onError: (err: AxiosError<{ message?: string | string[] }>) => {
+      const message = err.response?.data?.message ?? 'No se pudieron guardar los roles';
+      setRolesError(Array.isArray(message) ? message.join(', ') : message);
+    },
+  });
+
+  function toggleRoleDraft(role: CompanyRoleType) {
+    setRolesDraft((prev) => (prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]));
+  }
+
+  function saveRoles() {
+    setRolesError('');
+    if (rolesDraft.length === 0) {
+      setRolesError('Elegí al menos un rol');
+      return;
+    }
+    rolesMutation.mutate();
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -85,13 +124,13 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
             ✕
           </button>
         </div>
-        <div className="mb-4 flex flex-wrap gap-2">
-          {company.roles.map((r) => (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {currentRoles.map((role) => (
             <span
-              key={r.role}
+              key={role}
               className="rounded bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-700 dark:text-slate-300"
             >
-              {ROLE_LABELS[r.role] ?? r.role}
+              {ROLE_LABELS[role] ?? role}
             </span>
           ))}
           {!isActive && (
@@ -99,7 +138,51 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
               Inactiva
             </span>
           )}
+          {readOnly && !editingRoles && (
+            <button
+              onClick={() => {
+                setRolesDraft(currentRoles);
+                setEditingRoles(true);
+              }}
+              className="text-xs text-indigo-600 dark:text-indigo-400 transition hover:text-indigo-800 dark:hover:text-indigo-300"
+            >
+              Editar roles
+            </button>
+          )}
         </div>
+
+        {editingRoles && (
+          <div className="mb-4 flex flex-col gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 p-3">
+            {ROLE_OPTIONS.map((opt) => (
+              <label key={opt.value} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={rolesDraft.includes(opt.value)}
+                  onChange={() => toggleRoleDraft(opt.value)}
+                />
+                {opt.label}
+              </label>
+            ))}
+            {rolesError && <p className="text-xs text-red-600 dark:text-red-400">{rolesError}</p>}
+            <div className="mt-1 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingRoles(false)}
+                className="rounded-lg px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 transition hover:text-slate-800 dark:hover:text-slate-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={saveRoles}
+                disabled={rolesMutation.isPending}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+              >
+                {rolesMutation.isPending ? 'Guardando...' : 'Guardar roles'}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="mb-6 grid grid-cols-2 gap-4 text-sm">
           <div>
@@ -173,30 +256,32 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
             )}
         </div>
 
-        <div className="mb-2 flex items-center gap-2">
-          <button
-            onClick={onEdit}
-            className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800"
-          >
-            Editar empresa
-          </button>
+        {!readOnly && (
+          <div className="mb-2 flex items-center gap-2">
+            <button
+              onClick={onEdit}
+              className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800"
+            >
+              Editar empresa
+            </button>
 
-          <button
-            onClick={() => toggleActiveMutation.mutate()}
-            disabled={toggleActiveMutation.isPending}
-            className={
-              isActive
-                ? 'rounded-lg border border-red-300 dark:border-red-800 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 transition hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50'
-                : 'rounded-lg border border-green-300 dark:border-green-800 px-3 py-1.5 text-xs text-green-600 dark:text-green-400 transition hover:bg-green-50 dark:hover:bg-green-950 disabled:opacity-50'
-            }
-          >
-            {toggleActiveMutation.isPending
-              ? 'Guardando...'
-              : isActive
-                ? 'Desactivar empresa'
-                : 'Activar empresa'}
-          </button>
-        </div>
+            <button
+              onClick={() => toggleActiveMutation.mutate()}
+              disabled={toggleActiveMutation.isPending}
+              className={
+                isActive
+                  ? 'rounded-lg border border-red-300 dark:border-red-800 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 transition hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50'
+                  : 'rounded-lg border border-green-300 dark:border-green-800 px-3 py-1.5 text-xs text-green-600 dark:text-green-400 transition hover:bg-green-50 dark:hover:bg-green-950 disabled:opacity-50'
+              }
+            >
+              {toggleActiveMutation.isPending
+                ? 'Guardando...'
+                : isActive
+                  ? 'Desactivar empresa'
+                  : 'Activar empresa'}
+            </button>
+          </div>
+        )}
         {activeError && <p className="mb-4 text-xs text-red-600 dark:text-red-400">{activeError}</p>}
 
         {canHaveContacts && (
@@ -207,11 +292,11 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
                 <p className="text-sm text-slate-400 dark:text-slate-600">Sin contactos cargados</p>
               ) : (
                 detail?.people.map((person) => (
-                  <ContactRow key={person.id} person={person} companyId={company.id} />
+                  <ContactRow key={person.id} person={person} companyId={company.id} readOnly={readOnly} />
                 ))
               )}
             </div>
-            <NewPersonForm companyId={company.id} />
+            {!readOnly && <NewPersonForm companyId={company.id} />}
           </>
         )}
 
@@ -243,7 +328,15 @@ export default function CompanyDetailModal({ company, onClose, onEdit }: Props) 
   );
 }
 
-function ContactRow({ person, companyId }: { person: Person; companyId: string }) {
+function ContactRow({
+  person,
+  companyId,
+  readOnly,
+}: {
+  person: Person;
+  companyId: string;
+  readOnly?: boolean;
+}) {
   const queryClient = useQueryClient();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -268,31 +361,32 @@ function ContactRow({ person, companyId }: { person: Person; companyId: string }
           </p>
         </div>
 
-        {confirmingDelete ? (
-          <div className="flex shrink-0 items-center gap-2">
+        {!readOnly &&
+          (confirmingDelete ? (
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                onClick={() => deleteMutation.mutate()}
+                disabled={deleteMutation.isPending}
+                className="text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:opacity-50"
+              >
+                Confirmar
+              </button>
+              <button
+                onClick={() => setConfirmingDelete(false)}
+                className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+              >
+                Cancelar
+              </button>
+            </div>
+          ) : (
             <button
-              onClick={() => deleteMutation.mutate()}
-              disabled={deleteMutation.isPending}
-              className="text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:opacity-50"
+              onClick={() => setConfirmingDelete(true)}
+              aria-label="Eliminar contacto"
+              className="shrink-0 text-slate-400 dark:text-slate-600 hover:text-red-600 dark:hover:text-red-400"
             >
-              Confirmar
+              ✕
             </button>
-            <button
-              onClick={() => setConfirmingDelete(false)}
-              className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-            >
-              Cancelar
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setConfirmingDelete(true)}
-            aria-label="Eliminar contacto"
-            className="shrink-0 text-slate-400 dark:text-slate-600 hover:text-red-600 dark:hover:text-red-400"
-          >
-            ✕
-          </button>
-        )}
+          ))}
       </div>
     </div>
   );

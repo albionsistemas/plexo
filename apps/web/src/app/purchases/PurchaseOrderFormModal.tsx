@@ -1,6 +1,6 @@
 'use client';
 
-import CompanyFormModal from '@/app/companies/CompanyFormModal';
+import CompanyFormModal from '@/components/CompanyFormModal';
 import { companiesApi } from '@/lib/companies';
 import { inventoryApi } from '@/lib/inventory';
 import { invoicingApi } from '@/lib/invoicing';
