@@ -8,11 +8,6 @@ import { useState } from 'react';
 interface Props {
   company?: Company;
   onClose: () => void;
-  /** Roles checked by default when creating a new company (ignored when
-   * editing an existing one). Lets a caller like NewInvoiceModal open this
-   * pre-set to BRANCH instead of the CUSTOMER default. Ignored entirely
-   * when lockedRole is set. */
-  defaultRoles?: CompanyRoleType[];
   /** Called with the created/updated company right after a successful
    * save, in addition to the normal invalidate+onClose - so a caller that
    * opened this inline (e.g. to create a customer/branch without leaving
@@ -70,7 +65,6 @@ function normalizeTaxId(value: string): string {
 export default function CompanyFormModal({
   company,
   onClose,
-  defaultRoles,
   onSaved,
   lockedRole,
   onMerged,
@@ -94,7 +88,7 @@ export default function CompanyFormModal({
   );
   const [logoUrl, setLogoUrl] = useState(company?.logoUrl ?? '');
   const [roles, setRoles] = useState<CompanyRoleType[]>(
-    company?.roles.map((r) => r.role) ?? defaultRoles ?? ['CUSTOMER'],
+    company?.roles.map((r) => r.role) ?? ['CUSTOMER'],
   );
   const [error, setError] = useState('');
   const [afipMessage, setAfipMessage] = useState('');

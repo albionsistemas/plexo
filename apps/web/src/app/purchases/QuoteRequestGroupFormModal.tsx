@@ -280,7 +280,7 @@ export default function QuoteRequestGroupFormModal({ onClose }: Props) {
 
       {creatingSupplier && (
         <CompanyFormModal
-          defaultRoles={['SUPPLIER']}
+          lockedRole="SUPPLIER"
           onClose={() => setCreatingSupplier(false)}
           onSaved={(c) => setSupplierIds((prev) => (prev.includes(c.id) ? prev : [...prev, c.id]))}
         />

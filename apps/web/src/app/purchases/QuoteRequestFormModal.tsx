@@ -317,7 +317,7 @@ export default function QuoteRequestFormModal({ quoteRequest, onClose }: Props) 
 
       {creatingSupplier && (
         <CompanyFormModal
-          defaultRoles={['SUPPLIER']}
+          lockedRole="SUPPLIER"
           onClose={() => setCreatingSupplier(false)}
           onSaved={(c) => setSupplierId(c.id)}
         />

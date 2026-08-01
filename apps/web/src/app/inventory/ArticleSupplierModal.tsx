@@ -98,7 +98,7 @@ export default function ArticleSupplierModal({ article, onClose }: Props) {
 
       {creatingSupplier && (
         <CompanyFormModal
-          defaultRoles={['SUPPLIER']}
+          lockedRole="SUPPLIER"
           onClose={() => setCreatingSupplier(false)}
           onSaved={(c) => setSupplierId(c.id)}
         />

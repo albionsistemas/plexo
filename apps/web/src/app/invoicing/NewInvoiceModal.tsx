@@ -329,14 +329,14 @@ export default function NewInvoiceModal({ onClose }: Props) {
 
       {creatingCustomer && (
         <CompanyFormModal
-          defaultRoles={['CUSTOMER']}
+          lockedRole="CUSTOMER"
           onClose={() => setCreatingCustomer(false)}
           onSaved={(c) => setCustomerId(c.id)}
         />
       )}
       {creatingBranch && (
         <CompanyFormModal
-          defaultRoles={['BRANCH']}
+          lockedRole="BRANCH"
           onClose={() => setCreatingBranch(false)}
           onSaved={(c) => setBranchId(c.id)}
         />
