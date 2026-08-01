@@ -1,6 +1,6 @@
 # PLEXO — Estado del proyecto
 
-Última actualización: 2026-07-31. Repo: `github.com/albionsistemas/plexo`, rama `main`.
+Última actualización: 2026-08-01. Repo: `github.com/albionsistemas/plexo`, rama `main`.
 
 ## Resumen ejecutivo
 
