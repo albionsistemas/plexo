@@ -32,7 +32,16 @@ async function bootstrap() {
     root: join(process.cwd(), 'uploads'),
     prefix: '/uploads/',
   });
-  app.enableCors({ origin: ['http://localhost:4200', 'http://localhost:3000'] });
+  // @fastify/cors defaults `methods` to 'GET,HEAD,POST' - narrower than every
+  // other CORS middleware's default, and narrower than this API's actual
+  // surface (PATCH/DELETE are used throughout). Left unset, any PATCH/DELETE
+  // request from the browser fails preflight with a CORS error that never
+  // reaches this server's logs, since the browser blocks it client-side
+  // before sending the real request.
+  app.enableCors({
+    origin: ['http://localhost:4200', 'http://localhost:3000'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+  });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   const globalPrefix = 'api';
   app.setGlobalPrefix(globalPrefix);
