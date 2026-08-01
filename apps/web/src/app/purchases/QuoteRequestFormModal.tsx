@@ -64,17 +64,24 @@ export default function QuoteRequestFormModal({ quoteRequest, onClose }: Props) 
   );
   // articleVariantId isn't in QuoteRequestLineDetail (only sku/article name
   // are) - resolve it once by matching sku against the variant catalog, on
-  // first render only (not on every keystroke elsewhere in the form).
+  // first render only (not on every keystroke elsewhere in the form). Only
+  // patches articleVariantId into whatever is currently in state (via the
+  // functional updater) instead of re-deriving the whole line from the
+  // original quoteRequest prop - articlesQuery can resolve well after the
+  // user already started typing into quantity/estimatedUnitCost/notes
+  // (this modal doesn't wait on it, see `ready` below), and re-deriving the
+  // full line here used to silently overwrite those edits with the stale
+  // original value right before submit.
   const [linesResolved, setLinesResolved] = useState(!isEdit);
   if (!linesResolved && quoteRequest && variantOptions.length > 0) {
     const bySku = new Map((articlesQuery.data ?? []).flatMap((a) => a.variants.map((v) => [v.sku, v.id])));
-    setLines(
-      quoteRequest.lines.map((l) => ({
-        articleVariantId: bySku.get(l.articleVariant.sku) ?? '',
-        quantity: Number(l.quantity),
-        estimatedUnitCost: l.estimatedUnitCost != null ? Number(l.estimatedUnitCost) : undefined,
-        notes: l.notes ?? undefined,
-      })),
+    setLines((prev) =>
+      prev.map((line, i) => {
+        const original = quoteRequest.lines[i];
+        return original && !line.articleVariantId
+          ? { ...line, articleVariantId: bySku.get(original.articleVariant.sku) ?? '' }
+          : line;
+      }),
     );
     setLinesResolved(true);
   }
