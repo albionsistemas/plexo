@@ -13,6 +13,7 @@ import {
 import { Roles } from '@plexo/auth';
 import { AuditEntity, PdfStyle, type PurchaseDocumentStatus } from '@plexo/database';
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto.js';
+import { MarkSentWhatsappDto } from './dto/mark-sent-whatsapp.dto.js';
 import { UpdatePurchaseOrderDto } from './dto/update-purchase-order.dto.js';
 import { PurchaseOrderService } from './purchase-order.service.js';
 
@@ -73,8 +74,8 @@ export class PurchaseOrderController {
   @AuditEntity('purchaseOrder', { labelFields: ['number'] })
   @Roles(...WRITE_ROLES)
   @Post(':id/mark-sent-whatsapp')
-  markSentWhatsapp(@Param('id', ParseUUIDPipe) id: string) {
-    return this.purchaseOrderService.markSentWhatsapp(id);
+  markSentWhatsapp(@Param('id', ParseUUIDPipe) id: string, @Body() dto: MarkSentWhatsappDto) {
+    return this.purchaseOrderService.markSentWhatsapp(id, dto.phone, dto.contactName);
   }
 
   @Get(':id/pdf')

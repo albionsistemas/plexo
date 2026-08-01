@@ -7,6 +7,8 @@ import { useState } from 'react';
 import PurchaseOrderDetailPanel from './PurchaseOrderDetailPanel';
 import PurchaseOrderFormModal from './PurchaseOrderFormModal';
 import ReceiveGoodsModal from './ReceiveGoodsModal';
+import SendPurchaseOrderDialog from './SendPurchaseOrderDialog';
+import SentViaBadge from './SentViaBadge';
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Borrador',
@@ -20,12 +22,11 @@ const STATUS_COLORS: Record<string, string> = {
   CANCELLED: 'bg-slate-200 dark:bg-slate-800 text-slate-500',
 };
 
-const CHANNEL_LABELS: Record<string, string> = { EMAIL: 'Email', WHATSAPP: 'WhatsApp' };
-
 export default function OrdenesTab() {
   const [creating, setCreating] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [receivingId, setReceivingId] = useState<string | null>(null);
+  const [resendId, setResendId] = useState<string | null>(null);
 
   const { data: purchaseOrders, isLoading } = useQuery({
     queryKey: ['purchase-orders'],
@@ -87,8 +88,8 @@ export default function OrdenesTab() {
                       })()}
                     </div>
                   </td>
-                  <td className="p-3 text-slate-600 dark:text-slate-400">
-                    {po.sentVia ? CHANNEL_LABELS[po.sentVia] ?? po.sentVia : '—'}
+                  <td className="p-3">
+                    <SentViaBadge order={po} onResend={() => setResendId(po.id)} />
                   </td>
                   <td className="p-3 text-right text-slate-800 dark:text-slate-200">
                     ${Number(po.total).toFixed(2)} {po.currency.code}
@@ -122,6 +123,24 @@ export default function OrdenesTab() {
       {creating && <PurchaseOrderFormModal onClose={() => setCreating(false)} />}
       {detailId && <PurchaseOrderDetailPanel purchaseOrderId={detailId} onClose={() => setDetailId(null)} />}
       {receivingId && <ReceiveGoodsLoader purchaseOrderId={receivingId} onClose={() => setReceivingId(null)} />}
+      {resendId &&
+        (() => {
+          const po = purchaseOrders?.find((p) => p.id === resendId);
+          return (
+            po && (
+              <SendPurchaseOrderDialog
+                purchaseOrder={{
+                  id: po.id,
+                  number: po.number,
+                  supplierId: po.supplier.id,
+                  supplierName: po.supplier.name,
+                  supplierEmail: po.supplier.email,
+                }}
+                onClose={() => setResendId(null)}
+              />
+            )
+          );
+        })()}
     </div>
   );
 }

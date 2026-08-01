@@ -128,7 +128,12 @@ describe('PurchaseOrderService.sendEmail', () => {
     expect(db.purchaseOrder.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'po-1' },
-        data: { status: 'SENT', sentAt: expect.any(Date), sentVia: 'EMAIL' },
+        data: {
+          status: 'SENT',
+          sentAt: expect.any(Date),
+          sentVia: 'EMAIL',
+          sentToEmail: 'compras@norte.com',
+        },
       }),
     );
   });

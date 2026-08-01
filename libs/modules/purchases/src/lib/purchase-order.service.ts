@@ -60,7 +60,9 @@ const DETAIL_INCLUDE = PURCHASE_ORDER_DETAIL_INCLUDE;
 
 const LIST_INCLUDE = {
   lines: true,
-  supplier: { select: { id: true, name: true } },
+  // email needed so the "Enviada vía" hover card in the list can offer
+  // "Reenviar por email" without a second fetch for the full detail.
+  supplier: { select: { id: true, name: true, email: true } },
   currency: { select: { code: true } },
 } satisfies Prisma.PurchaseOrderInclude;
 
@@ -237,7 +239,7 @@ export class PurchaseOrderService {
       pdfBuffer: buffer,
       pdfFilename: filename,
     });
-    return this.markSent(id, 'EMAIL');
+    return this.markSent(id, 'EMAIL', { sentToEmail: purchaseOrder.supplier.email });
   }
 
   /** Server-side text so wording stays in one place (mirrors invoicing's
@@ -258,9 +260,9 @@ export class PurchaseOrderService {
     return { url: `https://wa.me/${digitsOnly}?text=${encodeURIComponent(message)}` };
   }
 
-  async markSentWhatsapp(id: string) {
+  async markSentWhatsapp(id: string, phone: string, contactName?: string) {
     await this.findOrThrow(id);
-    return this.markSent(id, 'WHATSAPP');
+    return this.markSent(id, 'WHATSAPP', { sentToPhone: phone, sentToContactName: contactName ?? null });
   }
 
   async generatePdf(id: string, style?: PdfStyle): Promise<{ buffer: Buffer; filename: string }> {
@@ -301,10 +303,14 @@ export class PurchaseOrderService {
     return purchaseOrder;
   }
 
-  private markSent(id: string, channel: PurchaseSendChannel) {
+  private markSent(
+    id: string,
+    channel: PurchaseSendChannel,
+    recipient: { sentToEmail?: string | null; sentToPhone?: string | null; sentToContactName?: string | null },
+  ) {
     return getTenantDb().purchaseOrder.update({
       where: { id },
-      data: { status: 'SENT', sentAt: new Date(), sentVia: channel },
+      data: { status: 'SENT', sentAt: new Date(), sentVia: channel, ...recipient },
       include: DETAIL_INCLUDE,
     });
   }

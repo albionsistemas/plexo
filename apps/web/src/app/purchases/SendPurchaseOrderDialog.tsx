@@ -26,6 +26,8 @@ export default function SendPurchaseOrderDialog({ purchaseOrder, onClose }: Prop
   });
   const whatsappContacts = (supplier?.people ?? []).filter((p) => p.whatsapp);
   const phone = selectedPhone || whatsappContacts[0]?.whatsapp || '';
+  const selectedContact = whatsappContacts.find((c) => c.whatsapp === phone);
+  const contactName = selectedContact ? `${selectedContact.firstName} ${selectedContact.lastName ?? ''}`.trim() : undefined;
 
   function invalidateAndReport(message: string) {
     void queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
@@ -47,7 +49,7 @@ export default function SendPurchaseOrderDialog({ purchaseOrder, onClose }: Prop
     mutationFn: async () => {
       const { url } = await purchaseOrdersApi.whatsappLink(purchaseOrder.id, phone);
       window.open(url, '_blank');
-      return purchaseOrdersApi.markSentWhatsapp(purchaseOrder.id);
+      return purchaseOrdersApi.markSentWhatsapp(purchaseOrder.id, phone, contactName);
     },
     onSuccess: () => invalidateAndReport('Abrimos WhatsApp con el mensaje listo'),
     onError: (err: AxiosError<{ message?: string | string[] }>) => {

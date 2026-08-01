@@ -1,0 +1,52 @@
+'use client';
+
+import type { PurchaseOrderSummary } from '@/lib/purchases';
+import { Mail, MessageCircle } from 'lucide-react';
+
+interface Props {
+  order: PurchaseOrderSummary;
+  onResend: () => void;
+}
+
+/** Icon-only replacement for the old "Email"/"WhatsApp" text in the
+ * "Enviada vía" column - the hover card carries the detail that used to
+ * have no home at all (exact send time, who it actually went to) plus a
+ * shortcut to resend, instead of forcing a trip through "Ver". */
+export default function SentViaBadge({ order, onResend }: Props) {
+  if (!order.sentVia || !order.sentAt) {
+    return <span className="text-slate-400 dark:text-slate-600">—</span>;
+  }
+
+  const isEmail = order.sentVia === 'EMAIL';
+  const Icon = isEmail ? Mail : MessageCircle;
+  const sentAtLabel = new Date(order.sentAt).toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'short' });
+  const recipient = isEmail
+    ? order.sentToEmail
+    : [order.sentToContactName, order.sentToPhone].filter(Boolean).join(' — ') || null;
+
+  return (
+    <div className="group relative inline-flex">
+      <Icon
+        className={
+          isEmail
+            ? 'h-4 w-4 text-indigo-600 dark:text-indigo-400'
+            : 'h-4 w-4 text-green-600 dark:text-green-400'
+        }
+      />
+      <div className="invisible absolute left-1/2 top-full z-30 mt-2 w-64 -translate-x-1/2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-left text-xs opacity-0 shadow-xl transition pointer-events-none group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto">
+        <p className="font-medium text-slate-800 dark:text-slate-200">Enviada por {isEmail ? 'Email' : 'WhatsApp'}</p>
+        <p className="mt-1 text-slate-500">{sentAtLabel}</p>
+        <p className="mt-1 text-slate-600 dark:text-slate-400">A: {recipient ?? 'No registrado (envío previo a esta función)'}</p>
+        <div className="mt-2 border-t border-slate-200 dark:border-slate-800 pt-2">
+          <button
+            type="button"
+            onClick={onResend}
+            className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+          >
+            Reenviar (email o WhatsApp)
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

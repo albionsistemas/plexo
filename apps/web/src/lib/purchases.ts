@@ -217,8 +217,15 @@ export interface PurchaseOrderSummary {
   total: string;
   sentAt: string | null;
   sentVia: PurchaseSendChannel | null;
+  // Snapshot of who the last send actually went to - null on orders sent
+  // before this field existed, or never sent. See schema.prisma comment
+  // on PurchaseOrder for why this isn't just re-derived from the
+  // supplier's current email/contacts.
+  sentToEmail: string | null;
+  sentToPhone: string | null;
+  sentToContactName: string | null;
   createdAt: string;
-  supplier: { id: string; name: string };
+  supplier: { id: string; name: string; email: string | null };
   currency: { code: string };
   lines: { id: string; quantity: string; receivedQuantity: string; pendingQuantity: string }[];
 }
@@ -251,6 +258,9 @@ export interface PurchaseOrderDetail {
   notes: string | null;
   sentAt: string | null;
   sentVia: PurchaseSendChannel | null;
+  sentToEmail: string | null;
+  sentToPhone: string | null;
+  sentToContactName: string | null;
   createdAt: string;
   supplier: SupplierRef;
   currency: { id: string; code: string; name: string };
@@ -404,8 +414,10 @@ export const purchaseOrdersApi = {
     api
       .get<{ url: string }>(`/purchases/purchase-orders/${id}/whatsapp-link`, { params: { phone } })
       .then((r) => r.data),
-  markSentWhatsapp: (id: string) =>
-    api.post<PurchaseOrderDetail>(`/purchases/purchase-orders/${id}/mark-sent-whatsapp`).then((r) => r.data),
+  markSentWhatsapp: (id: string, phone: string, contactName?: string) =>
+    api
+      .post<PurchaseOrderDetail>(`/purchases/purchase-orders/${id}/mark-sent-whatsapp`, { phone, contactName })
+      .then((r) => r.data),
   openPdf: (id: string, style?: PdfStyle) => openPdf(`/purchases/purchase-orders/${id}/pdf`, style),
 };
 
