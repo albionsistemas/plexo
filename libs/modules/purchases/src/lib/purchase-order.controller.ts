@@ -14,6 +14,7 @@ import { Roles } from '@plexo/auth';
 import { AuditEntity, PdfStyle, type PurchaseDocumentStatus } from '@plexo/database';
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto.js';
 import { MarkSentWhatsappDto } from './dto/mark-sent-whatsapp.dto.js';
+import { SendFollowUpEmailDto } from './dto/send-follow-up-email.dto.js';
 import { UpdatePurchaseOrderDto } from './dto/update-purchase-order.dto.js';
 import { PurchaseOrderService } from './purchase-order.service.js';
 
@@ -64,6 +65,15 @@ export class PurchaseOrderController {
   @Post(':id/send-email')
   sendEmail(@Param('id', ParseUUIDPipe) id: string) {
     return this.purchaseOrderService.sendEmail(id);
+  }
+
+  // No @AuditEntity: a follow-up nudge doesn't change anything on the
+  // PurchaseOrder itself (no sentAt/sentVia update, see the service's
+  // docstring), so there's nothing for the interceptor to diff.
+  @Roles(...WRITE_ROLES)
+  @Post(':id/follow-up-email')
+  sendFollowUpEmail(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SendFollowUpEmailDto) {
+    return this.purchaseOrderService.sendFollowUpEmail(id, dto);
   }
 
   @Get(':id/whatsapp-link')

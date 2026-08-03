@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Resend } from 'resend';
-import type { PurchaseEmailSender, PurchaseOrderEmailPayload } from './purchase-email-sender.port.js';
+import type {
+  FollowUpEmailPayload,
+  PurchaseEmailSender,
+  PurchaseOrderEmailPayload,
+} from './purchase-email-sender.port.js';
 
 /** Real sender, wired in only when RESEND_API_KEY is set (see
  * PurchasesModule) - mirrors invoicing's ResendEmailSender. Failures are
@@ -30,6 +34,19 @@ export class ResendPurchaseEmailSender implements PurchaseEmailSender {
       this.logger.error(
         `Failed to email purchase order ${payload.purchaseOrderNumber} to ${payload.to}: ${error.message}`,
       );
+    }
+  }
+
+  async sendFollowUpEmail(payload: FollowUpEmailPayload): Promise<void> {
+    const { error } = await this.resend.emails.send({
+      from: payload.from ?? this.from,
+      to: payload.to,
+      subject: payload.subject,
+      text: payload.text,
+    });
+
+    if (error) {
+      this.logger.error(`Failed to email follow-up to ${payload.to}: ${error.message}`);
     }
   }
 }

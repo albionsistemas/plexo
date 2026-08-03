@@ -416,6 +416,8 @@ export const purchaseOrdersApi = {
   cancel: (id: string) => api.patch(`/purchases/purchase-orders/${id}/cancel`).then(() => undefined),
   sendEmail: (id: string) =>
     api.post<PurchaseOrderDetail>(`/purchases/purchase-orders/${id}/send-email`).then((r) => r.data),
+  sendFollowUpEmail: (id: string, dto: { to: string; subject?: string; text: string }) =>
+    api.post<void>(`/purchases/purchase-orders/${id}/follow-up-email`, dto).then(() => undefined),
   whatsappLink: (id: string, phone: string) =>
     api
       .get<{ url: string }>(`/purchases/purchase-orders/${id}/whatsapp-link`, { params: { phone } })

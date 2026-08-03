@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { PackageCheck } from 'lucide-react';
 import { useState } from 'react';
 import PurchaseOrderDetailPanel from './PurchaseOrderDetailPanel';
+import PurchaseOrderFollowUpModal from './PurchaseOrderFollowUpModal';
 import PurchaseOrderFormModal from './PurchaseOrderFormModal';
 import ReceiveGoodsModal from './ReceiveGoodsModal';
 import SendPurchaseOrderDialog from './SendPurchaseOrderDialog';
@@ -27,6 +28,7 @@ export default function OrdenesTab() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [receivingId, setReceivingId] = useState<string | null>(null);
   const [resendId, setResendId] = useState<string | null>(null);
+  const [followUpId, setFollowUpId] = useState<string | null>(null);
 
   const { data: purchaseOrders, isLoading } = useQuery({
     queryKey: ['purchase-orders'],
@@ -102,7 +104,11 @@ export default function OrdenesTab() {
                     </div>
                   </td>
                   <td className="p-3">
-                    <SentViaBadge order={po} onResend={() => setResendId(po.id)} />
+                    <SentViaBadge
+                      order={po}
+                      onResend={() => setResendId(po.id)}
+                      onFollowUp={() => setFollowUpId(po.id)}
+                    />
                   </td>
                   <td className="p-3 text-right text-slate-800 dark:text-slate-200">
                     ${Number(po.total).toFixed(2)} {po.currency.code}
@@ -153,6 +159,11 @@ export default function OrdenesTab() {
               />
             )
           );
+        })()}
+      {followUpId &&
+        (() => {
+          const po = purchaseOrders?.find((p) => p.id === followUpId);
+          return po && <PurchaseOrderFollowUpModal order={po} onClose={() => setFollowUpId(null)} />;
         })()}
     </div>
   );

@@ -12,6 +12,19 @@ export interface PurchaseOrderEmailPayload {
   from?: string;
 }
 
+/** A short follow-up nudge ("¿ya despachaste la OC?"), not the order itself -
+ * no PDF attachment, subject/text chosen by the user (one of 5 templates or
+ * free text, see PurchaseOrderFollowUpModal on the frontend). Kept separate
+ * from PurchaseOrderEmailPayload rather than making pdfBuffer/pdfFilename
+ * optional there - that struct is specifically "the order as an email", this
+ * one is "any short message to the supplier". */
+export interface FollowUpEmailPayload {
+  to: string;
+  subject: string;
+  text: string;
+  from?: string;
+}
+
 /**
  * Own port for Compras, not a reuse of invoicing's EmailSender - modules
  * never import each other's Service (see PROGRESS.md's architecture
@@ -22,6 +35,7 @@ export interface PurchaseOrderEmailPayload {
  */
 export interface PurchaseEmailSender {
   sendPurchaseOrderEmail(payload: PurchaseOrderEmailPayload): Promise<void>;
+  sendFollowUpEmail(payload: FollowUpEmailPayload): Promise<void>;
 }
 
 export const PURCHASE_EMAIL_SENDER = Symbol('PURCHASE_EMAIL_SENDER');

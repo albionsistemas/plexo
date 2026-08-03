@@ -260,6 +260,21 @@ export class PurchaseOrderService {
     return { url: `https://wa.me/${digitsOnly}?text=${encodeURIComponent(message)}` };
   }
 
+  /** "Mensaje rápido" desde el badge "Enviada vía" - un nudge corto (una de
+   * 5 plantillas o texto libre, ver PurchaseOrderFollowUpModal), no un
+   * reenvío del documento: sin PDF adjunto, y a propósito no pasa por
+   * markSent/sentAt/sentVia - esos campos representan cuándo se mandó *la
+   * orden*, no cuándo se insistió por ella. findOrThrow sólo para validar
+   * que la orden existe antes de gastar un envío real. */
+  async sendFollowUpEmail(id: string, dto: { to: string; subject?: string; text: string }): Promise<void> {
+    const purchaseOrder = await this.findOrThrow(id);
+    await this.emailSender.sendFollowUpEmail({
+      to: dto.to,
+      subject: dto.subject?.trim() || `Seguimiento OC ${purchaseOrder.number}`,
+      text: dto.text,
+    });
+  }
+
   async markSentWhatsapp(id: string, phone: string, contactName?: string, contactAvatarUrl?: string) {
     await this.findOrThrow(id);
     return this.markSent(id, 'WHATSAPP', {

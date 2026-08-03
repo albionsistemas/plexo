@@ -17,7 +17,10 @@ function makePdfGenerator(): PdfGeneratorService {
 }
 
 function makeEmailSender(): PurchaseEmailSender {
-  return { sendPurchaseOrderEmail: jest.fn().mockResolvedValue(undefined) };
+  return {
+    sendPurchaseOrderEmail: jest.fn().mockResolvedValue(undefined),
+    sendFollowUpEmail: jest.fn().mockResolvedValue(undefined),
+  };
 }
 
 function makeSupplier(overrides: Partial<{ active: boolean; roles: { role: string }[]; email: string | null }> = {}) {
@@ -135,6 +138,57 @@ describe('PurchaseOrderService.sendEmail', () => {
           sentToEmail: 'compras@norte.com',
         },
       }),
+    );
+  });
+});
+
+describe('PurchaseOrderService.sendFollowUpEmail', () => {
+  function makeOrderRow() {
+    return {
+      id: 'po-1',
+      number: 'OC-000001',
+      total: new Prisma.Decimal(100),
+      notes: null,
+      createdAt: new Date('2026-01-01'),
+      currency: { code: 'USD' },
+      supplier: makeSupplier(),
+      transportMode: null,
+      paymentTerm: null,
+      deliveryTime: null,
+      lines: [],
+    };
+  }
+
+  it('sends the given text/subject as-is, without touching sentAt/sentVia', async () => {
+    const db = {
+      purchaseOrder: { findUnique: jest.fn().mockResolvedValue(makeOrderRow()), update: jest.fn() },
+    };
+    const emailSender = makeEmailSender();
+    const service = new PurchaseOrderService(makeNumbering(), makePdfGenerator(), emailSender);
+
+    await runAsUser(db, () =>
+      service.sendFollowUpEmail('po-1', { to: 'laura@proveedor.com', text: '¿Ya despachaste la OC?' }),
+    );
+
+    expect(emailSender.sendFollowUpEmail).toHaveBeenCalledWith({
+      to: 'laura@proveedor.com',
+      subject: 'Seguimiento OC OC-000001',
+      text: '¿Ya despachaste la OC?',
+    });
+    expect(db.purchaseOrder.update).not.toHaveBeenCalled();
+  });
+
+  it('uses a custom subject when one is given, instead of the default', async () => {
+    const db = { purchaseOrder: { findUnique: jest.fn().mockResolvedValue(makeOrderRow()) } };
+    const emailSender = makeEmailSender();
+    const service = new PurchaseOrderService(makeNumbering(), makePdfGenerator(), emailSender);
+
+    await runAsUser(db, () =>
+      service.sendFollowUpEmail('po-1', { to: 'laura@proveedor.com', subject: 'Urgente', text: 'hola' }),
+    );
+
+    expect(emailSender.sendFollowUpEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ subject: 'Urgente' }),
     );
   });
 });

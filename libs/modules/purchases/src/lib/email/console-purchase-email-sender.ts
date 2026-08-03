@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { PurchaseEmailSender, PurchaseOrderEmailPayload } from './purchase-email-sender.port.js';
+import type {
+  FollowUpEmailPayload,
+  PurchaseEmailSender,
+  PurchaseOrderEmailPayload,
+} from './purchase-email-sender.port.js';
 
 /** Logs instead of sending. Used when RESEND_API_KEY/EMAIL_FROM aren't set. */
 @Injectable()
@@ -9,6 +13,12 @@ export class ConsolePurchaseEmailSender implements PurchaseEmailSender {
   async sendPurchaseOrderEmail(payload: PurchaseOrderEmailPayload): Promise<void> {
     this.logger.log(
       `[stub] would email purchase order ${payload.purchaseOrderNumber} (total ${payload.currencyCode} ${payload.total}) to ${payload.to} (${payload.supplierName}) from ${payload.from ?? '(default sender)'}, attaching ${payload.pdfFilename}`,
+    );
+  }
+
+  async sendFollowUpEmail(payload: FollowUpEmailPayload): Promise<void> {
+    this.logger.log(
+      `[stub] would email follow-up "${payload.subject}" to ${payload.to} from ${payload.from ?? '(default sender)'}: ${payload.text}`,
     );
   }
 }

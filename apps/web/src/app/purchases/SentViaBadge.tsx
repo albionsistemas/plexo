@@ -7,13 +7,14 @@ import { Mail, MessageCircle } from 'lucide-react';
 interface Props {
   order: PurchaseOrderSummary;
   onResend: () => void;
+  onFollowUp: () => void;
 }
 
 /** Icon-only replacement for the old "Email"/"WhatsApp" text in the
  * "Enviada vía" column - the hover card carries the detail that used to
  * have no home at all (exact send time, who it actually went to) plus a
  * shortcut to resend, instead of forcing a trip through "Ver". */
-export default function SentViaBadge({ order, onResend }: Props) {
+export default function SentViaBadge({ order, onResend, onFollowUp }: Props) {
   if (!order.sentVia || !order.sentAt) {
     return <span className="text-slate-400 dark:text-slate-600">—</span>;
   }
@@ -28,22 +29,29 @@ export default function SentViaBadge({ order, onResend }: Props) {
 
   return (
     <div className="group relative inline-flex">
-      {avatarUrl ? (
-        <img
-          src={avatarUrl}
-          alt=""
-          title={order.sentToContactName ?? undefined}
-          className="h-4 w-4 rounded-full border border-green-500 object-cover"
-        />
-      ) : (
-        <Icon
-          className={
-            isEmail
-              ? 'h-4 w-4 text-indigo-600 dark:text-indigo-400'
-              : 'h-4 w-4 text-green-600 dark:text-green-400'
-          }
-        />
-      )}
+      <button
+        type="button"
+        onClick={onFollowUp}
+        title="Mandar un mensaje rápido de seguimiento"
+        className="inline-flex cursor-pointer"
+      >
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt=""
+            title={order.sentToContactName ?? undefined}
+            className="h-4 w-4 rounded-full border border-green-500 object-cover"
+          />
+        ) : (
+          <Icon
+            className={
+              isEmail
+                ? 'h-4 w-4 text-indigo-600 dark:text-indigo-400'
+                : 'h-4 w-4 text-green-600 dark:text-green-400'
+            }
+          />
+        )}
+      </button>
       <div className="invisible absolute left-1/2 top-full z-30 mt-2 w-64 -translate-x-1/2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-left text-xs opacity-0 shadow-xl transition pointer-events-none group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto">
         <p className="font-medium text-slate-800 dark:text-slate-200">Enviada por {isEmail ? 'Email' : 'WhatsApp'}</p>
         <p className="mt-1 text-slate-500">{sentAtLabel}</p>
@@ -51,11 +59,18 @@ export default function SentViaBadge({ order, onResend }: Props) {
           {avatarUrl && <img src={avatarUrl} alt="" className="h-5 w-5 rounded-full object-cover" />}
           <span>A: {recipient ?? 'No registrado (envío previo a esta función)'}</span>
         </div>
-        <div className="mt-2 border-t border-slate-200 dark:border-slate-800 pt-2">
+        <div className="mt-2 flex flex-col gap-1 border-t border-slate-200 dark:border-slate-800 pt-2">
+          <button
+            type="button"
+            onClick={onFollowUp}
+            className="text-left text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+          >
+            Mensaje rápido
+          </button>
           <button
             type="button"
             onClick={onResend}
-            className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+            className="text-left text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
           >
             Reenviar (email o WhatsApp)
           </button>
