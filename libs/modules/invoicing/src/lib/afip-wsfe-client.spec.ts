@@ -104,9 +104,11 @@ describe('AfipWsfeClient.requestCae', () => {
     return {
       kind: 'FACTURA',
       documentLetter: 'B',
+      concept: 'PRODUCTOS',
       pointOfSale: '0001',
       number: '00000042',
       issueDate: new Date('2026-06-15T12:00:00Z'),
+      dueDate: null,
       customerTaxId: '20111111112',
       currencyCode: 'ARS',
       exchangeRate: new Prisma.Decimal(1),
@@ -145,6 +147,38 @@ describe('AfipWsfeClient.requestCae', () => {
     expect(wsfeBody).toContain('<ar:ImpTotal>121.00</ar:ImpTotal>');
     expect(wsfeBody).toContain('<ar:MonId>PES</ar:MonId>');
     expect(wsfeBody).toContain('<Id>5</Id>'); // 21% -> alicuota 5
+    expect(wsfeBody).toContain('<ar:Concepto>1</ar:Concepto>');
+    expect(wsfeBody).not.toContain('FchServDesde'); // Concepto 1: AFIP rejects these if present
+  });
+
+  it('sends Concepto 2 and FchServDesde/FchServHasta/FchVtoPago for a service invoice', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, text: () => Promise.resolve(wsaaResponse()) })
+      .mockResolvedValueOnce({ ok: true, text: () => Promise.resolve(wsfeAcceptedResponse()) });
+    const client = new AfipWsfeClient({ certPem, keyPem, env: 'homologacion', cuitRepresentada: '20111111112' });
+
+    await client.requestCae(
+      baseInvoice({ concept: 'SERVICIOS', dueDate: new Date('2026-07-01T00:00:00Z') }),
+    );
+
+    const wsfeBody = fetchMock.mock.calls[1][1].body as string;
+    expect(wsfeBody).toContain('<ar:Concepto>2</ar:Concepto>');
+    expect(wsfeBody).toContain('<ar:FchServDesde>20260615</ar:FchServDesde>');
+    expect(wsfeBody).toContain('<ar:FchServHasta>20260615</ar:FchServHasta>');
+    expect(wsfeBody).toContain('<ar:FchVtoPago>20260701</ar:FchVtoPago>'); // from dueDate
+  });
+
+  it('sends Concepto 3 for a mixed products+services invoice, falling back FchVtoPago to issueDate when there is no dueDate', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, text: () => Promise.resolve(wsaaResponse()) })
+      .mockResolvedValueOnce({ ok: true, text: () => Promise.resolve(wsfeAcceptedResponse()) });
+    const client = new AfipWsfeClient({ certPem, keyPem, env: 'homologacion', cuitRepresentada: '20111111112' });
+
+    await client.requestCae(baseInvoice({ concept: 'PRODUCTOS_Y_SERVICIOS', dueDate: null }));
+
+    const wsfeBody = fetchMock.mock.calls[1][1].body as string;
+    expect(wsfeBody).toContain('<ar:Concepto>3</ar:Concepto>');
+    expect(wsfeBody).toContain('<ar:FchVtoPago>20260615</ar:FchVtoPago>'); // same as issueDate
   });
 
   it('maps Consumidor Final (no customerTaxId) to DocTipo 99 / DocNro 0', async () => {

@@ -74,6 +74,17 @@ enum DocumentLetter {
   M
 }
 
+// AFIP Concepto (FECAESolicitar): 1=Productos, 2=Servicios,
+// 3=Productos y Servicios - mapeado a esos números sólo dentro de
+// afip-wsfe-client.ts, igual que DocumentLetter se mapea a CbteTipo ahí
+// mismo. PRODUCTOS_Y_SERVICIOS aplica cuando una factura mezcla líneas de
+// artículos con isService=true y con isService=false.
+enum InvoiceConcept {
+  PRODUCTOS
+  SERVICIOS
+  PRODUCTOS_Y_SERVICIOS
+}
+
 enum DiscountType {
   PERCENTAGE
   AMOUNT
@@ -756,6 +767,13 @@ model Invoice {
   customerName          String
   customerTaxId         String?
   documentLetter        DocumentLetter
+  // AFIP Concepto (1/2/3, ver InvoiceConcept) - derivado de Article.isService
+  // de cada línea al crear la factura (InvoicingService.createInvoice), no
+  // elegido por el usuario. Persistido acá (no re-derivado cada vez) porque
+  // CreditNote lo reusa tal cual del Invoice que acredita - una nota de
+  // crédito reversa las mismas líneas, así que es el mismo concepto por
+  // definición, sin necesidad de volver a mirar los artículos.
+  concept               InvoiceConcept @default(PRODUCTOS)
   pointOfSale           String
   number                String
   status                InvoiceStatus  @default(DRAFT)

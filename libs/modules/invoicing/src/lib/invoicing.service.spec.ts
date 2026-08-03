@@ -247,6 +247,142 @@ describe('InvoicingService.createInvoice', () => {
     });
   });
 
+  it('derives AFIP Concepto (PRODUCTOS/SERVICIOS/PRODUCTOS_Y_SERVICIOS) from Article.isService per line, and forwards Invoice.dueDate as-is', async () => {
+    const electronicInvoicing = makeElectronicInvoicing();
+    const service = new InvoicingService(makeEmailSender(), electronicInvoicing, makeEventEmitter());
+
+    const dto = {
+      customerId: 'customer-1',
+      documentLetter: 'B' as const,
+      pointOfSale: '0001',
+      currencyId: 'currency-1',
+      dueDate: '2026-07-01',
+      lines: [
+        { articleVariantId: 'variant-product', quantity: 1 },
+        { articleVariantId: 'variant-service', quantity: 1 },
+      ],
+    };
+
+    const variants: Record<string, unknown> = {
+      'variant-product': {
+        id: 'variant-product',
+        unitPrice: new Prisma.Decimal(100),
+        article: { isService: false, taxDefinition: null },
+      },
+      'variant-service': {
+        id: 'variant-service',
+        unitPrice: new Prisma.Decimal(100),
+        article: { isService: true, taxDefinition: null },
+      },
+    };
+
+    const createdInvoice = {
+      id: 'invoice-1',
+      tenantId: 'tenant-1',
+      number: '00000001',
+      customerName: 'Acme',
+      customerTaxId: '20-1-1',
+      documentLetter: 'B',
+      concept: 'PRODUCTOS_Y_SERVICIOS',
+      pointOfSale: '0001',
+      status: 'ISSUED',
+      issueDate: new Date('2026-06-15'),
+      dueDate: new Date('2026-07-01'),
+      exchangeRate: new Prisma.Decimal(1),
+      subtotal: new Prisma.Decimal(200),
+      taxTotal: new Prisma.Decimal(0),
+      total: new Prisma.Decimal(200),
+      lines: [],
+    };
+    const db = {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          active: true,
+          name: 'Acme',
+          taxId: '20-1-1',
+          email: null,
+          roles: [{ role: 'CUSTOMER' }],
+        }),
+      },
+      currency: { findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', code: 'ARS', isBase: true }) },
+      articleVariant: {
+        findUnique: jest.fn((args: { where: { id: string } }) =>
+          Promise.resolve(variants[args.where.id]),
+        ),
+      },
+      invoice: {
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn().mockResolvedValue(createdInvoice),
+        update: jest.fn().mockResolvedValue(createdInvoice),
+      },
+    };
+
+    await runInTenant(db, () => service.createInvoice(dto));
+
+    const createArgs = (db.invoice.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.concept).toBe('PRODUCTOS_Y_SERVICIOS');
+
+    const caeRequest = (electronicInvoicing.requestCae as jest.Mock).mock.calls[0][0];
+    expect(caeRequest.concept).toBe('PRODUCTOS_Y_SERVICIOS');
+    expect(caeRequest.dueDate).toEqual(new Date('2026-07-01'));
+  });
+
+  it('resolves PRODUCTOS when every line is a product, and SERVICIOS when every line is a service', async () => {
+    async function createWithLine(isService: boolean) {
+      const electronicInvoicing = makeElectronicInvoicing();
+      const service = new InvoicingService(makeEmailSender(), electronicInvoicing, makeEventEmitter());
+      const createdInvoice = {
+        id: 'invoice-1',
+        number: '00000001',
+        customerName: 'Acme',
+        customerTaxId: null,
+        documentLetter: 'B',
+        concept: isService ? 'SERVICIOS' : 'PRODUCTOS',
+        pointOfSale: '0001',
+        status: 'ISSUED',
+        issueDate: new Date('2026-06-15'),
+        dueDate: null,
+        exchangeRate: new Prisma.Decimal(1),
+        subtotal: new Prisma.Decimal(100),
+        taxTotal: new Prisma.Decimal(0),
+        total: new Prisma.Decimal(100),
+        lines: [],
+      };
+      const db = {
+        company: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'customer-1',
+            active: true,
+            name: 'Acme',
+            taxId: null,
+            email: null,
+            roles: [{ role: 'CUSTOMER' }],
+          }),
+        },
+        currency: { findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', code: 'ARS', isBase: true }) },
+        articleVariant: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'variant-1',
+            unitPrice: new Prisma.Decimal(100),
+            article: { isService, taxDefinition: null },
+          }),
+        },
+        invoice: {
+          count: jest.fn().mockResolvedValue(0),
+          create: jest.fn().mockResolvedValue(createdInvoice),
+          update: jest.fn().mockResolvedValue(createdInvoice),
+        },
+      };
+
+      await runInTenant(db, () => service.createInvoice(baseDto));
+      return (db.invoice.create as jest.Mock).mock.calls[0][0].data.concept;
+    }
+
+    expect(await createWithLine(false)).toBe('PRODUCTOS');
+    expect(await createWithLine(true)).toBe('SERVICIOS');
+  });
+
   it('rejects a FORMULA tax definition rather than silently mis-taxing', async () => {
     const db = {
       company: {
@@ -396,6 +532,7 @@ describe('InvoicingService.createCreditNote', () => {
       number: '00000042',
       pointOfSale: '0001',
       documentLetter: 'B',
+      concept: 'SERVICIOS',
       customerTaxId: '20-1-1',
       currencyId: 'currency-1',
       exchangeRate: new Prisma.Decimal(2),
@@ -424,6 +561,9 @@ describe('InvoicingService.createCreditNote', () => {
     const caeRequest = (electronicInvoicing.requestCae as jest.Mock).mock.calls[0][0];
     expect(caeRequest.kind).toBe('NOTA_CREDITO');
     expect(caeRequest.customerTaxId).toBe('20-1-1');
+    // Reuses the original invoice's concept as-is, no due date of its own.
+    expect(caeRequest.concept).toBe('SERVICIOS');
+    expect(caeRequest.dueDate).toBeNull();
     expect(caeRequest.associatedVoucher).toEqual({
       documentLetter: 'B',
       pointOfSale: '0001',

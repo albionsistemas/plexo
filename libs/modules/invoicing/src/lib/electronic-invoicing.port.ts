@@ -1,4 +1,4 @@
-import type { DocumentLetter, Prisma } from '@plexo/database';
+import type { DocumentLetter, InvoiceConcept, Prisma } from '@plexo/database';
 
 /** FACTURA selects AFIP's Factura CbteTipo family (1/6/11/51 for A/B/C/M),
  * NOTA_CREDITO selects the matching Nota de Crédito family (3/8/13/53) -
@@ -29,9 +29,21 @@ export interface AssociatedVoucher {
 export interface ElectronicInvoiceRequest {
   kind: ElectronicVoucherKind;
   documentLetter: DocumentLetter;
+  /** AFIP Concepto (1/2/3) - mapped in afip-wsfe-client.ts. Determines
+   * whether FchServDesde/FchServHasta/FchVtoPago are sent at all (AFIP
+   * rejects the request if they're present for PRODUCTOS, and requires them
+   * for anything else). */
+  concept: InvoiceConcept;
   pointOfSale: string;
   number: string;
   issueDate: Date;
+  /** Only meaningful when concept !== 'PRODUCTOS' (→ FchVtoPago). This app
+   * doesn't track a real service period (Article/InvoiceLine have no
+   * "rendered from/to" dates) - v1 simplification: FchServDesde/FchServHasta
+   * both use issueDate (service assumed same-day as the invoice), and
+   * FchVtoPago uses this dueDate if set, else also issueDate. See
+   * afip-wsfe-client.ts. */
+  dueDate: Date | null;
   /** null = Consumidor Final (AFIP DocTipo 99/DocNro 0) - this app only
    * models Company.taxId as a CUIT, so anything else maps to DocTipo 80. */
   customerTaxId: string | null;

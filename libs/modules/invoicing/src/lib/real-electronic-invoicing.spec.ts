@@ -8,9 +8,11 @@ function makeInvoice(): ElectronicInvoiceRequest {
   return {
     kind: 'FACTURA',
     documentLetter: 'B',
+    concept: 'PRODUCTOS',
     pointOfSale: '0001',
     number: '00000001',
     issueDate: new Date('2026-01-01'),
+    dueDate: null,
     customerTaxId: null,
     currencyCode: 'ARS',
     exchangeRate: new Prisma.Decimal(1),

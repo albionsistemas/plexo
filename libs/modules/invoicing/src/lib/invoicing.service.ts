@@ -15,6 +15,7 @@ import {
   type CreditNote,
   type CreditNoteLine,
   type ExchangeRateHistory,
+  type InvoiceConcept,
   type Receipt,
   type ReminderTone,
   type TaxDefinition,
@@ -168,6 +169,8 @@ export class InvoicingService {
 
     const lineCalculations: LineCalculation[] = [];
     let subtotal = new Prisma.Decimal(0);
+    let hasProductLine = false;
+    let hasServiceLine = false;
 
     for (const line of dto.lines) {
       const variant = await db.articleVariant.findUnique({
@@ -176,6 +179,11 @@ export class InvoicingService {
       });
       if (!variant) {
         throw new NotFoundException(`Article variant ${line.articleVariantId} not found`);
+      }
+      if (variant.article.isService) {
+        hasServiceLine = true;
+      } else {
+        hasProductLine = true;
       }
 
       const quantity = new Prisma.Decimal(line.quantity);
@@ -232,6 +240,15 @@ export class InvoicingService {
     const netSubtotal = subtotal.sub(globalDiscountAmount);
     const total = netSubtotal.add(taxTotal);
     const number = await this.nextInvoiceNumber(dto.pointOfSale, dto.documentLetter);
+    // hasProductLine stays false only when every line is a service (an empty
+    // dto.lines never reaches here - lines are required) - both false is
+    // unreachable, but hasService-only correctly resolves to SERVICIOS below.
+    const concept: InvoiceConcept =
+      hasServiceLine && hasProductLine
+        ? 'PRODUCTOS_Y_SERVICIOS'
+        : hasServiceLine
+          ? 'SERVICIOS'
+          : 'PRODUCTOS';
 
     const created = await db.invoice.create({
       data: {
@@ -240,6 +257,7 @@ export class InvoicingService {
         customerName: customer.name,
         customerTaxId: customer.taxId,
         documentLetter: dto.documentLetter,
+        concept,
         pointOfSale: dto.pointOfSale,
         number,
         status: 'ISSUED',
@@ -260,9 +278,11 @@ export class InvoicingService {
     const { cae, caeExpiry } = await this.electronicInvoicing.requestCae({
       kind: 'FACTURA',
       documentLetter: created.documentLetter,
+      concept: created.concept,
       pointOfSale: created.pointOfSale,
       number: created.number,
       issueDate: created.issueDate,
+      dueDate: created.dueDate,
       customerTaxId: created.customerTaxId,
       currencyCode: currency.code,
       exchangeRate: created.exchangeRate,
@@ -416,9 +436,16 @@ export class InvoicingService {
     const { cae, caeExpiry } = await this.electronicInvoicing.requestCae({
       kind: 'NOTA_CREDITO',
       documentLetter: created.documentLetter,
+      // Reuses the original invoice's concept as-is - a credit note reverses
+      // those same lines, so it's the same concept by definition, no need
+      // to re-derive it from Article.isService again.
+      concept: invoice.concept,
       pointOfSale: created.pointOfSale,
       number: created.number,
       issueDate: created.issueDate,
+      // A credit note has no due date of its own (it isn't something owed) -
+      // AfipWsfeClient falls back to issueDate for FchVtoPago when null.
+      dueDate: null,
       customerTaxId: invoice.customerTaxId,
       currencyCode: currency.code,
       exchangeRate: created.exchangeRate,

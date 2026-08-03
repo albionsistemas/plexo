@@ -1,5 +1,5 @@
 import { AfipWsaaClient, type AfipWsaaCredentials } from '@plexo/afip-credentials';
-import type { DocumentLetter, Prisma } from '@plexo/database';
+import type { DocumentLetter, InvoiceConcept, Prisma } from '@plexo/database';
 import { XMLParser } from 'fast-xml-parser';
 import type {
   ElectronicInvoiceRequest,
@@ -27,6 +27,12 @@ const CBTE_TIPO: Record<'FACTURA' | 'NOTA_CREDITO', Record<DocumentLetter, numbe
  * app's TaxDefinition model is expected to use (see resolveTaxRate in
  * invoicing.service.ts). Keyed by rate.toFixed(1) so 21.00/10.50/0.00/27.00
  * all normalize to a stable string ("21.0", "10.5", "0.0", "27.0"). */
+const CONCEPTO_ID: Record<InvoiceConcept, number> = {
+  PRODUCTOS: 1,
+  SERVICIOS: 2,
+  PRODUCTOS_Y_SERVICIOS: 3,
+};
+
 const IVA_ALICUOTA_ID: Record<string, number> = {
   '0.0': 3,
   '10.5': 4,
@@ -87,9 +93,14 @@ interface WsfeError {
  * Real WSFE (facturación electrónica) client - FECAESolicitar only, the one
  * operation this app needs (issue a voucher, get a CAE back). Deliberately
  * simplified vs. the full WSFE surface:
- *  - Concepto is always 1 (Productos) - this app sells inventory articles,
- *    never services, so Concepto 2/3 (which also require FchServDesde/
- *    FchServHasta) never apply.
+ *  - Concepto (Productos/Servicios/ambos) is derived upstream from
+ *    Article.isService and sent through as-is (see InvoicingService) - this
+ *    client only maps it to AFIP's numeric id and, when it's not
+ *    "Productos", appends FchServDesde/FchServHasta/FchVtoPago (AFIP
+ *    rejects the request if those are present for Concepto 1, or missing
+ *    for 2/3). No real service-period tracking exists yet (no "rendered
+ *    from/to" dates anywhere in the model) - see ElectronicInvoiceRequest's
+ *    dueDate docstring for the same-day fallback this uses instead.
  *  - DocTipo is always CUIT (80) or Consumidor Final (99) - Company.taxId
  *    doesn't model DNI/CUIL customers.
  *  - ImpOpEx/ImpTotConc (exempt / non-taxed amounts) are always 0 - nothing
@@ -129,6 +140,14 @@ export class AfipWsfeClient {
       ? `<CbtesAsoc><CbteAsoc><Tipo>${CBTE_TIPO.FACTURA[invoice.associatedVoucher.documentLetter]}</Tipo><PtoVta>${invoice.associatedVoucher.pointOfSale}</PtoVta><Nro>${Number.parseInt(invoice.associatedVoucher.number, 10)}</Nro></CbteAsoc></CbtesAsoc>`
       : '';
 
+    const concepto = CONCEPTO_ID[invoice.concept];
+    // AFIP rejects FchServ*/FchVtoPago when present for Concepto 1, and
+    // rejects their absence for 2/3 - never send them for Productos.
+    const servicioXml =
+      concepto === 1
+        ? ''
+        : `<ar:FchServDesde>${formatFecha(invoice.issueDate)}</ar:FchServDesde><ar:FchServHasta>${formatFecha(invoice.issueDate)}</ar:FchServHasta><ar:FchVtoPago>${formatFecha(invoice.dueDate ?? invoice.issueDate)}</ar:FchVtoPago>`;
+
     const soapBody = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/">
   <soapenv:Header/>
@@ -147,7 +166,7 @@ export class AfipWsfeClient {
         </ar:FeCabReq>
         <ar:FeDetReq>
           <ar:FECAEDetRequest>
-            <ar:Concepto>1</ar:Concepto>
+            <ar:Concepto>${concepto}</ar:Concepto>
             <ar:DocTipo>${docTipo}</ar:DocTipo>
             <ar:DocNro>${docNro}</ar:DocNro>
             <ar:CbteDesde>${cbteNro}</ar:CbteDesde>
@@ -161,6 +180,7 @@ export class AfipWsfeClient {
             <ar:ImpTrib>0.00</ar:ImpTrib>
             <ar:MonId>${monId}</ar:MonId>
             <ar:MonCotiz>${invoice.exchangeRate.toFixed(6)}</ar:MonCotiz>
+            ${servicioXml}
             ${cbtesAsocXml}
             ${ivaXml}
           </ar:FECAEDetRequest>
