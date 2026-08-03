@@ -33,7 +33,7 @@ export default function OnboardingChecklist() {
   });
   const { data: articles } = useQuery({
     queryKey: ['onboarding-articles'],
-    queryFn: inventoryApi.listArticles,
+    queryFn: () => inventoryApi.listArticles(),
     staleTime: 60_000,
     enabled: !dismissed,
   });

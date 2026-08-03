@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   StreamableFile,
 } from '@nestjs/common';
@@ -65,8 +66,16 @@ export class InventoryController {
   }
 
   @Get('articles')
-  listArticles() {
-    return this.inventoryService.listArticles();
+  listArticles(
+    @Query('search') search?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('isPublished') isPublished?: string,
+  ) {
+    return this.inventoryService.listArticles({
+      search,
+      categoryId,
+      isPublished: isPublished === undefined ? undefined : isPublished === 'true',
+    });
   }
 
   @AuditEntity('article', { labelFields: ['name'] })

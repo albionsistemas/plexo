@@ -37,7 +37,7 @@ export default function NewInvoiceModal({ onClose }: Props) {
   });
   const articlesQuery = useQuery({
     queryKey: ['inventory-articles'],
-    queryFn: inventoryApi.listArticles,
+    queryFn: () => inventoryApi.listArticles(),
   });
   const currenciesQuery = useQuery({
     queryKey: ['invoicing-currencies'],

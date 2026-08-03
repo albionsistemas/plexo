@@ -111,8 +111,15 @@ export interface ImportResult {
   errors: ImportRowError[];
 }
 
+export interface ListArticlesFilters {
+  search?: string;
+  categoryId?: string;
+  isPublished?: boolean;
+}
+
 export const inventoryApi = {
-  listArticles: () => api.get<Article[]>('/inventory/articles').then((r) => r.data),
+  listArticles: (filters?: ListArticlesFilters) =>
+    api.get<Article[]>('/inventory/articles', { params: filters }).then((r) => r.data),
   listWarehouses: () => api.get<Warehouse[]>('/inventory/warehouses').then((r) => r.data),
   listCategories: () => api.get<Category[]>('/inventory/categories').then((r) => r.data),
   recordMovement: (dto: RecordStockMovementInput) =>

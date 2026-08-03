@@ -3,7 +3,9 @@
 import { inventoryApi, resolveUploadUrl, type Article } from '@/lib/inventory';
 import { getSocket } from '@/lib/socket';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { LayoutGrid, List } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import ArticleCatalogGrid from './ArticleCatalogGrid';
 import ArticleImageModal from './ArticleImageModal';
 import ArticlePriceHistoryModal from './ArticlePriceHistoryModal';
 import ArticleSupplierModal from './ArticleSupplierModal';
@@ -105,6 +107,7 @@ export default function InventoryPage() {
   const [categoryId, setCategoryId] = useState('');
   const [onlyServices, setOnlyServices] = useState(false);
   const [onlyPublished, setOnlyPublished] = useState(false);
+  const [view, setView] = useState<'table' | 'catalog'>('table');
   const [modalOpen, setModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [imageArticle, setImageArticle] = useState<{ id: string; name: string; imageUrl: string | null } | null>(
@@ -131,7 +134,11 @@ export default function InventoryPage() {
 
   const articlesQuery = useQuery({
     queryKey: ['inventory-articles'],
-    queryFn: inventoryApi.listArticles,
+    // Client-side filtering below already handles search/category/service/
+    // published (see the `rows` useMemo) - not wiring those into the query
+    // key here, that would need debouncing to avoid a refetch per
+    // keystroke over a dataset this page already has in full.
+    queryFn: () => inventoryApi.listArticles(),
   });
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses'],
@@ -237,6 +244,32 @@ export default function InventoryPage() {
           />
           Sólo publicados
         </label>
+        <div className="flex gap-1 rounded-lg border border-slate-300 dark:border-slate-700 p-0.5 sm:ml-auto">
+          <button
+            onClick={() => setView('table')}
+            title="Vista de lista"
+            aria-label="Vista de lista"
+            className={`flex h-7 w-7 items-center justify-center rounded ${
+              view === 'table'
+                ? 'bg-indigo-600 text-white'
+                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
+            }`}
+          >
+            <List className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setView('catalog')}
+            title="Vista de catálogo"
+            aria-label="Vista de catálogo"
+            className={`flex h-7 w-7 items-center justify-center rounded ${
+              view === 'catalog'
+                ? 'bg-indigo-600 text-white'
+                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
+            }`}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-4">
@@ -252,6 +285,20 @@ export default function InventoryPage() {
           <div className="flex h-40 items-center justify-center text-slate-400 dark:text-slate-600">
             Sin artículos que coincidan con la búsqueda
           </div>
+        ) : view === 'catalog' ? (
+          <ArticleCatalogGrid
+            rows={rows.map((row) => ({
+              articleId: row.articleId,
+              articleName: row.articleName,
+              categoryName: row.categoryName,
+              imageUrl: row.imageUrl,
+              variantId: row.variantId,
+              sku: row.sku,
+              variantLabel: row.variantLabel,
+              unitPrice: row.unitPrice,
+              totalStock: row.totalStock,
+            }))}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

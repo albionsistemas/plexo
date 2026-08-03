@@ -62,5 +62,6 @@ export type {
   SupplierPayment,
   WithholdingRegime,
   SupplierPaymentWithholding,
+  InventoryCartItem,
 } from './generated/client.js';
 export * from './generated/enums.js';

@@ -9,9 +9,11 @@ import { CompaniesModule } from '@plexo/companies';
 import { DatabaseModule } from '@plexo/database';
 import { EncryptionModule } from '@plexo/encryption';
 import { InventoryModule } from '@plexo/inventory';
+import { InventoryCartModule } from '@plexo/inventory-cart';
 import { InvoicingModule } from '@plexo/invoicing';
 import { PayablesModule } from '@plexo/payables';
 import { PurchasesModule } from '@plexo/purchases';
+import { QuotesModule } from '@plexo/quotes';
 import { ReceivablesModule } from '@plexo/receivables';
 import { ReportsFinancialModule } from '@plexo/reports-financial';
 import { ReportsPnlModule } from '@plexo/reports-pnl';
@@ -23,6 +25,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { GoodsReceiptsModule } from './goods-receipts/goods-receipts.module.js';
+import { InventoryCartCheckoutModule } from './inventory-cart-checkout/inventory-cart-checkout.module.js';
 import { PurchaseInvoicesModule } from './purchase-invoices/purchase-invoices.module.js';
 import { SalesModule } from './sales/sales.module.js';
 import { SchedulerModule } from './scheduler/scheduler.module.js';
@@ -37,6 +40,7 @@ import { SupplierReturnsModule } from './supplier-returns/supplier-returns.modul
     AuthModule,
     CompaniesModule,
     InventoryModule,
+    InventoryCartModule,
     InvoicingModule,
     ReceivablesModule,
     PayablesModule,
@@ -51,6 +55,8 @@ import { SupplierReturnsModule } from './supplier-returns/supplier-returns.modul
     TenantSettingsModule,
     ActivityLogModule,
     PurchasesModule,
+    QuotesModule,
+    InventoryCartCheckoutModule,
     GoodsReceiptsModule,
     SupplierReturnsModule,
     PurchaseInvoicesModule,

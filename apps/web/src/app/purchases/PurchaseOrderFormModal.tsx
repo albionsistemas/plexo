@@ -34,7 +34,7 @@ export default function PurchaseOrderFormModal({ onClose }: Props) {
   });
   const articlesQuery = useQuery({
     queryKey: ['inventory-articles'],
-    queryFn: inventoryApi.listArticles,
+    queryFn: () => inventoryApi.listArticles(),
   });
 
   const suppliers = suppliersQuery.data ?? [];

@@ -1,0 +1,9 @@
+{
+  "name": "inventory-cart",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/modules/inventory-cart/src",
+  "projectType": "library",
+  "tags": ["scope:inventory-cart", "type:feature"],
+  "// targets": "to see all targets run: nx show project inventory-cart --web",
+  "targets": {}
+}

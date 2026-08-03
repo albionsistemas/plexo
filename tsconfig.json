@@ -74,6 +74,9 @@
     },
     {
       "path": "./libs/shared/afip-credentials"
+    },
+    {
+      "path": "./libs/modules/inventory-cart"
     }
   ],
   "compilerOptions": {}

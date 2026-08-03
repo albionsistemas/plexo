@@ -1,6 +1,7 @@
 'use client';
 
 import { initials, profileApi } from '@/lib/profile';
+import CartButton from './CartButton';
 import { disconnectSocket, getSocket } from '@/lib/socket';
 import { useDensity } from '@/providers/DensityProvider';
 import { useTheme } from '@/providers/ThemeProvider';
@@ -48,6 +49,7 @@ const NAV_ENTRIES: NavEntry[] = [
     icon: ShoppingCart,
     items: [
       { href: '/invoicing', label: 'Facturación' },
+      { href: '/quotes', label: 'Cotizaciones' },
       { href: '/receivables', label: 'Cuentas a Cobrar' },
       { href: '/clients', label: 'Clientes' },
     ],
@@ -156,6 +158,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <div className="flex items-center gap-5">
           <OnlineColleagues users={online} />
+          <CartButton />
           <UserMenu />
         </div>
       </header>

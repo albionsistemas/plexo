@@ -31,6 +31,12 @@
       "path": "../../libs/shared/types/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/modules/quotes/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/modules/inventory-cart/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/modules/tenant-settings/tsconfig.lib.json"
     },
     {

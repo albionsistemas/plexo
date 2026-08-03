@@ -14,8 +14,11 @@ module.exports = {
   preset: '../../../jest.preset.js',
   testEnvironment: 'node',
   transform: {
-    '^.+\\.[tj]s$': ['@swc/jest', swcJestConfig],
+    '^.+\\.[tj]sx?$': ['@swc/jest', swcJestConfig],
   },
-  moduleFileExtensions: ['ts', 'js', 'html'],
+  // @react-pdf/renderer ships ESM-only - see purchases/jest.config.cts for
+  // why transformIgnorePatterns has to be emptied out for a lib this small.
+  transformIgnorePatterns: [],
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'html'],
   coverageDirectory: 'test-output/jest/coverage',
 };

@@ -48,6 +48,17 @@ export interface ArticleVariantListItem {
   stockByWarehouse: WarehouseStockRow[];
 }
 
+// All optional/additive - the original zero-param listArticles() call
+// (still used by the plain table view) keeps working unchanged. Added for
+// the catalog grid (see @plexo/inventory-cart's browsing UI), which needs
+// server-side search/category filtering instead of pulling every article
+// and filtering client-side.
+export interface ArticleListFilters {
+  search?: string;
+  categoryId?: string;
+  isPublished?: boolean;
+}
+
 export interface ArticleListItem {
   id: string;
   name: string;
@@ -144,8 +155,13 @@ export class InventoryService {
     });
   }
 
-  async listArticles(): Promise<ArticleListItem[]> {
+  async listArticles(filters?: ArticleListFilters): Promise<ArticleListItem[]> {
     const articles = await getTenantDb().article.findMany({
+      where: {
+        name: filters?.search ? { contains: filters.search, mode: 'insensitive' } : undefined,
+        categoryId: filters?.categoryId,
+        isPublished: filters?.isPublished,
+      },
       include: {
         category: true,
         preferredSupplier: { select: { id: true, name: true } },

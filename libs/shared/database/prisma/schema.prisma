@@ -284,6 +284,14 @@ model User {
   // Default template for "Descargar PDF" on a QuoteRequest/PurchaseOrder;
   // overridable per-download without persisting (see PurchasesController).
   purchaseDocumentPdfStyle PdfStyle @default(MODERNO)
+  // Same per-user numbering/PDF-style pattern as the Compras fields above,
+  // for Cotizaciones (@plexo/quotes) - a separate series on purpose, not
+  // shared with quoteRequestPrefix even though both start from "cotización"
+  // in Spanish; they're unrelated documents (see the comment on model
+  // Quote/QuoteRequest).
+  quotePrefix              String   @default("PRE")
+  quoteNextNumber          Int      @default(1)
+  quotePdfStyle            PdfStyle @default(MODERNO)
   createdAt                DateTime @default(now())
 
   moduleAccess             UserModuleAccess[]
@@ -296,6 +304,8 @@ model User {
   returnedSupplierReturns  SupplierReturn[]
   createdPurchaseInvoices  PurchaseInvoice[]
   recordedSupplierPayments SupplierPayment[]
+  cartItems                InventoryCartItem[]
+  createdQuotes            Quote[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -477,6 +487,7 @@ model Currency {
   quoteRequests    QuoteRequest[]
   purchaseOrders   PurchaseOrder[]
   purchaseInvoices PurchaseInvoice[]
+  quotes           Quote[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -585,10 +596,41 @@ model ArticleVariant {
   quoteLines         QuoteLine[]
   quoteRequestLines  QuoteRequestLine[]
   purchaseOrderLines PurchaseOrderLine[]
+  cartItems          InventoryCartItem[]
 
   @@unique([tenantId, sku])
   @@index([tenantId, articleId])
   @@map("article_variants")
+}
+
+// A single, persistent per-user "shopping list" over ArticleVariants - not
+// an ecommerce session cart, doesn't expire/clear on its own. The user
+// builds it up gradually (over days) while browsing the catalog, then uses
+// its contents to seed a multi-supplier RFQ split (@plexo/purchases,
+// via the inventory-cart-checkout composition module) and/or a sales Quote
+// (@plexo/quotes) and/or a plain PDF export - none of those actions empty
+// the list, only an explicit "vaciar" does (decision with the user,
+// 2026-08-03: the same list is meant to serve more than one of those uses).
+// One row per (user, variant) rather than a parent "cart" table - there's
+// nothing to a cart beyond "this user's current rows", so a parent table
+// would be a pure wrapper with no fields of its own.
+model InventoryCartItem {
+  id               String         @id @default(uuid())
+  tenantId         String
+  userId           String
+  user             User           @relation(fields: [userId], references: [id])
+  articleVariantId String
+  articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
+  quantity         Decimal        @db.Decimal(14, 3)
+  notes            String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  // Lets "add to cart" be one atomic upsert (increment quantity if the
+  // variant's already in the list) instead of a read-then-write.
+  @@unique([tenantId, userId, articleVariantId])
+  @@index([tenantId, userId])
+  @@map("inventory_cart_items")
 }
 
 // Append-only price timeline, separate from AuditLog: this is a narrow,
@@ -925,20 +967,59 @@ model CreditNoteLine {
   @@map("credit_note_lines")
 }
 
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+// Mirrors PurchaseSendChannel exactly but kept separate on purpose - no
+// module imports another module's types/services here, see the comment
+// on PurchaseEmailSender for the same rule applied to email senders.
+enum QuoteSendChannel {
+  EMAIL
+  WHATSAPP
+}
+
+// "Cotización" - a sales-side proposal to a customer (@plexo/quotes).
+// Deliberately unrelated to QuoteRequest/PurchaseOrder (@plexo/purchases,
+// see the comment above that section) - same "cotización" word, different
+// document, different lib, on purpose. Was a bare unused skeleton from the
+// very first migration until 2026-08-03 - extended here to match the depth
+// QuoteRequest already has (currency, notes, creator, sent tracking,
+// real status enum) when the module was actually implemented.
 model Quote {
-  id              String    @id @default(uuid())
+  id              String       @id @default(uuid())
   tenantId        String
-  customerId      String
-  customer        Company   @relation(fields: [customerId], references: [id])
+  // "{createdBy.quotePrefix}-{n padded to 6}" - same frozen-at-creation
+  // per-user numbering as QuoteRequest.number, see User fields below.
   number          String
-  status          String    @default("DRAFT")
-  brandingLogoUrl String?
+  customerId      String
+  customer        Company      @relation(fields: [customerId], references: [id])
+  status          QuoteStatus  @default(DRAFT)
+  currencyId      String
+  currency        Currency     @relation(fields: [currencyId], references: [id])
   validUntil      DateTime?
-  total           Decimal   @db.Decimal(14, 2)
+  notes           String?
+  brandingLogoUrl String?
+  total           Decimal      @db.Decimal(14, 2)
+
+  // How/whether this was sent to the customer - same "user-confirmed, no
+  // delivery receipt" semantics as PurchaseOrder.sentAt/sentVia.
+  sentAt          DateTime?
+  sentVia         QuoteSendChannel?
+
+  createdByUserId String
+  createdBy       User         @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime     @default(now())
 
   lines QuoteLine[]
 
   @@unique([tenantId, number])
+  @@index([tenantId])
+  @@index([tenantId, customerId])
   @@map("quotes")
 }
 
@@ -951,6 +1032,7 @@ model QuoteLine {
   articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
   quantity         Decimal        @db.Decimal(14, 3)
   unitPrice        Decimal        @db.Decimal(14, 2)
+  notes            String?
 
   @@index([tenantId])
   @@map("quote_lines")
