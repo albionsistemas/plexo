@@ -7,18 +7,18 @@ export interface AfipCredentials {
   keyPem: string;
   /** The CUIT the certificate is registered under - who's "asking" AFIP,
    * not the CUIT being looked up/invoiced. Always the current tenant's own
-   * Tenant.taxId (already per-tenant, unlike the cert/key below which used
-   * to be process-wide env vars - see companies.module.ts's old
-   * createAfipPadron). */
+   * Tenant.taxId. */
   cuitRepresentada: string;
   env: 'homologacion' | 'produccion';
 }
 
 /**
  * Resolves the CURRENT tenant's AFIP credentials at call time - deliberately
- * not something baked into a service's constructor (like the old
- * companies.module.ts useFactory did), since a factory provider runs once
- * at app boot, before any request/tenant context exists. Every consumer
+ * not something baked into a service's constructor via a factory provider,
+ * since a factory provider runs once at app boot, before any
+ * request/tenant context exists (one certificate for the whole instance,
+ * incompatible with multi-tenant - the trap both WSFE and the padrón
+ * lookup used to fall into with process-wide env vars). Every consumer
  * (padrón lookup, WSFE) must call getCurrent() from inside the method that
  * actually needs it, so it always reads whichever tenant is active for
  * that request.

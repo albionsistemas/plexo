@@ -1,7 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AfipWsaaClient, type AfipWsaaCredentials } from '@plexo/afip-credentials';
+import { AfipCredentialsService, AfipWsaaClient, type AfipWsaaCredentials } from '@plexo/afip-credentials';
 import { XMLParser } from 'fast-xml-parser';
-import { AfipLookupError, type AfipPadronData, type AfipPadronPort } from './afip-padron.port.js';
+import {
+  AfipLookupError,
+  AfipNotConfiguredError,
+  type AfipPadronData,
+  type AfipPadronPort,
+} from './afip-padron.port.js';
 
 const PADRON_SERVICE = 'ws_sr_padron_a13';
 
@@ -29,30 +34,38 @@ interface AfipPersona {
 }
 
 /**
- * Real ws_sr_padron_a13 lookup. Needs an AFIP digital certificate
- * authorized for the "Padrón" service (Administrador de Relaciones de
- * Clave Fiscal) - see AFIP_CERT_PATH/AFIP_KEY_PATH/AFIP_CUIT_REPRESENTADA
- * in .env.example. Falls back to StubAfipPadronService when those aren't
- * set (see companies.module.ts).
+ * Real ws_sr_padron_a13 lookup. Resolves the CURRENT tenant's AFIP
+ * credentials on every call via AfipCredentialsService - same certificate
+ * already uploaded in Preferencias for WSFE, same reasoning as
+ * RealElectronicInvoicingService (a factory/constructor can't do this once
+ * at boot in a multi-tenant app). Replaces the old global
+ * AFIP_CERT_PATH/AFIP_KEY_PATH/AFIP_CUIT_REPRESENTADA env vars (one
+ * certificate for the whole instance, incompatible with multi-tenant) - see
+ * companies.module.ts.
  */
 @Injectable()
 export class RealAfipPadronService implements AfipPadronPort {
   private readonly logger = new Logger(RealAfipPadronService.name);
-  private readonly wsaa: AfipWsaaClient;
-  private readonly env: AfipWsaaCredentials['env'];
 
-  constructor(
-    credentials: AfipWsaaCredentials,
-    private readonly cuitRepresentada: string,
-  ) {
-    this.wsaa = new AfipWsaaClient(credentials);
-    this.env = credentials.env;
-  }
+  constructor(private readonly afipCredentials: AfipCredentialsService) {}
 
+  /** Throws AfipNotConfiguredError (not null) when this tenant hasn't
+   * uploaded a certificate yet - same convention as the old
+   * StubAfipPadronService, which CompaniesService.lookupAfip already
+   * translates to a 400 ("no configurada"), distinct from an AfipLookupError
+   * (502, AFIP itself failing). */
   async lookup(cuit: string): Promise<AfipPadronData | null> {
+    const credentials = await this.afipCredentials.getCurrent();
+    if (!credentials) {
+      throw new AfipNotConfiguredError();
+    }
+    const wsaa = new AfipWsaaClient(credentials);
+    const env: AfipWsaaCredentials['env'] = credentials.env;
+    const cuitRepresentada = credentials.cuitRepresentada;
+
     let ticket;
     try {
-      ticket = await this.wsaa.getTicket(PADRON_SERVICE);
+      ticket = await wsaa.getTicket(PADRON_SERVICE);
     } catch (err) {
       throw new AfipLookupError('No se pudo autenticar contra AFIP (WSAA)', err);
     }
@@ -64,7 +77,7 @@ export class RealAfipPadronService implements AfipPadronPort {
     <a13:getPersona>
       <token>${ticket.token}</token>
       <sign>${ticket.sign}</sign>
-      <cuitRepresentada>${this.cuitRepresentada}</cuitRepresentada>
+      <cuitRepresentada>${cuitRepresentada}</cuitRepresentada>
       <idPersona>${cuit}</idPersona>
     </a13:getPersona>
   </soapenv:Body>
@@ -72,7 +85,7 @@ export class RealAfipPadronService implements AfipPadronPort {
 
     let responseText: string;
     try {
-      const response = await fetch(PADRON_URL[this.env], {
+      const response = await fetch(PADRON_URL[env], {
         method: 'POST',
         headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '' },
         body: soapBody,
@@ -127,8 +140,10 @@ export class RealAfipPadronService implements AfipPadronPort {
   }
 
   /** Best-effort label, not a closed enum - AFIP's own tax-condition
-   * categories change over time and this is only ever displayed to the
-   * user, never persisted or matched against elsewhere. */
+   * categories change over time. Persisted in Company.taxCondition and
+   * pattern-matched (case-insensitive substring, see
+   * apps/web/src/lib/documentLetter.ts) to suggest the invoice letter - not
+   * just a display-only string anymore. */
   private inferTaxCondition(persona: AfipPersona): string | null {
     const impuestos = persona.datosRegimenGeneral?.impuesto;
     const list = Array.isArray(impuestos) ? impuestos : impuestos ? [impuestos] : [];

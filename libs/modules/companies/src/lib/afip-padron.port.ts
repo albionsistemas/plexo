@@ -13,9 +13,10 @@ export interface AfipPadronData {
 }
 
 /**
- * ws_sr_padron_a13 - AFIP's public-persona lookup by CUIT. Needs a real
- * AFIP digital certificate (see RealAfipPadronService); StubAfipPadronService
- * is wired in instead when one isn't configured (see companies.module.ts).
+ * ws_sr_padron_a13 - AFIP's public-persona lookup by CUIT. Needs the
+ * current tenant's AFIP certificate (same one uploaded in Preferencias for
+ * WSFE, see RealAfipPadronService/AfipCredentialsService) - lookup() throws
+ * AfipNotConfiguredError when this tenant hasn't uploaded one yet.
  */
 export interface AfipPadronPort {
   /** null when AFIP has no record for this CUIT. */
