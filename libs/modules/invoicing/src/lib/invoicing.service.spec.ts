@@ -383,6 +383,98 @@ describe('InvoicingService.createInvoice', () => {
     expect(await createWithLine(true)).toBe('SERVICIOS');
   });
 
+  it('splits EXENTO/NO_GRAVADO lines out of netAmount into exemptAmount/nonTaxedAmount, keeping them out of the Iva[] breakdown', async () => {
+    const electronicInvoicing = makeElectronicInvoicing();
+    const service = new InvoicingService(makeEmailSender(), electronicInvoicing, makeEventEmitter());
+
+    const dto = {
+      customerId: 'customer-1',
+      documentLetter: 'B' as const,
+      pointOfSale: '0001',
+      currencyId: 'currency-1',
+      lines: [
+        { articleVariantId: 'variant-gravado', quantity: 1 },
+        { articleVariantId: 'variant-exento', quantity: 1 },
+        { articleVariantId: 'variant-no-gravado', quantity: 1 },
+      ],
+    };
+
+    const variants: Record<string, unknown> = {
+      'variant-gravado': {
+        id: 'variant-gravado',
+        unitPrice: new Prisma.Decimal(100),
+        article: { taxDefinition: { calculationType: 'PERCENTAGE', rate: new Prisma.Decimal(21), code: 'IVA_21' } },
+      },
+      'variant-exento': {
+        id: 'variant-exento',
+        unitPrice: new Prisma.Decimal(50),
+        article: { taxDefinition: { calculationType: 'EXENTO', code: 'IVA_EXENTO' } },
+      },
+      'variant-no-gravado': {
+        id: 'variant-no-gravado',
+        unitPrice: new Prisma.Decimal(30),
+        article: { taxDefinition: { calculationType: 'NO_GRAVADO', code: 'NO_GRAVADO' } },
+      },
+    };
+
+    const createdInvoice = {
+      id: 'invoice-1',
+      number: '00000001',
+      customerName: 'Acme',
+      customerTaxId: null,
+      documentLetter: 'B',
+      concept: 'PRODUCTOS',
+      pointOfSale: '0001',
+      issueDate: new Date('2026-06-15'),
+      dueDate: null,
+      exchangeRate: new Prisma.Decimal(1),
+      subtotal: new Prisma.Decimal(180),
+      taxTotal: new Prisma.Decimal(21),
+      total: new Prisma.Decimal(201),
+      lines: [],
+    };
+    const db = {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          active: true,
+          name: 'Acme',
+          taxId: null,
+          email: null,
+          roles: [{ role: 'CUSTOMER' }],
+        }),
+      },
+      currency: { findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', code: 'ARS', isBase: true }) },
+      articleVariant: {
+        findUnique: jest.fn((args: { where: { id: string } }) =>
+          Promise.resolve(variants[args.where.id]),
+        ),
+      },
+      invoice: {
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn().mockResolvedValue(createdInvoice),
+        update: jest.fn().mockResolvedValue(createdInvoice),
+      },
+    };
+
+    await runInTenant(db, () => service.createInvoice(dto));
+
+    const createArgs = (db.invoice.create as jest.Mock).mock.calls[0][0];
+    const lines = createArgs.data.lines.createMany.data;
+    expect(lines.find((l: { articleVariantId: string }) => l.articleVariantId === 'variant-gravado').taxKind).toBe('GRAVADO');
+    expect(lines.find((l: { articleVariantId: string }) => l.articleVariantId === 'variant-exento').taxKind).toBe('EXENTO');
+    expect(lines.find((l: { articleVariantId: string }) => l.articleVariantId === 'variant-no-gravado').taxKind).toBe('NO_GRAVADO');
+
+    const caeRequest = (electronicInvoicing.requestCae as jest.Mock).mock.calls[0][0];
+    // netAmount is GRAVADO-only (100), not the full 180 subtotal.
+    expect(caeRequest.netAmount.toNumber()).toBe(100);
+    expect(caeRequest.exemptAmount.toNumber()).toBe(50);
+    expect(caeRequest.nonTaxedAmount.toNumber()).toBe(30);
+    // Only the GRAVADO line ends up in the Iva[] breakdown.
+    expect(caeRequest.taxLines).toHaveLength(1);
+    expect(caeRequest.taxLines[0].netAmount.toNumber()).toBe(100);
+  });
+
   it('rejects a FORMULA tax definition rather than silently mis-taxing', async () => {
     const db = {
       company: {
@@ -571,6 +663,58 @@ describe('InvoicingService.createCreditNote', () => {
     });
     expect(caeRequest.taxLines).toHaveLength(1);
     expect(caeRequest.taxLines[0].rate.toNumber()).toBe(21);
+  });
+
+  it('reuses each credited line\'s taxKind (not re-derived) to route into exemptAmount/nonTaxedAmount/taxLines', async () => {
+    const exentoLine = {
+      id: 'line-exento',
+      quantity: new Prisma.Decimal(1),
+      netAmount: new Prisma.Decimal(50),
+      lineTotal: new Prisma.Decimal(50),
+      taxRate: new Prisma.Decimal(0),
+      taxKind: 'EXENTO',
+    };
+    const noGravadoLine = {
+      id: 'line-no-gravado',
+      quantity: new Prisma.Decimal(1),
+      netAmount: new Prisma.Decimal(30),
+      lineTotal: new Prisma.Decimal(30),
+      taxRate: new Prisma.Decimal(0),
+      taxKind: 'NO_GRAVADO',
+    };
+    const invoice = {
+      id: 'invoice-1',
+      afipCae: 'CAE-ORIGINAL',
+      number: '00000042',
+      pointOfSale: '0001',
+      documentLetter: 'B',
+      concept: 'PRODUCTOS',
+      customerTaxId: null,
+      currencyId: 'currency-1',
+      exchangeRate: new Prisma.Decimal(1),
+      balanceDue: new Prisma.Decimal(80),
+      lines: [{ ...invoiceLine, taxKind: 'GRAVADO' }, exentoLine, noGravadoLine],
+    };
+    const electronicInvoicing = makeElectronicInvoicing();
+    const db = dbWithInvoice(invoice);
+    const service = new InvoicingService(makeEmailSender(), electronicInvoicing, makeEventEmitter());
+
+    await runInTenant(db, () =>
+      service.createCreditNote({
+        invoiceId: 'invoice-1',
+        reason: 'return',
+        lines: [
+          { invoiceLineId: 'line-exento', quantity: 1 },
+          { invoiceLineId: 'line-no-gravado', quantity: 1 },
+        ],
+      }),
+    );
+
+    const caeRequest = (electronicInvoicing.requestCae as jest.Mock).mock.calls[0][0];
+    expect(caeRequest.exemptAmount.toNumber()).toBe(50);
+    expect(caeRequest.nonTaxedAmount.toNumber()).toBe(30);
+    expect(caeRequest.netAmount.toNumber()).toBe(0); // nothing GRAVADO was credited
+    expect(caeRequest.taxLines).toHaveLength(0);
   });
 
   it('rejects a credit note whose total exceeds the invoice balance due', async () => {

@@ -16,6 +16,8 @@ const CALC_TYPE_OPTIONS: { value: TaxCalculationType; label: string }[] = [
   { value: 'PERCENTAGE', label: 'Porcentual' },
   { value: 'FIXED_AMOUNT', label: 'Monto fijo' },
   { value: 'FORMULA', label: 'Fórmula' },
+  { value: 'EXENTO', label: 'Exento de IVA' },
+  { value: 'NO_GRAVADO', label: 'No gravado' },
 ];
 
 export default function NewTaxDefinitionModal({ onClose }: Props) {
@@ -139,6 +141,13 @@ export default function NewTaxDefinitionModal({ onClose }: Props) {
                 placeholder="ver documentación de fórmulas"
               />
             </div>
+          )}
+          {(calculationType === 'EXENTO' || calculationType === 'NO_GRAVADO') && (
+            <p className="text-xs text-slate-500">
+              {calculationType === 'EXENTO'
+                ? 'Sin tasa: la venta de un artículo con este impuesto no lleva IVA discriminado, por estar exenta según la norma.'
+                : 'Sin tasa: la venta de un artículo con este impuesto queda fuera del objeto del IVA (ni gravada ni exenta).'}
+            </p>
           )}
           <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
             <input

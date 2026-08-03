@@ -1,6 +1,6 @@
 import { api } from '@/lib/api';
 
-export type TaxCalculationType = 'PERCENTAGE' | 'FIXED_AMOUNT' | 'FORMULA';
+export type TaxCalculationType = 'PERCENTAGE' | 'FIXED_AMOUNT' | 'FORMULA' | 'EXENTO' | 'NO_GRAVADO';
 
 export interface TaxDefinition {
   id: string;

@@ -19,6 +19,7 @@ import {
   type Receipt,
   type ReminderTone,
   type TaxDefinition,
+  type TaxLineKind,
 } from '@plexo/database';
 import type { CreateCreditNoteDto } from './dto/create-credit-note.dto.js';
 import type { CreateCurrencyDto } from './dto/create-currency.dto.js';
@@ -48,6 +49,7 @@ interface LineCalculation {
   discountValue: Prisma.Decimal;
   netAmount: Prisma.Decimal;
   taxRate: Prisma.Decimal;
+  taxKind: TaxLineKind;
 }
 
 @Injectable()
@@ -197,7 +199,7 @@ export class InvoicingService {
           ? grossAmount.mul(discountValue).div(100)
           : discountValue;
       const netAmount = grossAmount.sub(discountAmount);
-      const taxRate = this.resolveTaxRate(variant.article.taxDefinition);
+      const { rate: taxRate, kind: taxKind } = this.resolveLineTax(variant.article.taxDefinition);
 
       subtotal = subtotal.add(netAmount);
       lineCalculations.push({
@@ -208,11 +210,19 @@ export class InvoicingService {
         discountValue,
         netAmount,
         taxRate,
+        taxKind,
       });
     }
 
     const globalDiscountAmount = subtotal.mul(globalDiscountPercent).div(100);
     let taxTotal = new Prisma.Decimal(0);
+    // Sums of afterGlobalDiscount for EXENTO/NO_GRAVADO lines - reported to
+    // AFIP as ImpOpEx/ImpTotConc instead of folded into netAmount/Iva[]
+    // (see groupTaxLines below and AfipWsfeClient). Invoice.subtotal/total
+    // still include them as normal - this split only matters for the WSFE
+    // payload, not accounting/display.
+    let exemptAmount = new Prisma.Decimal(0);
+    let nonTaxedAmount = new Prisma.Decimal(0);
     const lineInputs: Prisma.InvoiceLineCreateManyInvoiceInput[] = [];
     const taxLineRows: { taxRate: Prisma.Decimal; netAmount: Prisma.Decimal; taxAmount: Prisma.Decimal }[] = [];
 
@@ -220,9 +230,20 @@ export class InvoicingService {
       const share = subtotal.isZero() ? new Prisma.Decimal(0) : calc.netAmount.div(subtotal);
       const lineGlobalDiscount = globalDiscountAmount.mul(share);
       const afterGlobalDiscount = calc.netAmount.sub(lineGlobalDiscount);
+      // rate is always 0 for EXENTO/NO_GRAVADO (see resolveLineTax), so this
+      // stays 0 for them without a separate branch.
       const lineTax = afterGlobalDiscount.mul(calc.taxRate).div(100);
       taxTotal = taxTotal.add(lineTax);
-      taxLineRows.push({ taxRate: calc.taxRate, netAmount: afterGlobalDiscount, taxAmount: lineTax });
+      if (calc.taxKind === 'EXENTO') {
+        exemptAmount = exemptAmount.add(afterGlobalDiscount);
+      } else if (calc.taxKind === 'NO_GRAVADO') {
+        nonTaxedAmount = nonTaxedAmount.add(afterGlobalDiscount);
+      } else {
+        // Only GRAVADO lines go into the Iva[] breakdown - an EXENTO/
+        // NO_GRAVADO line grouped here would misreport as "gravado al 0%"
+        // (AFIP alicuota 3) inside ImpNeto instead of ImpOpEx/ImpTotConc.
+        taxLineRows.push({ taxRate: calc.taxRate, netAmount: afterGlobalDiscount, taxAmount: lineTax });
+      }
 
       lineInputs.push({
         tenantId,
@@ -233,12 +254,16 @@ export class InvoicingService {
         discountValue: calc.discountValue,
         netAmount: calc.netAmount,
         taxRate: calc.taxRate,
+        taxKind: calc.taxKind,
         lineTotal: afterGlobalDiscount.add(lineTax),
       });
     }
 
     const netSubtotal = subtotal.sub(globalDiscountAmount);
     const total = netSubtotal.add(taxTotal);
+    // The taxed-only slice of netSubtotal - what AFIP's ImpNeto actually
+    // means once ImpOpEx/ImpTotConc exist as separate buckets.
+    const taxedNetAmount = netSubtotal.sub(exemptAmount).sub(nonTaxedAmount);
     const number = await this.nextInvoiceNumber(dto.pointOfSale, dto.documentLetter);
     // hasProductLine stays false only when every line is a service (an empty
     // dto.lines never reaches here - lines are required) - both false is
@@ -286,7 +311,9 @@ export class InvoicingService {
       customerTaxId: created.customerTaxId,
       currencyCode: currency.code,
       exchangeRate: created.exchangeRate,
-      netAmount: created.subtotal,
+      netAmount: taxedNetAmount,
+      exemptAmount,
+      nonTaxedAmount,
       taxAmount: created.taxTotal,
       total: created.total,
       taxLines: this.groupTaxLines(taxLineRows),
@@ -367,6 +394,12 @@ export class InvoicingService {
     let subtotal = new Prisma.Decimal(0);
     let taxTotal = new Prisma.Decimal(0);
     let total = new Prisma.Decimal(0);
+    // Same split as createInvoice - which AFIP bucket (Iva[]/ImpNeto vs.
+    // ImpOpEx vs. ImpTotConc) each credited line's netAmount falls into,
+    // read from InvoiceLine.taxKind (persisted at invoice creation, not
+    // re-derived from the article's current TaxDefinition).
+    let exemptAmount = new Prisma.Decimal(0);
+    let nonTaxedAmount = new Prisma.Decimal(0);
     const linesToCreate: {
       invoiceLineId: string;
       quantity: Prisma.Decimal;
@@ -401,7 +434,13 @@ export class InvoicingService {
       const lineTotal = netAmount.add(taxAmount);
 
       linesToCreate.push({ invoiceLineId: invoiceLine.id, quantity, netAmount, taxAmount, lineTotal });
-      taxLineRows.push({ taxRate: invoiceLine.taxRate, netAmount, taxAmount });
+      if (invoiceLine.taxKind === 'EXENTO') {
+        exemptAmount = exemptAmount.add(netAmount);
+      } else if (invoiceLine.taxKind === 'NO_GRAVADO') {
+        nonTaxedAmount = nonTaxedAmount.add(netAmount);
+      } else {
+        taxLineRows.push({ taxRate: invoiceLine.taxRate, netAmount, taxAmount });
+      }
       subtotal = subtotal.add(netAmount);
       taxTotal = taxTotal.add(taxAmount);
       total = total.add(lineTotal);
@@ -449,7 +488,9 @@ export class InvoicingService {
       customerTaxId: invoice.customerTaxId,
       currencyCode: currency.code,
       exchangeRate: created.exchangeRate,
-      netAmount: created.subtotal,
+      netAmount: subtotal.sub(exemptAmount).sub(nonTaxedAmount),
+      exemptAmount,
+      nonTaxedAmount,
       taxAmount: created.taxTotal,
       total: created.total,
       taxLines: this.groupTaxLines(taxLineRows),
@@ -556,9 +597,22 @@ export class InvoicingService {
     return latest.rate;
   }
 
-  private resolveTaxRate(taxDefinition: TaxDefinition | null): Prisma.Decimal {
+  /** rate feeds the normal "% over line amount" math either way; kind says
+   * where that line's netAmount ends up in the AFIP request - GRAVADO (the
+   * only option before EXENTO/NO_GRAVADO existed) inside Iva[]/ImpNeto like
+   * always, the other two inside ImpOpEx/ImpTotConc instead (see
+   * groupTaxLines/AfipWsfeClient). EXENTO/NO_GRAVADO always carry rate=0 -
+   * they have no percentage by definition, TaxDefinition.rate is ignored
+   * for them even if someone set one. */
+  private resolveLineTax(taxDefinition: TaxDefinition | null): { rate: Prisma.Decimal; kind: TaxLineKind } {
     if (!taxDefinition) {
-      return new Prisma.Decimal(0);
+      return { rate: new Prisma.Decimal(0), kind: 'GRAVADO' };
+    }
+    if (taxDefinition.calculationType === 'EXENTO') {
+      return { rate: new Prisma.Decimal(0), kind: 'EXENTO' };
+    }
+    if (taxDefinition.calculationType === 'NO_GRAVADO') {
+      return { rate: new Prisma.Decimal(0), kind: 'NO_GRAVADO' };
     }
     if (taxDefinition.calculationType === 'FORMULA') {
       // Not evaluated here on purpose - a formula-based tax needs a
@@ -577,7 +631,7 @@ export class InvoicingService {
         `Tax definition ${taxDefinition.code} uses FIXED_AMOUNT, which isn't wired up yet`,
       );
     }
-    return taxDefinition.rate ?? new Prisma.Decimal(0);
+    return { rate: taxDefinition.rate ?? new Prisma.Decimal(0), kind: 'GRAVADO' };
   }
 
   /** Collapses per-line (rate, netAmount, taxAmount) rows into one entry per

@@ -113,6 +113,8 @@ describe('AfipWsfeClient.requestCae', () => {
       currencyCode: 'ARS',
       exchangeRate: new Prisma.Decimal(1),
       netAmount: new Prisma.Decimal(100),
+      exemptAmount: new Prisma.Decimal(0),
+      nonTaxedAmount: new Prisma.Decimal(0),
       taxAmount: new Prisma.Decimal(21),
       total: new Prisma.Decimal(121),
       taxLines: [{ rate: new Prisma.Decimal(21), netAmount: new Prisma.Decimal(100), taxAmount: new Prisma.Decimal(21) }],
@@ -149,6 +151,31 @@ describe('AfipWsfeClient.requestCae', () => {
     expect(wsfeBody).toContain('<Id>5</Id>'); // 21% -> alicuota 5
     expect(wsfeBody).toContain('<ar:Concepto>1</ar:Concepto>');
     expect(wsfeBody).not.toContain('FchServDesde'); // Concepto 1: AFIP rejects these if present
+    expect(wsfeBody).toContain('<ar:ImpTotConc>0.00</ar:ImpTotConc>');
+    expect(wsfeBody).toContain('<ar:ImpOpEx>0.00</ar:ImpOpEx>');
+  });
+
+  it('reports exemptAmount/nonTaxedAmount as ImpOpEx/ImpTotConc, separate from ImpNeto', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, text: () => Promise.resolve(wsaaResponse()) })
+      .mockResolvedValueOnce({ ok: true, text: () => Promise.resolve(wsfeAcceptedResponse()) });
+    const client = new AfipWsfeClient({ certPem, keyPem, env: 'homologacion', cuitRepresentada: '20111111112' });
+
+    await client.requestCae(
+      baseInvoice({
+        netAmount: new Prisma.Decimal(100),
+        exemptAmount: new Prisma.Decimal(50),
+        nonTaxedAmount: new Prisma.Decimal(30),
+        taxAmount: new Prisma.Decimal(21),
+        total: new Prisma.Decimal(201),
+      }),
+    );
+
+    const wsfeBody = fetchMock.mock.calls[1][1].body as string;
+    expect(wsfeBody).toContain('<ar:ImpNeto>100.00</ar:ImpNeto>');
+    expect(wsfeBody).toContain('<ar:ImpOpEx>50.00</ar:ImpOpEx>');
+    expect(wsfeBody).toContain('<ar:ImpTotConc>30.00</ar:ImpTotConc>');
+    expect(wsfeBody).toContain('<ar:ImpTotal>201.00</ar:ImpTotal>');
   });
 
   it('sends Concepto 2 and FchServDesde/FchServHasta/FchVtoPago for a service invoice', async () => {

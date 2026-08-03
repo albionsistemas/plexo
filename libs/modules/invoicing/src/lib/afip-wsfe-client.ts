@@ -103,8 +103,10 @@ interface WsfeError {
  *    dueDate docstring for the same-day fallback this uses instead.
  *  - DocTipo is always CUIT (80) or Consumidor Final (99) - Company.taxId
  *    doesn't model DNI/CUIL customers.
- *  - ImpOpEx/ImpTotConc (exempt / non-taxed amounts) are always 0 - nothing
- *    in TaxDefinition models an exempt article yet.
+ *  - ImpOpEx/ImpTotConc (exempt / non-taxed amounts) come straight from
+ *    ElectronicInvoiceRequest.exemptAmount/nonTaxedAmount, derived upstream
+ *    from TaxCalculationType.EXENTO/NO_GRAVADO (see InvoicingService) - this
+ *    client doesn't decide which lines qualify, only reports the totals.
  *  - MonId only covers ARS/USD (see MON_ID above).
  * Any of these would need real modeling upstream (Article/TaxDefinition/
  * Currency) before this client could stop assuming them.
@@ -173,9 +175,9 @@ export class AfipWsfeClient {
             <ar:CbteHasta>${cbteNro}</ar:CbteHasta>
             <ar:CbteFch>${formatFecha(invoice.issueDate)}</ar:CbteFch>
             <ar:ImpTotal>${formatImporte(invoice.total)}</ar:ImpTotal>
-            <ar:ImpTotConc>0.00</ar:ImpTotConc>
+            <ar:ImpTotConc>${formatImporte(invoice.nonTaxedAmount)}</ar:ImpTotConc>
             <ar:ImpNeto>${formatImporte(invoice.netAmount)}</ar:ImpNeto>
-            <ar:ImpOpEx>0.00</ar:ImpOpEx>
+            <ar:ImpOpEx>${formatImporte(invoice.exemptAmount)}</ar:ImpOpEx>
             <ar:ImpIVA>${formatImporte(invoice.taxAmount)}</ar:ImpIVA>
             <ar:ImpTrib>0.00</ar:ImpTrib>
             <ar:MonId>${monId}</ar:MonId>

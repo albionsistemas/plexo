@@ -17,6 +17,8 @@ function makeInvoice(): ElectronicInvoiceRequest {
     currencyCode: 'ARS',
     exchangeRate: new Prisma.Decimal(1),
     netAmount: new Prisma.Decimal(100),
+    exemptAmount: new Prisma.Decimal(0),
+    nonTaxedAmount: new Prisma.Decimal(0),
     taxAmount: new Prisma.Decimal(21),
     total: new Prisma.Decimal(121),
     taxLines: [],

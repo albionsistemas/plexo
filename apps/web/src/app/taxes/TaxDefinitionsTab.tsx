@@ -10,11 +10,14 @@ const CALC_TYPE_LABELS: Record<TaxCalculationType, string> = {
   PERCENTAGE: 'Porcentual',
   FIXED_AMOUNT: 'Monto fijo',
   FORMULA: 'Fórmula',
+  EXENTO: 'Exento de IVA',
+  NO_GRAVADO: 'No gravado',
 };
 
 function formatValue(def: TaxDefinition): string {
   if (def.calculationType === 'PERCENTAGE') return def.rate ? `${def.rate}%` : '—';
   if (def.calculationType === 'FIXED_AMOUNT') return def.fixedAmount ? `$${def.fixedAmount}` : '—';
+  if (def.calculationType === 'EXENTO' || def.calculationType === 'NO_GRAVADO') return '—';
   return def.formula ?? '—';
 }
 

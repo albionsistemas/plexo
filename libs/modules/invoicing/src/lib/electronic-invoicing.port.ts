@@ -51,7 +51,20 @@ export interface ElectronicInvoiceRequest {
    * in afip-wsfe-client.ts - not the same table as ISO 4217. */
   currencyCode: string;
   exchangeRate: Prisma.Decimal;
+  /** GRAVADO-only net amount (→ AFIP's ImpNeto) - excludes exemptAmount/
+   * nonTaxedAmount, which are reported separately. Before those two fields
+   * existed this was the invoice's whole subtotal; now it's just the taxed
+   * slice of it. */
   netAmount: Prisma.Decimal;
+  /** Sum of EXENTO lines' netAmount (→ AFIP's ImpOpEx) - operations exempt
+   * from VAT by law (see TaxCalculationType.EXENTO). Zero when the voucher
+   * has no exempt lines. */
+  exemptAmount: Prisma.Decimal;
+  /** Sum of NO_GRAVADO lines' netAmount (→ AFIP's ImpTotConc) - operations
+   * outside VAT's scope entirely, neither taxed nor exempt (see
+   * TaxCalculationType.NO_GRAVADO). Zero when the voucher has no
+   * non-taxed lines. */
+  nonTaxedAmount: Prisma.Decimal;
   taxAmount: Prisma.Decimal;
   total: Prisma.Decimal;
   taxLines: ElectronicInvoiceTaxLine[];

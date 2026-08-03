@@ -85,6 +85,14 @@ enum InvoiceConcept {
   PRODUCTOS_Y_SERVICIOS
 }
 
+// Cómo entra el netAmount de una InvoiceLine al pedido de AFIP - ver
+// InvoiceLine.taxKind y TaxCalculationType.EXENTO/NO_GRAVADO.
+enum TaxLineKind {
+  GRAVADO
+  EXENTO
+  NO_GRAVADO
+}
+
 enum DiscountType {
   PERCENTAGE
   AMOUNT
@@ -94,6 +102,18 @@ enum TaxCalculationType {
   PERCENTAGE
   FIXED_AMOUNT
   FORMULA
+  // Sin tasa/monto: la línea no lleva IVA discriminado en absoluto. Distinto
+  // de PERCENTAGE con rate=0 (que sí es "gravado al 0%", AFIP lo reporta
+  // igual dentro de Iva[] con alícuota 3) - EXENTO/NO_GRAVADO se reportan
+  // por fuera del breakdown de IVA, en ImpOpEx/ImpTotConc respectivamente
+  // (ver InvoiceLine.taxKind y AfipWsfeClient). La diferencia entre las dos
+  // es fiscal, no técnica para esta app: EXENTO son operaciones exentas de
+  // IVA por norma (ej. ciertos alimentos, libros); NO_GRAVADO son
+  // operaciones fuera del objeto del impuesto (ni gravadas ni exentas). El
+  // usuario elige la que corresponda según el artículo, esta app no evalúa
+  // cuál aplica.
+  EXENTO
+  NO_GRAVADO
 }
 
 enum AccountType {
@@ -830,6 +850,13 @@ model InvoiceLine {
   // the final lineTotal, since the calculation chain has multiple stages.
   netAmount        Decimal        @db.Decimal(14, 2)
   taxRate          Decimal        @db.Decimal(5, 2)
+  // GRAVADO (default) = netAmount entra en ImpNeto/Iva[] de AFIP, igual que
+  // siempre. EXENTO/NO_GRAVADO = netAmount entra en ImpOpEx/ImpTotConc en
+  // cambio, fuera del breakdown de IVA - ver TaxCalculationType. Persistido
+  // por línea (no re-derivado del artículo) para que createCreditNote pueda
+  // reusarlo al acreditar parcialmente sin volver a resolver el
+  // TaxDefinition de cada artículo, mismo motivo que Invoice.concept.
+  taxKind          TaxLineKind    @default(GRAVADO)
   lineTotal        Decimal        @db.Decimal(14, 2)
 
   creditNoteLines CreditNoteLine[]
