@@ -59,6 +59,7 @@ describe('TenantSettingsService.getSettings', () => {
       afipEnv: 'HOMOLOGACION',
       afipConfigured: false,
       afipCertExpiresAt: null,
+      ownTaxCondition: null,
       tenantTaxId: null,
     });
   });
@@ -82,6 +83,7 @@ describe('TenantSettingsService.getSettings', () => {
           afipCertEncrypted: 'cert-cipher',
           afipKeyEncrypted: 'key-cipher',
           afipCertExpiresAt: new Date('2027-01-01'),
+          ownTaxCondition: 'RESPONSABLE_INSCRIPTO',
         }),
       },
     });
@@ -104,6 +106,7 @@ describe('TenantSettingsService.getSettings', () => {
       afipEnv: 'PRODUCCION',
       afipConfigured: true,
       afipCertExpiresAt: new Date('2027-01-01'),
+      ownTaxCondition: 'RESPONSABLE_INSCRIPTO',
       tenantTaxId: '20-11111111-2',
     });
   });
@@ -180,6 +183,7 @@ describe('TenantSettingsService.updateSettings', () => {
         withholdingAgentIncomeTax: undefined,
         withholdingAgentVat: undefined,
         withholdingAgentGrossIncome: undefined,
+        ownTaxCondition: null,
       },
       update: {
         arReminderIntervalDays: 5,
@@ -191,6 +195,7 @@ describe('TenantSettingsService.updateSettings', () => {
         withholdingAgentIncomeTax: undefined,
         withholdingAgentVat: undefined,
         withholdingAgentGrossIncome: undefined,
+        ownTaxCondition: undefined,
       },
     });
     expect(result.arReminderIntervalDays).toBe(5);
@@ -292,6 +297,42 @@ describe('TenantSettingsService.updateSettings', () => {
       expect.objectContaining({
         create: expect.objectContaining({ reminderCcEmail: null }),
         update: expect.objectContaining({ reminderCcEmail: null }),
+      }),
+    );
+  });
+
+  it('saves ownTaxCondition, and clears it by writing null', async () => {
+    const upsert = jest.fn().mockResolvedValue({
+      arReminderIntervalDays: null,
+      emailSenderMode: 'SHARED',
+      emailFromName: null,
+      emailFromLocalPart: null,
+      emailCustomDomain: null,
+      domainStatus: null,
+      reminderTone: 'NEUTRAL',
+      ownTaxCondition: 'MONOTRIBUTO',
+    });
+    const db = withTenant({ tenantSettings: { upsert } });
+    const service = new TenantSettingsService(null, noopEncryption);
+
+    const result = await runInTenant(db, () =>
+      service.updateSettings({ ownTaxCondition: 'MONOTRIBUTO' }),
+    );
+
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ ownTaxCondition: 'MONOTRIBUTO' }),
+        update: expect.objectContaining({ ownTaxCondition: 'MONOTRIBUTO' }),
+      }),
+    );
+    expect(result.ownTaxCondition).toBe('MONOTRIBUTO');
+
+    await runInTenant(db, () => service.updateSettings({ ownTaxCondition: null }));
+
+    expect(upsert).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ ownTaxCondition: null }),
+        update: expect.objectContaining({ ownTaxCondition: null }),
       }),
     );
   });

@@ -12,6 +12,7 @@ import {
   type EmailSenderMode,
   type ReminderTone,
   type TenantSettings,
+  type TenantTaxCondition,
 } from '@/lib/tenantSettings';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
@@ -224,6 +225,10 @@ function AfipCertificateCard({ settings }: { settings: TenantSettings }) {
   const [taxId, setTaxId] = useState(settings.tenantTaxId ?? '');
   const [taxIdMessage, setTaxIdMessage] = useState('');
   const [taxIdError, setTaxIdError] = useState('');
+  const [ownTaxCondition, setOwnTaxCondition] = useState<TenantTaxCondition | ''>(
+    settings.ownTaxCondition ?? '',
+  );
+  const [ownTaxConditionMessage, setOwnTaxConditionMessage] = useState('');
 
   function invalidateSettings() {
     void queryClient.invalidateQueries({ queryKey: ['tenant-settings'] });
@@ -239,6 +244,14 @@ function AfipCertificateCard({ settings }: { settings: TenantSettings }) {
     onError: (err: AxiosError<{ message?: string | string[] }>) => {
       setTaxIdMessage('');
       setTaxIdError(errorMessage(err, 'No se pudo guardar el CUIT'));
+    },
+  });
+
+  const ownTaxConditionMutation = useMutation({
+    mutationFn: (value: TenantTaxCondition) => tenantSettingsApi.update({ ownTaxCondition: value }),
+    onSuccess: () => {
+      setOwnTaxConditionMessage('Guardado');
+      invalidateSettings();
     },
   });
 
@@ -335,6 +348,42 @@ function AfipCertificateCard({ settings }: { settings: TenantSettings }) {
             realmente configurado aunque lo hayas subido.
           </p>
         )}
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
+        <label className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+          Condición IVA propia
+          <select
+            value={ownTaxCondition}
+            onChange={(e) => setOwnTaxCondition(e.target.value as TenantTaxCondition)}
+            className={`${inputClass} w-56`}
+          >
+            <option value="" disabled>
+              Sin configurar
+            </option>
+            <option value="RESPONSABLE_INSCRIPTO">Responsable Inscripto</option>
+            <option value="MONOTRIBUTO">Monotributo</option>
+            <option value="EXENTO">Exento</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={() => {
+            setOwnTaxConditionMessage('');
+            if (ownTaxCondition) ownTaxConditionMutation.mutate(ownTaxCondition);
+          }}
+          disabled={!ownTaxCondition || ownTaxConditionMutation.isPending}
+          className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-50"
+        >
+          {ownTaxConditionMutation.isPending ? 'Guardando...' : 'Guardar condición IVA'}
+        </button>
+        {ownTaxConditionMessage && (
+          <p className="text-xs text-green-600 dark:text-green-400">{ownTaxConditionMessage}</p>
+        )}
+        <p className="w-full text-xs text-slate-500">
+          Determina qué letra de comprobante corresponde emitir (A/B/C) - Nueva factura la sugiere o
+          la fuerza automáticamente en base a esto y a la condición IVA del cliente.
+        </p>
       </div>
 
       <details className="mb-4 rounded-lg border border-slate-200 dark:border-slate-800 p-4 text-xs text-slate-600 dark:text-slate-400">

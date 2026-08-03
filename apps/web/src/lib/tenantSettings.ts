@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 export type EmailSenderMode = 'SHARED' | 'CUSTOM_DOMAIN';
 export type ReminderTone = 'FRIENDLY' | 'NEUTRAL' | 'FIRM';
 export type AfipEnvironment = 'HOMOLOGACION' | 'PRODUCCION';
+export type TenantTaxCondition = 'RESPONSABLE_INSCRIPTO' | 'MONOTRIBUTO' | 'EXENTO';
 
 export interface TenantSettings {
   arReminderIntervalDays: number | null;
@@ -19,6 +20,7 @@ export interface TenantSettings {
   afipEnv: AfipEnvironment;
   afipConfigured: boolean;
   afipCertExpiresAt: string | null;
+  ownTaxCondition: TenantTaxCondition | null;
   tenantTaxId: string | null;
 }
 
@@ -60,6 +62,7 @@ export const tenantSettingsApi = {
       withholdingAgentIncomeTax: boolean;
       withholdingAgentVat: boolean;
       withholdingAgentGrossIncome: boolean;
+      ownTaxCondition: TenantTaxCondition | null;
     }>,
   ) => api.patch<TenantSettings>('/tenant-settings', dto).then((r) => r.data),
 };

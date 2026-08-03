@@ -125,6 +125,15 @@ enum AfipEnvironment {
   PRODUCCION
 }
 
+// Sólo las 3 condiciones que cambian qué letra de comprobante puede emitir
+// el propio tenant (ver TenantSettings.ownTaxCondition) - no el universo
+// completo de categorías AFIP (eso es Company.taxCondition, texto libre).
+enum TenantTaxCondition {
+  RESPONSABLE_INSCRIPTO
+  MONOTRIBUTO
+  EXENTO
+}
+
 // Tenant-wide business-policy toggles, as opposed to User (per-person
 // preferences like theme/density, which live in the frontend's localStorage
 // today, not the DB) - this is the first one, deliberately its own table
@@ -197,6 +206,17 @@ model TenantSettings {
   // "vence en N días" en Preferencias sin descifrar el certificado en cada
   // carga de pantalla.
   afipCertExpiresAt DateTime?
+
+  // Condición IVA propia del tenant (quien emite), no la del cliente -
+  // determina qué letra de comprobante es fiscalmente válida (ver
+  // resolveDocumentLetter en @plexo/invoicing): Responsable Inscripto puede
+  // emitir A o B según el cliente; Monotributo/Exento siempre emite C. A
+  // diferencia de Company.taxCondition (texto libre, best-effort desde el
+  // padrón de un tercero), esto lo declara el propio usuario a mano sobre
+  // sí mismo - por eso es un enum cerrado, no texto libre. Nullable a
+  // propósito (null = todavía no configurado): sin este dato no hay letra
+  // que derivar con certeza, la UI cae a selección manual sin sugerencia.
+  ownTaxCondition TenantTaxCondition?
 
   updatedAt DateTime @updatedAt
 

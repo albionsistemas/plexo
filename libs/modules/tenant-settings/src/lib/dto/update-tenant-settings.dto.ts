@@ -1,4 +1,4 @@
-import { EmailSenderMode, ReminderTone } from '@plexo/database';
+import { EmailSenderMode, ReminderTone, TenantTaxCondition } from '@plexo/database';
 import {
   IsBoolean,
   IsEmail,
@@ -72,4 +72,11 @@ export class UpdateTenantSettingsDto {
   @IsOptional()
   @IsBoolean()
   withholdingAgentGrossIncome?: boolean;
+
+  /** null clears it (vuelve a "sin configurar", la UI cae a selección
+   * manual de letra); omitir el campo deja el valor guardado sin tocar -
+   * misma convención que reminderCcEmail. */
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsEnum(TenantTaxCondition)
+  ownTaxCondition?: TenantTaxCondition | null;
 }

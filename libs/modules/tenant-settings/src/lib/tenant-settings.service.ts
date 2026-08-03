@@ -1,6 +1,12 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { getTenantDb, getTenantId } from '@plexo/database';
-import type { AfipEnvironment, EmailSenderMode, ReminderTone, TenantSettings } from '@plexo/database';
+import type {
+  AfipEnvironment,
+  EmailSenderMode,
+  ReminderTone,
+  TenantSettings,
+  TenantTaxCondition,
+} from '@plexo/database';
 import { EncryptionService } from '@plexo/encryption';
 import type { DomainRecords } from 'resend';
 import { parseAndValidateAfipCertificate } from './afip-certificate.js';
@@ -26,6 +32,10 @@ export interface TenantSettingsView {
   // so the frontend can show "certificado cargado" vs. an upload prompt.
   afipConfigured: boolean;
   afipCertExpiresAt: Date | null;
+  // Condición IVA propia del tenant - null hasta que el usuario la
+  // configure a mano en Preferencias. Alimenta resolveDocumentLetter en el
+  // frontend (letra A/B/C sugerida/forzada al emitir factura).
+  ownTaxCondition: TenantTaxCondition | null;
   // Tenant.taxId (the tenant's OWN CUIT - who the AFIP certificate is
   // registered under), surfaced here because Preferencias/AFIP is the only
   // screen that needs to show/edit it today - see updateTenantInfo. Not a
@@ -95,6 +105,7 @@ export class TenantSettingsService {
       // CUIT half of it.
       afipConfigured: Boolean(row?.afipCertEncrypted && row?.afipKeyEncrypted && tenantTaxId),
       afipCertExpiresAt: row?.afipCertExpiresAt ?? null,
+      ownTaxCondition: row?.ownTaxCondition ?? null,
       tenantTaxId,
     };
   }
@@ -116,6 +127,7 @@ export class TenantSettingsService {
         withholdingAgentIncomeTax: dto.withholdingAgentIncomeTax,
         withholdingAgentVat: dto.withholdingAgentVat,
         withholdingAgentGrossIncome: dto.withholdingAgentGrossIncome,
+        ownTaxCondition: dto.ownTaxCondition ?? null,
       },
       update: {
         arReminderIntervalDays: dto.arReminderIntervalDays,
@@ -127,6 +139,7 @@ export class TenantSettingsService {
         withholdingAgentIncomeTax: dto.withholdingAgentIncomeTax,
         withholdingAgentVat: dto.withholdingAgentVat,
         withholdingAgentGrossIncome: dto.withholdingAgentGrossIncome,
+        ownTaxCondition: dto.ownTaxCondition,
       },
     });
     return this.toView(row, await this.getTenantTaxId());

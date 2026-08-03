@@ -2,13 +2,14 @@
 
 import CompanyFormModal from '@/components/CompanyFormModal';
 import { companiesApi } from '@/lib/companies';
+import { suggestDocumentLetter } from '@/lib/documentLetter';
 import { inventoryApi } from '@/lib/inventory';
 import { invoicingApi, type CreateSaleLineInput } from '@/lib/invoicing';
 import { tenantSettingsApi } from '@/lib/tenantSettings';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface Props {
   onClose: () => void;
@@ -82,6 +83,20 @@ export default function NewInvoiceModal({ onClose }: Props) {
   if (ready && !branchId && firstBranch) setBranchId(firstBranch.id);
   if (ready && !warehouseId && firstWarehouse) setWarehouseId(firstWarehouse.id);
   if (ready && !currencyId && firstCurrency) setCurrencyId(firstCurrency.id);
+
+  // Letra de comprobante derivada de la condición IVA propia (Preferencias)
+  // + la del cliente elegido (ver documentLetter.ts) - se re-sugiere cada
+  // vez que cambia el cliente, sin pisar una corrección manual del usuario
+  // mientras el cliente sigue siendo el mismo.
+  const selectedCustomer = customers.find((c) => c.id === customerId);
+  const letterSuggestion = suggestDocumentLetter(
+    tenantSettingsQuery.data?.ownTaxCondition ?? null,
+    selectedCustomer?.taxId ?? null,
+    selectedCustomer?.taxCondition ?? null,
+  );
+  useEffect(() => {
+    if (letterSuggestion.letter) setDocumentLetter(letterSuggestion.letter);
+  }, [customerId, letterSuggestion.letter]);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -221,8 +236,9 @@ export default function NewInvoiceModal({ onClose }: Props) {
               </Field>
               <Field label="Tipo de comprobante">
                 <select
-                  className={inputClass}
+                  className={`${inputClass} disabled:opacity-70`}
                   value={documentLetter}
+                  disabled={letterSuggestion.locked}
                   onChange={(e) => setDocumentLetter(e.target.value as typeof documentLetter)}
                 >
                   {DOCUMENT_LETTERS.map((letter) => (
@@ -231,6 +247,11 @@ export default function NewInvoiceModal({ onClose }: Props) {
                     </option>
                   ))}
                 </select>
+                <p
+                  className={`mt-1 text-xs ${letterSuggestion.locked ? 'text-slate-500' : 'text-amber-600 dark:text-amber-400'}`}
+                >
+                  {letterSuggestion.reason}
+                </p>
               </Field>
               <Field label="Moneda">
                 <select
