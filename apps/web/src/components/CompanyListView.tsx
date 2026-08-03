@@ -4,6 +4,7 @@ import { companiesApi, type Company, type CompanyRoleType } from '@/lib/companie
 import { formatCuitInput } from '@/lib/cuit';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import AddContactsModal from './AddContactsModal';
 import CompanyDetailModal from './CompanyDetailModal';
 import CompanyFormModal, { ROLE_LABELS } from './CompanyFormModal';
 
@@ -30,15 +31,29 @@ interface Props {
   /** 'card' renders as an embedded section matching the other Preferencias
    * cards (h2, bordered container) instead of a standalone page (h1). */
   variant?: 'page' | 'card';
+  /** Tras crear una empresa nueva (no al editar), abre AddContactsModal para
+   * esa empresa en vez de sólo cerrar el formulario - pensado para /suppliers
+   * (y cualquier otra pantalla de rol único donde tenga sentido cargar
+   * contactos de una), no para /companies ni "Mis sucursales" (una sucursal
+   * no puede tener contactos, ver CompaniesService.createPerson). */
+  promptContactsAfterCreate?: boolean;
 }
 
-export default function CompanyListView({ role, editable, title, newLabel, variant = 'page' }: Props) {
+export default function CompanyListView({
+  role,
+  editable,
+  title,
+  newLabel,
+  variant = 'page',
+  promptContactsAfterCreate,
+}: Props) {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<CompanyRoleType | ''>('');
   const [showInactive, setShowInactive] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   const [selected, setSelected] = useState<Company | null>(null);
   const [editing, setEditing] = useState<Company | null>(null);
+  const [addingContactsTo, setAddingContactsTo] = useState<Company | null>(null);
 
   const effectiveRoleFilter = role ?? roleFilter;
 
@@ -208,7 +223,14 @@ export default function CompanyListView({ role, editable, title, newLabel, varia
       </div>
 
       {newOpen && (
-        <CompanyFormModal onClose={() => setNewOpen(false)} lockedRole={editable ? role : undefined} />
+        <CompanyFormModal
+          onClose={() => setNewOpen(false)}
+          lockedRole={editable ? role : undefined}
+          onSaved={promptContactsAfterCreate ? (saved) => setAddingContactsTo(saved) : undefined}
+        />
+      )}
+      {addingContactsTo && (
+        <AddContactsModal company={addingContactsTo} onClose={() => setAddingContactsTo(null)} />
       )}
       {selected && (
         <CompanyDetailModal

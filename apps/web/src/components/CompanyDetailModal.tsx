@@ -334,7 +334,7 @@ export default function CompanyDetailModal({ company, onClose, onEdit, readOnly 
   );
 }
 
-function ContactRow({
+export function ContactRow({
   person,
   companyId,
   readOnly,
@@ -419,7 +419,7 @@ function ContactRow({
   );
 }
 
-function NewPersonForm({ companyId }: { companyId: string }) {
+export function NewPersonForm({ companyId }: { companyId: string }) {
   const queryClient = useQueryClient();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');

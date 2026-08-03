@@ -222,7 +222,7 @@ export default function CompanyFormModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
+      <div className="w-full max-w-2xl rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
             {isEdit ? `Editar ${roleLabel ? roleLabel.toLowerCase() : 'empresa'}` : roleLabel ? `Nuevo/a ${roleLabel.toLowerCase()}` : 'Nueva empresa'}
@@ -261,11 +261,8 @@ export default function CompanyFormModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <Field label="Nombre">
-              <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
-            </Field>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="CUIT / Tax ID">
+            <Field label="CUIT / Tax ID">
+              <div className="flex gap-2">
                 <input
                   className={inputClass}
                   value={taxId}
@@ -276,17 +273,27 @@ export default function CompanyFormModal({
                   type="button"
                   onClick={() => afipLookup.mutate()}
                   disabled={afipLookup.isPending || !taxId.trim()}
-                  className="self-start text-xs text-indigo-600 dark:text-indigo-400 transition hover:text-indigo-800 dark:hover:text-indigo-300 disabled:opacity-50"
+                  className="shrink-0 rounded-lg border border-indigo-500 px-3 py-2 text-xs font-medium text-indigo-600 dark:text-indigo-400 transition hover:bg-indigo-50 dark:hover:bg-indigo-950 disabled:opacity-50"
                 >
                   {afipLookup.isPending ? 'Consultando AFIP...' : 'Buscar en AFIP'}
                 </button>
-                {afipMessage && <p className="text-xs text-slate-600 dark:text-slate-400">{afipMessage}</p>}
-                {afipError && <p className="text-xs text-red-600 dark:text-red-400">{afipError}</p>}
-                {(taxCondition || fiscalAddress) && (
-                  <p className="text-xs text-slate-500 dark:text-slate-500">
-                    {[taxCondition, fiscalAddress].filter(Boolean).join(' · ')}
-                  </p>
-                )}
+              </div>
+              {afipMessage && <p className="text-xs text-slate-600 dark:text-slate-400">{afipMessage}</p>}
+              {afipError && <p className="text-xs text-red-600 dark:text-red-400">{afipError}</p>}
+              {(taxCondition || fiscalAddress) && (
+                <p className="text-xs text-slate-500 dark:text-slate-500">
+                  {[taxCondition, fiscalAddress].filter(Boolean).join(' · ')}
+                </p>
+              )}
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Nombre / Razón Social">
+                <input
+                  className={inputClass}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Se completa solo al buscar el CUIT en AFIP"
+                />
               </Field>
               <Field label="Email">
                 <input
