@@ -1,6 +1,7 @@
 'use client';
 
 import { companiesApi, type Company, type CompanyRoleType, type Person } from '@/lib/companies';
+import { formatCuitInput } from '@/lib/cuit';
 import { resolveUploadUrl } from '@/lib/inventory';
 import { initials } from '@/lib/profile';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -190,7 +191,9 @@ export default function CompanyDetailModal({ company, onClose, onEdit, readOnly 
         <div className="mb-6 grid grid-cols-2 gap-4 text-sm">
           <div>
             <p className="text-xs text-slate-500">CUIT / Tax ID</p>
-            <p className="text-slate-700 dark:text-slate-300">{company.taxId ?? '—'}</p>
+            <p className="text-slate-700 dark:text-slate-300">
+              {company.taxId ? formatCuitInput(company.taxId) : '—'}
+            </p>
           </div>
           <div>
             <p className="text-xs text-slate-500">Email</p>

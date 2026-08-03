@@ -1,6 +1,7 @@
 'use client';
 
 import { companiesApi, type Company, type CompanyIndustry, type CompanyRoleType } from '@/lib/companies';
+import { formatCuitInput, normalizeCuit } from '@/lib/cuit';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import { useState } from 'react';
@@ -57,10 +58,6 @@ const INDUSTRY_OPTIONS: { value: CompanyIndustry; label: string }[] = [
   { value: 'INMOBILIARIO', label: 'Inmobiliario' },
   { value: 'OTRO', label: 'Otro' },
 ];
-
-function normalizeTaxId(value: string): string {
-  return value.replace(/\D/g, '');
-}
 
 export default function CompanyFormModal({
   company,
@@ -175,8 +172,8 @@ export default function CompanyFormModal({
   const collisionCheck = useMutation({
     mutationFn: async () => {
       const all = await companiesApi.list(undefined, true);
-      const normalized = normalizeTaxId(taxId);
-      return all.find((c) => c.taxId && normalizeTaxId(c.taxId) === normalized) ?? null;
+      const normalized = normalizeCuit(taxId);
+      return all.find((c) => c.taxId && normalizeCuit(c.taxId) === normalized) ?? null;
     },
     onSuccess: (existing) => {
       if (!existing) {
@@ -269,7 +266,12 @@ export default function CompanyFormModal({
             </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="CUIT / Tax ID">
-                <input className={inputClass} value={taxId} onChange={(e) => setTaxId(e.target.value)} />
+                <input
+                  className={inputClass}
+                  value={taxId}
+                  onChange={(e) => setTaxId(formatCuitInput(e.target.value))}
+                  placeholder="30-71659554-9"
+                />
                 <button
                   type="button"
                   onClick={() => afipLookup.mutate()}

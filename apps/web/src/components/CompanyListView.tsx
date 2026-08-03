@@ -1,6 +1,7 @@
 'use client';
 
 import { companiesApi, type Company, type CompanyRoleType } from '@/lib/companies';
+import { formatCuitInput } from '@/lib/cuit';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import CompanyDetailModal from './CompanyDetailModal';
@@ -189,7 +190,9 @@ export default function CompanyListView({ role, editable, title, newLabel, varia
                         )}
                       </div>
                     </td>
-                    <td className="py-2 pr-4 text-slate-600 dark:text-slate-400">{c.taxId ?? '—'}</td>
+                    <td className="py-2 pr-4 text-slate-600 dark:text-slate-400">
+                      {c.taxId ? formatCuitInput(c.taxId) : '—'}
+                    </td>
                     <td className="py-2 pr-4 text-slate-600 dark:text-slate-400">{c.email ?? '—'}</td>
                     <td className="py-2 pr-4 text-right text-slate-700 dark:text-slate-300">
                       {c.roles.some((r) => r.role === 'BRANCH')

@@ -2,6 +2,7 @@
 
 import { activityLogApi, type TenantActivityEntry } from '@/lib/activityLog';
 import CompanyListView from '@/components/CompanyListView';
+import { formatCuitInput } from '@/lib/cuit';
 import {
   afipCertificateApi,
   emailDomainApi,
@@ -324,7 +325,7 @@ function AfipCertificateCard({ settings }: { settings: TenantSettings }) {
           <input
             type="text"
             value={taxId}
-            onChange={(e) => setTaxId(e.target.value)}
+            onChange={(e) => setTaxId(formatCuitInput(e.target.value))}
             placeholder="30-71659554-9"
             className={`${inputClass} w-40`}
           />
