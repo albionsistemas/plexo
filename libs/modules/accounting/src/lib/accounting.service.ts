@@ -143,6 +143,12 @@ export interface ReverseSupplierReturnAccrualInput {
   date?: Date;
 }
 
+export interface ReverseSupplierReturnAgainstPayableInput {
+  supplierReturnId: string;
+  amount: Prisma.Decimal | number | string;
+  date?: Date;
+}
+
 export interface PurchaseInvoicePerceptionInput {
   concept: string;
   amount: Prisma.Decimal | number | string;
@@ -600,6 +606,41 @@ export class AccountingService {
       `Devolución a proveedor - ${input.supplierReturnId}`,
       [
         { accountId: grni.id, direction: 'DEBIT', amount: amount.toNumber() },
+        { accountId: inventory.id, direction: 'CREDIT', amount: amount.toNumber() },
+      ],
+      { date: input.date, supplierReturnId: input.supplierReturnId },
+    );
+  }
+
+  /**
+   * Posted when a SupplierReturn is recorded against a remito that was
+   * ALREADY invoiced (see reverseSupplierReturnAccrual just above for the
+   * not-yet-invoiced case). By the time a PurchaseInvoice exists for a
+   * receipt, that receipt's GRNI accrual was already cleared into
+   * Proveedores (postPurchaseInvoiceJournalEntry) - crediting GRNI again
+   * here would leave a debit balance nothing will ever clear, since no
+   * future invoice is coming for this receipt to clear it against. What's
+   * actually owed less now is Proveedores itself: Dr Proveedores (we owe
+   * less) / Cr Mercaderías (the goods are going back). Composition root
+   * (apps/api's SupplierReturnsService) is what decides which of these two
+   * methods to call, based on whether the receipt has a PurchaseInvoice
+   * linked yet - this service has no notion of that itself.
+   */
+  async reverseSupplierReturnAgainstPayable(
+    input: ReverseSupplierReturnAgainstPayableInput,
+  ): Promise<JournalEntryWithLines | undefined> {
+    const amount = new Prisma.Decimal(input.amount);
+    if (amount.lte(0)) {
+      return undefined;
+    }
+    const [payable, inventory] = await Promise.all([
+      this.getOrCreateAccount(ACCOUNTS_PAYABLE_ACCOUNT),
+      this.getOrCreateAccount(INVENTORY_ASSET_ACCOUNT),
+    ]);
+    return this.createBalancedEntry(
+      `Devolución a proveedor (remito ya facturado) - ${input.supplierReturnId}`,
+      [
+        { accountId: payable.id, direction: 'DEBIT', amount: amount.toNumber() },
         { accountId: inventory.id, direction: 'CREDIT', amount: amount.toNumber() },
       ],
       { date: input.date, supplierReturnId: input.supplierReturnId },
