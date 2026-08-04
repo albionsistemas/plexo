@@ -204,10 +204,19 @@ export class AfipWsfeClient {
       });
       responseText = await response.text();
       if (!response.ok) {
-        throw new Error(`AFIP WSFE respondió ${response.status}: ${responseText.slice(0, 300)}`);
+        const faultMatch = responseText.match(/<faultstring>(.*?)<\/faultstring>/);
+        throw new Error(
+          faultMatch
+            ? `AFIP WSFE rechazó la solicitud: ${faultMatch[1]}`
+            : `AFIP WSFE respondió ${response.status}: ${responseText.slice(0, 500)}`,
+        );
       }
     } catch (err) {
-      if (err instanceof Error && err.message.startsWith('AFIP WSFE respondió')) throw err;
+      if (
+        err instanceof Error &&
+        (err.message.startsWith('AFIP WSFE respondió') || err.message.startsWith('AFIP WSFE rechazó'))
+      )
+        throw err;
       throw new Error(`No se pudo conectar con AFIP WSFE: ${(err as Error).message}`);
     }
 

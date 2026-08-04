@@ -64,7 +64,7 @@ export class AfipWsaaClient {
     });
     const responseText = await response.text();
     if (!response.ok) {
-      throw new Error(`AFIP WSAA respondió ${response.status}: ${responseText.slice(0, 300)}`);
+      throw new Error(`AFIP WSAA rechazó la solicitud: ${this.describeFault(responseText)}`);
     }
 
     const envelope = xmlParser.parse(responseText);
@@ -128,5 +128,23 @@ export class AfipWsaaClient {
 
     const der = forge.asn1.toDer(p7.toAsn1()).getBytes();
     return forge.util.encode64(der);
+  }
+
+  /** WSAA reports rejections (cert not trusted/expired, clock skew, wrong
+   * environment, ...) as a SOAP <Fault> in the body of a non-2xx response.
+   * A raw slice of that body is dominated by envelope/namespace boilerplate
+   * and cuts off before the actual faultcode/faultstring - parse it so the
+   * real reason surfaces instead of a truncated fragment like "ns1:cms". */
+  private describeFault(responseText: string): string {
+    try {
+      const envelope = xmlParser.parse(responseText);
+      const fault = envelope?.Envelope?.Body?.Fault;
+      if (fault?.faultstring) {
+        return `[${fault.faultcode ?? '?'}] ${fault.faultstring}`;
+      }
+    } catch {
+      // Not parseable XML - fall through to the raw fragment below.
+    }
+    return responseText.slice(0, 500);
   }
 }
