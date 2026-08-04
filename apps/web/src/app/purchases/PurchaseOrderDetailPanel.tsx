@@ -34,6 +34,7 @@ export default function PurchaseOrderDetailPanel({ purchaseOrderId, onClose }: P
   const [sending, setSending] = useState(false);
   const [receiving, setReceiving] = useState(false);
   const [returningReceiptId, setReturningReceiptId] = useState<string | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setVisible(true));
@@ -59,10 +60,12 @@ export default function PurchaseOrderDetailPanel({ purchaseOrderId, onClose }: P
   const cancelMutation = useMutation({
     mutationFn: () => purchaseOrdersApi.cancel(purchaseOrderId),
     onSuccess: () => {
+      setConfirmingCancel(false);
       void queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
       void queryClient.invalidateQueries({ queryKey: ['purchase-order-detail', purchaseOrderId] });
     },
   });
+  const hasPartialReceipt = data?.lines.some((l) => Number(l.receivedQuantity) > 0) ?? false;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60">
@@ -255,14 +258,38 @@ export default function PurchaseOrderDetailPanel({ purchaseOrderId, onClose }: P
                       Recibir mercadería
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => cancelMutation.mutate()}
-                    disabled={cancelMutation.isPending}
-                    className="rounded-lg border border-red-300 dark:border-red-800 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 transition hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50"
-                  >
-                    Cancelar orden
-                  </button>
+                  {confirmingCancel ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-amber-700 dark:text-amber-400">
+                        {hasPartialReceipt
+                          ? 'Esta orden ya tiene mercadería recibida — cancelarla no revierte lo recibido, sólo impide seguir recibiendo lo pendiente. ¿Confirmás?'
+                          : '¿Confirmás que querés cancelar esta orden?'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => cancelMutation.mutate()}
+                        disabled={cancelMutation.isPending}
+                        className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
+                      >
+                        {cancelMutation.isPending ? 'Cancelando...' : 'Confirmar cancelación'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingCancel(false)}
+                        className="rounded-lg px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 transition hover:text-slate-800 dark:hover:text-slate-200"
+                      >
+                        Volver
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingCancel(true)}
+                      className="rounded-lg border border-red-300 dark:border-red-800 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 transition hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50"
+                    >
+                      Cancelar orden
+                    </button>
+                  )}
                 </div>
               )}
             </section>
