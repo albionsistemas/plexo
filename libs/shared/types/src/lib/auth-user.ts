@@ -23,4 +23,8 @@ export interface AuthenticatedUser {
   email: string;
   role: UserRole;
   moduleAccess: ModuleAccessClaim[];
+  // True for a user invited with a temporary password (see
+  // UsersService.inviteUser) who hasn't changed it yet - MustChangePasswordGuard
+  // blocks everything except the routes marked @AllowWhenPasswordChangeRequired().
+  mustChangePassword: boolean;
 }

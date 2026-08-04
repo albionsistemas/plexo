@@ -2,8 +2,10 @@
 
 import { activityLogApi } from '@/lib/activityLog';
 import { initials, profileApi, type UserProfile } from '@/lib/profile';
+import { disconnectSocket } from '@/lib/socket';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -176,6 +178,7 @@ function AccountCard({ profile, onSaved }: { profile: UserProfile; onSaved: () =
 }
 
 function PasswordCard() {
+  const router = useRouter();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -184,11 +187,22 @@ function PasswordCard() {
 
   const mutation = useMutation({
     mutationFn: () => profileApi.changePassword({ currentPassword, newPassword }),
+    // El JWT actual quedó firmado con mustChangePassword=true (u otro claim
+    // que haya cambiado) - ese claim no se actualiza solo hasta el próximo
+    // login, así que cualquier otra ruta seguiría devolviendo 403 aunque la
+    // contraseña ya haya cambiado en la base. Forzar un login nuevo evita
+    // dejar al usuario en un estado roto/confuso (ver MustChangePasswordGuard).
     onSuccess: () => {
-      setSuccess('Contraseña actualizada');
+      setSuccess('Contraseña actualizada - iniciá sesión de nuevo');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setTimeout(() => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('tenantId');
+        disconnectSocket();
+        router.replace('/login');
+      }, 1200);
     },
     onError: (err: AxiosError<{ message?: string | string[] }>) => {
       const message = err.response?.data?.message ?? 'No se pudo cambiar la contraseña';

@@ -21,6 +21,7 @@ import {
   type TaxDefinition,
   type TaxLineKind,
 } from '@plexo/database';
+import { SubscriptionService } from '@plexo/subscriptions';
 import type { CreateCreditNoteDto } from './dto/create-credit-note.dto.js';
 import type { CreateCurrencyDto } from './dto/create-currency.dto.js';
 import type { CreateInvoiceDto } from './dto/create-invoice.dto.js';
@@ -59,6 +60,7 @@ export class InvoicingService {
     @Inject(ELECTRONIC_INVOICING)
     private readonly electronicInvoicing: ElectronicInvoicingPort,
     private readonly eventEmitter: EventEmitter2,
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
   createCurrency(dto: CreateCurrencyDto): Promise<Currency> {
@@ -140,6 +142,8 @@ export class InvoicingService {
    * composed at the app layer instead of being called from here.
    */
   async createInvoice(dto: CreateInvoiceDto, senderFrom?: string): Promise<InvoiceWithLines> {
+    await this.subscriptionService.assertCanIssueInvoiceThisMonth();
+
     const db = getTenantDb();
     const tenantId = getTenantId();
     const issuedByUserId = getUserId();

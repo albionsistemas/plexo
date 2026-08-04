@@ -1,0 +1,9 @@
+{
+  "name": "subscriptions",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/shared/subscriptions/src",
+  "projectType": "library",
+  "tags": ["scope:shared", "type:data-access"],
+  "// targets": "to see all targets run: nx show project subscriptions --web",
+  "targets": {}
+}

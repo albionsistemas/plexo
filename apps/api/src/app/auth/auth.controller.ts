@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Patch, Post, Req } from '@nestjs/common';
-import { CurrentUser, Public } from '@plexo/auth';
+import { AllowWhenPasswordChangeRequired, CurrentUser, Public } from '@plexo/auth';
 import type { AuthenticatedUser } from '@plexo/types';
 import type { FastifyRequest } from 'fastify';
 import { AuthService } from './auth.service.js';
@@ -17,6 +17,7 @@ export class AuthController {
     return this.authService.login(dto, request.ip ?? null);
   }
 
+  @AllowWhenPasswordChangeRequired()
   @Get('me')
   getMe(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.getProfile(user.sub);
@@ -27,11 +28,15 @@ export class AuthController {
     return this.authService.updateProfile(user.sub, dto);
   }
 
+  // Read-only, no business action - dejarla bloqueada sólo dejaría el
+  // ActivityCard del perfil pegado en "Cargando..." sin motivo real.
+  @AllowWhenPasswordChangeRequired()
   @Get('me/activity')
   getMyActivity(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.getMyActivity(user.sub);
   }
 
+  @AllowWhenPasswordChangeRequired()
   @Post('change-password')
   changePassword(@CurrentUser() user: AuthenticatedUser, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(user.sub, dto);

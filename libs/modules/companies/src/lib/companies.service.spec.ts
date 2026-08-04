@@ -1,5 +1,6 @@
 import { BadGatewayException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { tenantContextStorage } from '@plexo/database';
+import type { SubscriptionService } from '@plexo/subscriptions';
 import { AfipLookupError, AfipNotConfiguredError, type AfipPadronPort } from './afip-padron.port.js';
 import { CompaniesService } from './companies.service.js';
 
@@ -8,12 +9,15 @@ function runInTenant<T>(db: Record<string, unknown>, fn: () => T): T {
 }
 
 const stubAfipPadron: AfipPadronPort = { lookup: jest.fn() };
+const stubSubscriptionService = {
+  assertCanAddClient: jest.fn().mockResolvedValue(undefined),
+} as unknown as SubscriptionService;
 
 describe('CompaniesService.createCompany', () => {
   it('creates the company with a role row per requested role', async () => {
     const create = jest.fn().mockResolvedValue({ id: 'company-1', roles: [{ role: 'CUSTOMER' }] });
     const db = { company: { create } };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await runInTenant(db, () =>
       service.createCompany({ name: 'Acme', roles: ['CUSTOMER', 'SUPPLIER'] }),
@@ -30,7 +34,7 @@ describe('CompaniesService.createCompany', () => {
   it('passes industry, gross income number and withholding flags through', async () => {
     const create = jest.fn().mockResolvedValue({ id: 'company-1', roles: [{ role: 'CUSTOMER' }] });
     const db = { company: { create } };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await runInTenant(db, () =>
       service.createCompany({
@@ -54,6 +58,47 @@ describe('CompaniesService.createCompany', () => {
       logoUrl: 'https://example.com/logo.png',
     });
   });
+
+  it('checks the client quota when the new company has a CUSTOMER role', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 'company-1', roles: [{ role: 'CUSTOMER' }] });
+    const db = { company: { create } };
+    const subscriptionService = {
+      assertCanAddClient: jest.fn().mockResolvedValue(undefined),
+    } as unknown as SubscriptionService;
+    const service = new CompaniesService(stubAfipPadron, subscriptionService);
+
+    await runInTenant(db, () => service.createCompany({ name: 'Acme', roles: ['CUSTOMER'] }));
+
+    expect(subscriptionService.assertCanAddClient).toHaveBeenCalled();
+  });
+
+  it('skips the client quota check for a company with no CUSTOMER role', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 'company-1', roles: [{ role: 'SUPPLIER' }] });
+    const db = { company: { create } };
+    const subscriptionService = {
+      assertCanAddClient: jest.fn().mockResolvedValue(undefined),
+    } as unknown as SubscriptionService;
+    const service = new CompaniesService(stubAfipPadron, subscriptionService);
+
+    await runInTenant(db, () => service.createCompany({ name: 'Acme', roles: ['SUPPLIER'] }));
+
+    expect(subscriptionService.assertCanAddClient).not.toHaveBeenCalled();
+  });
+
+  it('propagates the quota rejection without creating the company', async () => {
+    const create = jest.fn();
+    const db = { company: { create } };
+    const failure = new Error('Alcanzaste el límite de clientes de tu plan actual (Basic Gratis: 1)');
+    const subscriptionService = {
+      assertCanAddClient: jest.fn().mockRejectedValue(failure),
+    } as unknown as SubscriptionService;
+    const service = new CompaniesService(stubAfipPadron, subscriptionService);
+
+    await expect(
+      runInTenant(db, () => service.createCompany({ name: 'Acme', roles: ['CUSTOMER'] })),
+    ).rejects.toThrow(failure);
+    expect(create).not.toHaveBeenCalled();
+  });
 });
 
 describe('CompaniesService.getCompany', () => {
@@ -67,7 +112,7 @@ describe('CompaniesService.getCompany', () => {
         findMany: jest.fn().mockResolvedValue([{ id: 'article-1', name: 'Agua mineral 500ml', imageUrl: null }]),
       },
     };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     const result = await runInTenant(db, () => service.getCompany('company-1'));
 
@@ -81,7 +126,7 @@ describe('CompaniesService.getCompany', () => {
 
   it('404s when the company does not exist', async () => {
     const db = { company: { findUnique: jest.fn().mockResolvedValue(null) } };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await expect(runInTenant(db, () => service.getCompany('missing'))).rejects.toThrow(
       NotFoundException,
@@ -92,7 +137,7 @@ describe('CompaniesService.getCompany', () => {
 describe('CompaniesService.updateCompany', () => {
   it('throws when the company does not exist', async () => {
     const db = { company: { findUnique: jest.fn().mockResolvedValue(null) } };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await expect(
       runInTenant(db, () => service.updateCompany('missing', { name: 'x' })),
@@ -110,7 +155,7 @@ describe('CompaniesService.updateCompany', () => {
         createMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await runInTenant(db, () => service.updateCompany('company-1', { roles: ['BRANCH'] }));
 
@@ -128,7 +173,7 @@ describe('CompaniesService.updateCompany', () => {
       },
       companyRole: { deleteMany: jest.fn(), createMany: jest.fn() },
     };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await runInTenant(db, () => service.updateCompany('company-1', { name: 'New name' }));
 
@@ -144,7 +189,7 @@ describe('CompaniesService.updateCompany', () => {
         update,
       },
     };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await runInTenant(db, () => service.updateCompany('company-1', { active: false }));
 
@@ -161,7 +206,7 @@ describe('CompaniesService.updateCompany', () => {
         update,
       },
     };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await runInTenant(db, () =>
       service.updateCompany('company-1', {
@@ -188,7 +233,7 @@ describe('CompaniesService.updateCompany', () => {
 describe('CompaniesService.createPerson', () => {
   it('throws when the company does not exist', async () => {
     const db = { company: { findUnique: jest.fn().mockResolvedValue(null) } };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await expect(
       runInTenant(db, () =>
@@ -203,7 +248,7 @@ describe('CompaniesService.createPerson', () => {
         findUnique: jest.fn().mockResolvedValue({ id: 'company-1', roles: [{ role: 'BRANCH' }] }),
       },
     };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await expect(
       runInTenant(db, () =>
@@ -220,7 +265,7 @@ describe('CompaniesService.createPerson', () => {
       },
       person: { create },
     };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await runInTenant(db, () =>
       service.createPerson({ companyId: 'company-1', firstName: 'Ana', lastName: 'García' }),
@@ -243,7 +288,7 @@ describe('CompaniesService.lookupAfip', () => {
   });
 
   it('rejects an invalid CUIT without calling AFIP', async () => {
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await expect(service.lookupAfip('20123456780')).rejects.toThrow(BadRequestException);
     expect(stubAfipPadron.lookup).not.toHaveBeenCalled();
@@ -251,21 +296,21 @@ describe('CompaniesService.lookupAfip', () => {
 
   it('maps AfipNotConfiguredError to a 400 with a clear message', async () => {
     (stubAfipPadron.lookup as jest.Mock).mockRejectedValue(new AfipNotConfiguredError());
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await expect(service.lookupAfip('20123456786')).rejects.toThrow(BadRequestException);
   });
 
   it('maps AfipLookupError (AFIP unreachable/erroring) to a 502', async () => {
     (stubAfipPadron.lookup as jest.Mock).mockRejectedValue(new AfipLookupError('AFIP no responde'));
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await expect(service.lookupAfip('20123456786')).rejects.toThrow(BadGatewayException);
   });
 
   it('maps a null result (AFIP has no record) to a 404', async () => {
     (stubAfipPadron.lookup as jest.Mock).mockResolvedValue(null);
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await expect(service.lookupAfip('20123456786')).rejects.toThrow(NotFoundException);
   });
@@ -279,7 +324,7 @@ describe('CompaniesService.lookupAfip', () => {
       fiscalAddress: 'Av. Siempreviva 742, CABA',
     };
     (stubAfipPadron.lookup as jest.Mock).mockResolvedValue(data);
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await expect(service.lookupAfip('20-12345678-6')).resolves.toEqual(data);
     expect(stubAfipPadron.lookup).toHaveBeenCalledWith('20123456786');
@@ -290,7 +335,7 @@ describe('CompaniesService.listCompanies', () => {
   it('filters to active companies by default', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const db = { company: { findMany } };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await runInTenant(db, () => service.listCompanies());
 
@@ -302,7 +347,7 @@ describe('CompaniesService.listCompanies', () => {
   it('includes inactive companies when includeInactive is true', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const db = { company: { findMany } };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await runInTenant(db, () => service.listCompanies(undefined, true));
 
@@ -312,7 +357,7 @@ describe('CompaniesService.listCompanies', () => {
   it('combines the active filter with a role filter', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const db = { company: { findMany } };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await runInTenant(db, () => service.listCompanies('CUSTOMER'));
 
@@ -327,7 +372,7 @@ describe('CompaniesService.listCompanies', () => {
 describe('CompaniesService.deletePerson', () => {
   it('throws when the person does not exist', async () => {
     const db = { person: { findUnique: jest.fn().mockResolvedValue(null) } };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await expect(runInTenant(db, () => service.deletePerson('missing'))).rejects.toThrow(
       NotFoundException,
@@ -342,7 +387,7 @@ describe('CompaniesService.deletePerson', () => {
         delete: deletePerson,
       },
     };
-    const service = new CompaniesService(stubAfipPadron);
+    const service = new CompaniesService(stubAfipPadron, stubSubscriptionService);
 
     await runInTenant(db, () => service.deletePerson('person-1'));
 

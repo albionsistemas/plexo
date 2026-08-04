@@ -142,9 +142,71 @@ model Tenant {
   taxId     String?
   createdAt DateTime @default(now())
 
-  settings TenantSettings?
+  settings     TenantSettings?
+  subscription TenantSubscription?
 
   @@map("tenants")
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  EXPIRED
+  CANCELLED
+}
+
+// Catálogo global de planes comerciales - a diferencia de CUALQUIER otra
+// tabla de este schema, no tiene tenantId ni RLS: todos los tenants leen el
+// mismo catálogo (ver el bloque RLS de la migración, que deliberadamente NO
+// incluye esta tabla). isActive=false retira un plan de la venta sin
+// borrarlo - una TenantSubscription vieja puede seguir apuntando a él.
+model Plan {
+  id                   String   @id @default(uuid())
+  key                  String   @unique
+  name                 String
+  sortOrder            Int      @default(0)
+  priceMonthly         Decimal  @db.Decimal(14, 2)
+  maxUsers             Int
+  maxClients           Int
+  maxMonthlyInvoices   Int
+  // % de descuento automático cuando TenantSubscription.paymentMethod indica
+  // débito - ver SubscriptionService. Editable por el SuperAdmin sin tocar
+  // código, igual que el resto de los campos de este modelo.
+  debitDiscountPercent Decimal  @default(0) @db.Decimal(5, 2)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  subscriptions TenantSubscription[]
+
+  @@map("plans")
+}
+
+// Una por tenant (mismo patrón 1:1 que TenantSettings) - a diferencia de
+// Plan, SÍ es tenant-scoped y SÍ tiene RLS (ver la migración). "promo*" son
+// 3 campos libres que el SuperAdmin carga a mano por tenant vía
+// /api/admin - deliberadamente no un catálogo de cupones reutilizables con
+// canjes, eso no fue pedido.
+model TenantSubscription {
+  id                   String             @id @default(uuid())
+  tenantId             String             @unique
+  tenant               Tenant             @relation(fields: [tenantId], references: [id])
+  planId               String
+  plan                 Plan               @relation(fields: [planId], references: [id])
+  status               SubscriptionStatus @default(TRIALING)
+  trialEndsAt          DateTime?
+  // Informativo únicamente - no hay pasarela de cobro real integrada
+  // todavía, nada dispara esta fecha automáticamente.
+  currentPeriodEnd     DateTime?
+  paymentMethod        String?
+  promoLabel           String?
+  promoDiscountPercent Decimal?           @db.Decimal(5, 2)
+  promoExpiresAt       DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@map("tenant_subscriptions")
 }
 
 // "homologacion" (sandbox de AFIP) vs "producción" - controla qué WSDL/URL
@@ -261,6 +323,10 @@ model User {
   passwordHash             String
   role                     UserRole @default(VIEWER)
   isExternalAccountant     Boolean  @default(false)
+  // True para un usuario recién invitado (ver UsersService.inviteUser) con
+  // una contraseña temporal - MustChangePasswordGuard bloquea el resto de
+  // la API hasta que pase por /auth/change-password, que lo limpia a false.
+  mustChangePassword       Boolean  @default(false)
   name                     String?
   avatarUrl                String?
   // Opt-in: whether this user's online/offline state is broadcast to

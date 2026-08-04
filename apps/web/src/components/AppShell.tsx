@@ -2,6 +2,7 @@
 
 import { initials, profileApi } from '@/lib/profile';
 import CartButton from './CartButton';
+import TrialBanner from './TrialBanner';
 import { disconnectSocket, getSocket } from '@/lib/socket';
 import { useDensity } from '@/providers/DensityProvider';
 import { useTheme } from '@/providers/ThemeProvider';
@@ -103,6 +104,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [online, setOnline] = useState<PresenceUser[]>([]);
 
+  // Mismo queryKey que UserMenu's propio useQuery - react-query lo dedupe,
+  // no dispara un segundo fetch.
+  const { data: profile } = useQuery({ queryKey: ['profile-me'], queryFn: profileApi.getMe });
+
+  useEffect(() => {
+    if (profile?.mustChangePassword && pathname !== '/profile') {
+      router.replace('/profile');
+    }
+  }, [profile, pathname, router]);
+
   useEffect(() => {
     if (!localStorage.getItem('token')) {
       router.replace('/login');
@@ -162,6 +173,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <UserMenu />
         </div>
       </header>
+      <TrialBanner />
       <main className="p-6">{children}</main>
     </div>
   );
@@ -350,6 +362,14 @@ function UserMenu() {
             className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             Perfil
+          </Link>
+
+          <Link
+            href="/settings/billing"
+            onClick={() => setOpen(false)}
+            className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            Planes y facturación
           </Link>
 
           {/* Tenant-wide business policy, not a personal preference - same

@@ -8,6 +8,7 @@ export interface UserProfile {
   role: string;
   tenantId: string;
   showOnlinePresence: boolean;
+  mustChangePassword: boolean;
   createdAt: string;
 }
 

@@ -1,5 +1,6 @@
 import { Logger, Module } from '@nestjs/common';
 import { AfipCredentialsModule } from '@plexo/afip-credentials';
+import { SubscriptionModule } from '@plexo/subscriptions';
 import { ConsoleEmailSender } from './console-email-sender.js';
 import type { EmailSender } from './email-sender.port.js';
 import { EMAIL_SENDER } from './email-sender.port.js';
@@ -30,7 +31,7 @@ function createEmailSender(): EmailSender {
 }
 
 @Module({
-  imports: [AfipCredentialsModule],
+  imports: [AfipCredentialsModule, SubscriptionModule],
   controllers: [InvoicingController],
   providers: [
     InvoicingService,

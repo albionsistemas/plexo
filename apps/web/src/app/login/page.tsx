@@ -1,11 +1,13 @@
 'use client';
 
 import { api } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 export default function LoginPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [form, setForm] = useState({ tenantId: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -18,6 +20,13 @@ export default function LoginPage() {
       const res = await api.post<{ accessToken: string }>('/auth/login', form);
       localStorage.setItem('token', res.data.accessToken);
       localStorage.setItem('tenantId', form.tenantId);
+      // Sin esto, cualquier query cacheada de una sesión anterior (dentro
+      // de los 30s de staleTime, ver QueryProvider) sigue mostrándose con
+      // datos viejos - por ej. profile-me con mustChangePassword=true
+      // después de que el usuario ya lo cambió, lo que lo rebota de nuevo a
+      // /profile en un loop confuso. Nunca es válido reusar datos entre dos
+      // logins distintos (mismo usuario o no).
+      queryClient.clear();
       router.push('/dashboard');
     } catch {
       setError('Credenciales inválidas');

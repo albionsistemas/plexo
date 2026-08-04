@@ -1,0 +1,40 @@
+import { api } from '@/lib/api';
+
+export type SubscriptionStatus = 'TRIALING' | 'ACTIVE' | 'PAST_DUE' | 'EXPIRED' | 'CANCELLED';
+
+export interface Plan {
+  id: string;
+  key: string;
+  name: string;
+  sortOrder: number;
+  priceMonthly: string;
+  maxUsers: number;
+  maxClients: number;
+  maxMonthlyInvoices: number;
+  debitDiscountPercent: string;
+  isActive: boolean;
+}
+
+export interface TenantSubscription {
+  id: string;
+  tenantId: string;
+  planId: string;
+  plan: Plan;
+  status: SubscriptionStatus;
+  trialEndsAt: string | null;
+  currentPeriodEnd: string | null;
+  paymentMethod: string | null;
+  promoLabel: string | null;
+  promoDiscountPercent: string | null;
+  promoExpiresAt: string | null;
+}
+
+// Público - no requiere sesión (usado en el landing/onboarding además de
+// dentro de la app, ver /settings/billing).
+export const plansApi = {
+  list: () => api.get<Plan[]>('/plans').then((r) => r.data),
+};
+
+export const subscriptionsApi = {
+  getCurrent: () => api.get<TenantSubscription>('/subscriptions/me').then((r) => r.data),
+};

@@ -6,6 +6,7 @@ import {
   type CompanyRoleType,
   type Person,
 } from '@plexo/database';
+import { SubscriptionService } from '@plexo/subscriptions';
 import {
   AFIP_PADRON,
   AfipLookupError,
@@ -33,9 +34,17 @@ export interface PreferredArticleSummary {
 
 @Injectable()
 export class CompaniesService {
-  constructor(@Inject(AFIP_PADRON) private readonly afipPadron: AfipPadronPort) {}
+  constructor(
+    @Inject(AFIP_PADRON) private readonly afipPadron: AfipPadronPort,
+    private readonly subscriptionService: SubscriptionService,
+  ) {}
 
   async createCompany(dto: CreateCompanyDto): Promise<CompanyWithRoles> {
+    // Sólo un alta con rol CUSTOMER cuenta contra el cupo de clientes del
+    // plan - una empresa que es sólo SUPPLIER/BRANCH no es "un cliente".
+    if (dto.roles.includes('CUSTOMER')) {
+      await this.subscriptionService.assertCanAddClient();
+    }
     const tenantId = getTenantId();
     return getTenantDb().company.create({
       data: {

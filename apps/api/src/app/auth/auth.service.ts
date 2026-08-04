@@ -16,6 +16,7 @@ export interface UserProfile {
   role: string;
   tenantId: string;
   showOnlinePresence: boolean;
+  mustChangePassword: boolean;
   createdAt: Date;
 }
 
@@ -75,6 +76,7 @@ export class AuthService {
         canRead: grant.canRead,
         canWrite: grant.canWrite,
       })),
+      mustChangePassword: found.user.mustChangePassword,
     };
 
     return { accessToken: await this.jwtService.signAsync(payload) };
@@ -142,7 +144,10 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.newPassword, 10);
-    await getTenantDb().user.update({ where: { id: userId }, data: { passwordHash } });
+    await getTenantDb().user.update({
+      where: { id: userId },
+      data: { passwordHash, mustChangePassword: false },
+    });
   }
 }
 
@@ -155,6 +160,7 @@ function toProfile(user: User): UserProfile {
     role: user.role,
     tenantId: user.tenantId,
     showOnlinePresence: user.showOnlinePresence,
+    mustChangePassword: user.mustChangePassword,
     createdAt: user.createdAt,
   };
 }

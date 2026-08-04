@@ -1,7 +1,7 @@
 import { UnauthorizedException } from '@nestjs/common';
 import type { JwtService } from '@nestjs/jwt';
 import type { ActivityLogService } from '@plexo/activity-log';
-import type { PrismaService } from '@plexo/database';
+import { tenantContextStorage, type PrismaService } from '@plexo/database';
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service.js';
 import type { LoginDto } from './dto/login.dto.js';
@@ -55,7 +55,7 @@ describe('AuthService', () => {
     const jwt = makeJwt();
     const service = new AuthService(
       makePrisma(
-        { id: 'user-1', email: dto.email, role: 'OWNER', passwordHash },
+        { id: 'user-1', email: dto.email, role: 'OWNER', passwordHash, mustChangePassword: false },
         [{ module: 'accounting', canRead: true, canWrite: false }],
       ),
       jwt,
@@ -71,6 +71,46 @@ describe('AuthService', () => {
       email: dto.email,
       role: 'OWNER',
       moduleAccess: [{ module: 'accounting', canRead: true, canWrite: false }],
+      mustChangePassword: false,
+    });
+  });
+
+  it('carries mustChangePassword through to the JWT payload for an invited user', async () => {
+    const passwordHash = await bcrypt.hash(dto.password, 4);
+    const jwt = makeJwt();
+    const service = new AuthService(
+      makePrisma({ id: 'user-1', email: dto.email, role: 'VIEWER', passwordHash, mustChangePassword: true }),
+      jwt,
+      makeActivityLogService(),
+    );
+
+    await service.login(dto, '127.0.0.1');
+
+    expect(jwt.signAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ mustChangePassword: true }),
+    );
+  });
+
+  describe('changePassword', () => {
+    function makeTenantScopedPrisma(user: unknown) {
+      return {
+        user: { findUnique: jest.fn().mockResolvedValue(user), update: jest.fn().mockResolvedValue({}) },
+      };
+    }
+
+    it('clears mustChangePassword once the password is successfully changed', async () => {
+      const passwordHash = await bcrypt.hash('old-password', 4);
+      const db = makeTenantScopedPrisma({ id: 'user-1', passwordHash, mustChangePassword: true });
+      const service = new AuthService({} as PrismaService, makeJwt(), makeActivityLogService());
+
+      await tenantContextStorage.run({ tenantId: 'tenant-1', tx: db as never }, () =>
+        service.changePassword('user-1', { currentPassword: 'old-password', newPassword: 'new-password-1' }),
+      );
+
+      expect(db.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { passwordHash: expect.any(String), mustChangePassword: false },
+      });
     });
   });
 });
