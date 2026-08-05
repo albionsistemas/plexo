@@ -70,6 +70,9 @@ describe('ReportsPnlService.getRevenueSummary', () => {
           _count: 5,
         }),
       },
+      creditNote: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { subtotal: null, taxTotal: null, total: null } }),
+      },
     };
     const service = new ReportsPnlService();
 
@@ -91,6 +94,9 @@ describe('ReportsPnlService.getRevenueSummary', () => {
           .fn()
           .mockResolvedValue({ _sum: { subtotal: null, taxTotal: null, total: null }, _count: 0 }),
       },
+      creditNote: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { subtotal: null, taxTotal: null, total: null } }),
+      },
     };
     const service = new ReportsPnlService();
 
@@ -98,5 +104,37 @@ describe('ReportsPnlService.getRevenueSummary', () => {
 
     expect(summary.total.toNumber()).toBe(0);
     expect(summary.invoiceCount).toBe(0);
+  });
+
+  it('nets out credit notes issued in the same range, without reducing invoiceCount', async () => {
+    const db = {
+      invoice: {
+        aggregate: jest.fn().mockResolvedValue({
+          _sum: {
+            subtotal: new Prisma.Decimal(1000),
+            taxTotal: new Prisma.Decimal(210),
+            total: new Prisma.Decimal(1210),
+          },
+          _count: 5,
+        }),
+      },
+      creditNote: {
+        aggregate: jest.fn().mockResolvedValue({
+          _sum: {
+            subtotal: new Prisma.Decimal(200),
+            taxTotal: new Prisma.Decimal(42),
+            total: new Prisma.Decimal(242),
+          },
+        }),
+      },
+    };
+    const service = new ReportsPnlService();
+
+    const summary = await runInTenant(db, () => service.getRevenueSummary());
+
+    expect(summary.invoiceCount).toBe(5);
+    expect(summary.subtotal.toNumber()).toBe(800);
+    expect(summary.taxTotal.toNumber()).toBe(168);
+    expect(summary.total.toNumber()).toBe(968);
   });
 });

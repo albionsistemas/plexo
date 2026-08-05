@@ -175,6 +175,7 @@ describe('PurchaseInvoiceService.create', () => {
 describe('PurchaseInvoiceService.recordPayment', () => {
   it('rejects when the payment amount exceeds the balance due', async () => {
     const db = {
+      $queryRaw: jest.fn().mockResolvedValue(undefined),
       purchaseInvoice: { findUnique: jest.fn().mockResolvedValue({ id: 'pinv-1', balanceDue: new Prisma.Decimal(100) }) },
     };
     const service = new PurchaseInvoiceService();
@@ -184,8 +185,25 @@ describe('PurchaseInvoiceService.recordPayment', () => {
     ).rejects.toThrow('exceeds the invoice balance due');
   });
 
+  it('locks the invoice row before reading its balance, same recipe as the other read-check-write flows', async () => {
+    const db = {
+      $queryRaw: jest.fn().mockResolvedValue(undefined),
+      purchaseInvoice: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'pinv-1', balanceDue: new Prisma.Decimal(100) }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      supplierPayment: { create: jest.fn().mockResolvedValue({ id: 'pay-1', amount: new Prisma.Decimal(100) }) },
+    };
+    const service = new PurchaseInvoiceService();
+
+    await runAsUser(db, () => service.recordPayment('pinv-1', { amount: 100, method: 'Efectivo' }));
+
+    expect(db.$queryRaw).toHaveBeenCalled();
+  });
+
   it('marks the invoice PAID when the payment covers the full balance', async () => {
     const db = {
+      $queryRaw: jest.fn().mockResolvedValue(undefined),
       purchaseInvoice: {
         findUnique: jest.fn().mockResolvedValue({ id: 'pinv-1', balanceDue: new Prisma.Decimal(100) }),
         update: jest.fn().mockResolvedValue({}),
@@ -203,6 +221,7 @@ describe('PurchaseInvoiceService.recordPayment', () => {
 
   it('marks the invoice PARTIALLY_PAID when the payment is partial', async () => {
     const db = {
+      $queryRaw: jest.fn().mockResolvedValue(undefined),
       purchaseInvoice: {
         findUnique: jest.fn().mockResolvedValue({ id: 'pinv-1', balanceDue: new Prisma.Decimal(100) }),
         update: jest.fn().mockResolvedValue({}),
@@ -220,6 +239,7 @@ describe('PurchaseInvoiceService.recordPayment', () => {
 
   it('rejects when cash + withheld together exceed the balance due, even if cash alone would fit', async () => {
     const db = {
+      $queryRaw: jest.fn().mockResolvedValue(undefined),
       purchaseInvoice: { findUnique: jest.fn().mockResolvedValue({ id: 'pinv-1', balanceDue: new Prisma.Decimal(100) }) },
     };
     const service = new PurchaseInvoiceService();
@@ -237,6 +257,7 @@ describe('PurchaseInvoiceService.recordPayment', () => {
 
   it('reduces balanceDue by cash + withheld together and persists the withholding snapshot', async () => {
     const db = {
+      $queryRaw: jest.fn().mockResolvedValue(undefined),
       purchaseInvoice: {
         findUnique: jest.fn().mockResolvedValue({ id: 'pinv-1', balanceDue: new Prisma.Decimal(100) }),
         update: jest.fn().mockResolvedValue({}),

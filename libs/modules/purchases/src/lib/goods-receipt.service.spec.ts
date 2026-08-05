@@ -149,6 +149,29 @@ describe('GoodsReceiptService.create', () => {
     ).rejects.toThrow('Only a SENT purchase order');
   });
 
+  it('rejects two lines in the SAME request for the same purchaseOrderLineId that together exceed what is pending', async () => {
+    const db = makeDb();
+    const service = new GoodsReceiptService();
+
+    await expect(
+      runAsUser(db, () =>
+        service.create({
+          purchaseOrderId: 'po-1',
+          warehouseId: 'warehouse-1',
+          // 200 ordered, nothing received yet - each individual line (150)
+          // is under the cap, but together they're 300, over it. Both used
+          // to read the same stale "already received" snapshot and pass
+          // independently.
+          lines: [
+            { purchaseOrderLineId: 'line-1', quantity: 150 },
+            { purchaseOrderLineId: 'line-1', quantity: 150 },
+          ],
+        }),
+      ),
+    ).rejects.toThrow('only 50 left to receive');
+    expect(db.goodsReceipt.create).not.toHaveBeenCalled();
+  });
+
   it('rejects a line that does not belong to the referenced order', async () => {
     const db = makeDb();
     const service = new GoodsReceiptService();

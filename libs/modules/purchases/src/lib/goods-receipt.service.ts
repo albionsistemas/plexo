@@ -87,6 +87,14 @@ export class GoodsReceiptService {
 
     const poLinesById = new Map(purchaseOrder.lines.map((l) => [l.id, l]));
     const alreadyReceivedByLine = await getReceivedQuantitiesByLine(dto.lines.map((l) => l.purchaseOrderLineId));
+    // Mutable running total, seeded from the DB snapshot above - updated as
+    // each requested line is accepted below, so two lines in THIS SAME
+    // request against the same purchaseOrderLineId are checked
+    // cumulatively instead of both reading the same stale snapshot (which
+    // let a single request receive more than what was ordered, no
+    // concurrency needed - the FOR UPDATE lock above only serializes
+    // against OTHER requests, not duplicate entries within this one).
+    const runningReceived = new Map(alreadyReceivedByLine);
 
     const linesToCreate: { purchaseOrderLineId: string; quantity: Prisma.Decimal }[] = [];
     for (const requested of dto.lines) {
@@ -97,12 +105,14 @@ export class GoodsReceiptService {
         );
       }
       const quantity = new Prisma.Decimal(requested.quantity);
-      const priorlyReceived = alreadyReceivedByLine.get(poLine.id) ?? new Prisma.Decimal(0);
-      if (priorlyReceived.add(quantity).gt(poLine.quantity)) {
+      const priorlyReceived = runningReceived.get(poLine.id) ?? new Prisma.Decimal(0);
+      const totalReceived = priorlyReceived.add(quantity);
+      if (totalReceived.gt(poLine.quantity)) {
         throw new BadRequestException(
           `Cannot receive ${quantity.toString()} of line ${poLine.id}: only ${poLine.quantity.sub(priorlyReceived).toString()} left to receive`,
         );
       }
+      runningReceived.set(poLine.id, totalReceived);
       linesToCreate.push({ purchaseOrderLineId: poLine.id, quantity });
     }
 

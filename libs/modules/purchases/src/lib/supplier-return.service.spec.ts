@@ -109,6 +109,27 @@ describe('SupplierReturnService.create', () => {
     expect(db.supplierReturn.create).not.toHaveBeenCalled();
   });
 
+  it('rejects two lines in the SAME request for the same goodsReceiptLineId that together exceed what was received', async () => {
+    const db = makeDb();
+    const service = new SupplierReturnService();
+
+    await expect(
+      runAsUser(db, () =>
+        service.create({
+          goodsReceiptId: 'receipt-1',
+          reason: 'defectuoso',
+          // 200 received, nothing returned yet - each individual line (150)
+          // is under the cap, but together they're 300, over it.
+          lines: [
+            { goodsReceiptLineId: 'receipt-line-1', quantity: 150 },
+            { goodsReceiptLineId: 'receipt-line-1', quantity: 150 },
+          ],
+        }),
+      ),
+    ).rejects.toThrow('only 50 available to return');
+    expect(db.supplierReturn.create).not.toHaveBeenCalled();
+  });
+
   it('rejects a line that does not belong to the referenced receipt', async () => {
     const db = makeDb();
     const service = new SupplierReturnService();

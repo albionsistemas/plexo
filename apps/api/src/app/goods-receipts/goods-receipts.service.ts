@@ -48,6 +48,9 @@ export class GoodsReceiptsService {
     await this.accountingService.postGoodsReceiptAccrual({
       goodsReceiptId: receipt.id,
       amount: accrualAmount,
+      // The remito's own date, not "now" - same reasoning as
+      // PurchaseInvoicesService.createInvoice's supplierInvoiceDate.
+      date: receipt.receivedAt,
     });
     return receipt;
   }

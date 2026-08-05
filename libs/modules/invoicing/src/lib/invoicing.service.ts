@@ -202,6 +202,18 @@ export class InvoicingService {
         discountType === 'PERCENTAGE'
           ? grossAmount.mul(discountValue).div(100)
           : discountValue;
+      // A PERCENTAGE over 100 or an AMOUNT bigger than the line itself would
+      // drive netAmount negative - the DTO's @Min(0) on discountValue can't
+      // catch this alone (AMOUNT has no fixed upper bound, it depends on
+      // grossAmount, only known here). Left unchecked, a negative netAmount
+      // flows into `subtotal` below and corrupts the global-discount/tax
+      // share (line ~234) for every OTHER line on the same invoice, not
+      // just this one.
+      if (discountAmount.gt(grossAmount)) {
+        throw new BadRequestException(
+          `El descuento de la línea ${variant.id} (${discountAmount.toFixed(2)}) no puede superar el monto de la línea (${grossAmount.toFixed(2)})`,
+        );
+      }
       const netAmount = grossAmount.sub(discountAmount);
       const { rate: taxRate, kind: taxKind } = this.resolveLineTax(variant.article.taxDefinition);
 

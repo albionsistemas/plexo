@@ -190,6 +190,12 @@ export class PurchaseInvoiceService {
     const tenantId = getTenantId();
     const recordedByUserId = requireUserId();
 
+    // Lock first, so two concurrent payments against the same invoice
+    // serialize instead of both reading the same stale balanceDue below and
+    // overpaying it - same recipe as GoodsReceiptService.create/
+    // SupplierReturnService.create/InvoicingService.createCreditNote.
+    await db.$queryRaw`SELECT id FROM purchase_invoices WHERE id = ${invoiceId} FOR UPDATE`;
+
     const invoice = await db.purchaseInvoice.findUnique({ where: { id: invoiceId } });
     if (!invoice) {
       throw new NotFoundException('Purchase invoice not found');

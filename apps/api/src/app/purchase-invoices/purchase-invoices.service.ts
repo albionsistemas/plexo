@@ -60,6 +60,10 @@ export class PurchaseInvoicesService {
       ivaCredito,
       percepciones,
       total: invoice.total,
+      // The supplier's own invoice date, not "now" - a paper invoice dated
+      // last month entered today must land in last month's P&L, same
+      // criterion SalesService already applies via invoice.issueDate.
+      date: invoice.supplierInvoiceDate,
     });
 
     return invoice;
@@ -71,6 +75,9 @@ export class PurchaseInvoicesService {
       supplierPaymentId: payment.id,
       amount: payment.amount,
       withholdings: payment.withholdings.map((w) => ({ taxType: w.taxType, amount: w.amount })),
+      // The date the payment was actually made, not "now" - same reasoning
+      // as createInvoice's supplierInvoiceDate above.
+      date: payment.paidAt,
     });
     return payment;
   }

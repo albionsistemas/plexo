@@ -17,6 +17,7 @@ function makeReceipt(overrides: Record<string, unknown> = {}) {
     id: 'receipt-1',
     purchaseOrderId: 'po-1',
     warehouseId: 'warehouse-1',
+    receivedAt: new Date('2026-07-15'),
     lines: [
       {
         id: 'receipt-line-1',
@@ -76,6 +77,9 @@ describe('GoodsReceiptsService.createReceipt', () => {
     const accrualArg = (accountingService.postGoodsReceiptAccrual as jest.Mock).mock.calls[0][0];
     expect(accrualArg.goodsReceiptId).toBe('receipt-1');
     expect((accrualArg.amount as Prisma.Decimal).toNumber()).toBe(18150);
+    // The remito's own date, not "now" - a receipt logged today for goods
+    // that arrived last week must land in last week's P&L.
+    expect(accrualArg.date).toEqual(new Date('2026-07-15'));
     expect(result).toBe(receipt);
   });
 

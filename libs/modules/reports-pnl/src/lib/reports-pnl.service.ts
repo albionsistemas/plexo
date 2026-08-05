@@ -121,19 +121,34 @@ export class ReportsPnlService {
    */
   async getRevenueSummary(from?: Date, to?: Date): Promise<RevenueSummary> {
     const range = defaultRange(from, to);
-    const result = await getTenantDb().invoice.aggregate({
+    const db = getTenantDb();
+    const result = await db.invoice.aggregate({
       where: { issueDate: { gte: range.from, lte: range.to }, status: { not: 'CANCELLED' } },
       _sum: { subtotal: true, taxTotal: true, total: true },
       _count: true,
+    });
+
+    // Netted against credit notes issued in the same range - same criterion
+    // as ReportsSalesService.getSalesByCustomer/getSalesByProduct (see their
+    // comments): without this, a fully-credited invoice still counts as
+    // full revenue here while "Estado de resultados (libro mayor)" right
+    // below it on the same Resultados tab (getIncomeStatement, GL-backed -
+    // the reversing entry on the credit note's own date already nets it)
+    // correctly shows it as zero, so the two figures visibly disagree.
+    // invoiceCount is deliberately NOT reduced - a credited invoice is
+    // still one real invoice that was issued.
+    const creditedTotals = await db.creditNote.aggregate({
+      where: { issueDate: { gte: range.from, lte: range.to } },
+      _sum: { subtotal: true, taxTotal: true, total: true },
     });
 
     return {
       from: range.from,
       to: range.to,
       invoiceCount: result._count,
-      subtotal: result._sum.subtotal ?? new Prisma.Decimal(0),
-      taxTotal: result._sum.taxTotal ?? new Prisma.Decimal(0),
-      total: result._sum.total ?? new Prisma.Decimal(0),
+      subtotal: (result._sum.subtotal ?? new Prisma.Decimal(0)).sub(creditedTotals._sum.subtotal ?? 0),
+      taxTotal: (result._sum.taxTotal ?? new Prisma.Decimal(0)).sub(creditedTotals._sum.taxTotal ?? 0),
+      total: (result._sum.total ?? new Prisma.Decimal(0)).sub(creditedTotals._sum.total ?? 0),
     };
   }
 }

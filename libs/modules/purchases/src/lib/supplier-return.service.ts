@@ -72,6 +72,11 @@ export class SupplierReturnService {
     const alreadyReturnedByLine = await getReturnedQuantitiesByGoodsReceiptLine(
       dto.lines.map((l) => l.goodsReceiptLineId),
     );
+    // Mutable running total, seeded from the DB snapshot above - same fix
+    // as GoodsReceiptService.create: without this, two lines in the SAME
+    // request against the same goodsReceiptLineId both read the same stale
+    // snapshot and can jointly return more than was ever received.
+    const runningReturned = new Map(alreadyReturnedByLine);
 
     const linesToCreate: { goodsReceiptLineId: string; quantity: Prisma.Decimal }[] = [];
     for (const requested of dto.lines) {
@@ -82,12 +87,14 @@ export class SupplierReturnService {
         );
       }
       const quantity = new Prisma.Decimal(requested.quantity);
-      const priorlyReturned = alreadyReturnedByLine.get(receiptLine.id) ?? new Prisma.Decimal(0);
-      if (priorlyReturned.add(quantity).gt(receiptLine.quantity)) {
+      const priorlyReturned = runningReturned.get(receiptLine.id) ?? new Prisma.Decimal(0);
+      const totalReturned = priorlyReturned.add(quantity);
+      if (totalReturned.gt(receiptLine.quantity)) {
         throw new BadRequestException(
           `Cannot return ${quantity.toString()} of line ${receiptLine.id}: only ${receiptLine.quantity.sub(priorlyReturned).toString()} available to return`,
         );
       }
+      runningReturned.set(receiptLine.id, totalReturned);
       linesToCreate.push({ goodsReceiptLineId: receiptLine.id, quantity });
     }
 

@@ -136,6 +136,52 @@ describe('InvoicingService.createInvoice', () => {
     );
   });
 
+  it('rejects a PERCENTAGE line discount over 100 instead of letting netAmount go negative', async () => {
+    const db = {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', active: true, email: null, roles: [{ role: 'CUSTOMER' }] }),
+      },
+      currency: { findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', isBase: true }) },
+      articleVariant: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'variant-1',
+          unitPrice: new Prisma.Decimal(100),
+          article: { taxDefinition: null },
+        }),
+      },
+    };
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter(), makeSubscriptionService());
+    const dto = {
+      ...baseDto,
+      lines: [{ articleVariantId: 'variant-1', quantity: 1, discountType: 'PERCENTAGE' as const, discountValue: 150 }],
+    };
+
+    await expect(runInTenant(db, () => service.createInvoice(dto))).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects an AMOUNT line discount larger than the line itself', async () => {
+    const db = {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', active: true, email: null, roles: [{ role: 'CUSTOMER' }] }),
+      },
+      currency: { findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', isBase: true }) },
+      articleVariant: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'variant-1',
+          unitPrice: new Prisma.Decimal(100),
+          article: { taxDefinition: null },
+        }),
+      },
+    };
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter(), makeSubscriptionService());
+    const dto = {
+      ...baseDto,
+      lines: [{ articleVariantId: 'variant-1', quantity: 1, discountType: 'AMOUNT' as const, discountValue: 500 }],
+    };
+
+    await expect(runInTenant(db, () => service.createInvoice(dto))).rejects.toThrow(BadRequestException);
+  });
+
   it('runs the strict calculation chain: convert->line discount->subtotal->global discount->tax, distributed proportionally across lines with different rates', async () => {
     const emailSender = makeEmailSender();
     const electronicInvoicing = makeElectronicInvoicing();
