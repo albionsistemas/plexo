@@ -4,36 +4,26 @@ import { adminErrorsApi, adminTenantsApi, type SystemErrorLog } from '@/lib/admi
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
-const SEVERITY_OPTIONS = [
-  { label: 'Todos', value: '' },
-  { label: '5xx (errores de servidor)', value: '500' },
-  { label: '4xx (errores de cliente)', value: '400' },
-];
-
 export default function AdminErrorsPage() {
   const [tenantId, setTenantId] = useState('');
-  const [statusCodeMin, setStatusCodeMin] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
 
   const { data: tenants } = useQuery({ queryKey: ['admin-tenants'], queryFn: adminTenantsApi.list });
+  // No hay filtro de severidad: GlobalExceptionFilter sólo persiste acá
+  // status >= 500 (ver ese archivo) - un 4xx nunca llega a esta tabla, así
+  // que un selector "4xx/5xx" sería un filtro que siempre está vacío o
+  // siempre da lo mismo que "Todos".
   const { data: errors, isLoading } = useQuery({
-    queryKey: ['admin-errors', tenantId, statusCodeMin, from, to],
+    queryKey: ['admin-errors', tenantId, from, to],
     queryFn: () =>
       adminErrorsApi.list({
         limit: 200,
         tenantId: tenantId || undefined,
-        statusCodeMin: statusCodeMin ? Number(statusCodeMin) : undefined,
         from: from || undefined,
         to: to || undefined,
       }),
   });
-
-  // "4xx" necesita además un tope superior (statusCodeMin sólo filtra "gte")
-  // - se aplica del lado del cliente sobre la página ya traída, en vez de
-  // sumar un statusCodeMax al backend sólo para este único caso de uso.
-  const filteredErrors =
-    statusCodeMin === '400' ? errors?.filter((e) => e.statusCode < 500) : errors;
 
   return (
     <div className="flex flex-col gap-6">
@@ -51,20 +41,6 @@ export default function AdminErrorsPage() {
             {tenants?.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] text-slate-500">Severidad</span>
-          <select
-            value={statusCodeMin}
-            onChange={(e) => setStatusCodeMin(e.target.value)}
-            className="rounded border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-slate-100"
-          >
-            {SEVERITY_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
               </option>
             ))}
           </select>
@@ -92,7 +68,7 @@ export default function AdminErrorsPage() {
       <div className="rounded-xl border border-slate-800 bg-slate-900">
         {isLoading ? (
           <p className="p-6 text-sm text-slate-500">Cargando errores...</p>
-        ) : !filteredErrors || filteredErrors.length === 0 ? (
+        ) : !errors || errors.length === 0 ? (
           <p className="p-6 text-sm text-slate-500">Sin errores para este filtro.</p>
         ) : (
           <div className="overflow-x-auto">
@@ -107,7 +83,7 @@ export default function AdminErrorsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredErrors.map((err) => (
+                {errors.map((err) => (
                   <ErrorRow key={err.id} error={err} />
                 ))}
               </tbody>

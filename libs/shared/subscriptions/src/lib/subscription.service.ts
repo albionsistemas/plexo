@@ -125,9 +125,14 @@ export class SubscriptionService {
     }
   }
 
+  /** Allowlist, not a blocklist for EXPIRED alone: CANCELLED has no write
+   * path today (only reachable by hand in the DB, see SubscriptionsSchedulerService's
+   * docstring), but a billing gate should fail closed for any status that
+   * isn't actually "can use the product", not just the one case that
+   * happens to be reachable right now. */
   private async assertSubscriptionActive() {
     const subscription = await this.getCurrentForTenant();
-    if (subscription.status === 'EXPIRED') {
+    if (subscription.status === 'EXPIRED' || subscription.status === 'CANCELLED') {
       throw new ForbiddenException(
         'Tu período de prueba venció - actualizá tu plan para seguir usando Plexo',
       );

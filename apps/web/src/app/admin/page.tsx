@@ -3,9 +3,19 @@
 import { adminErrorsApi, adminTenantsApi, type TenantStatus, type TenantSummary } from '@/lib/admin';
 import { startImpersonation } from '@/lib/impersonation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { AxiosError } from 'axios';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+
+// Same extraction as CompanyFormModal/LoginPage - without this, a failed
+// suspend/reactivate/impersonate silently reset the row back to its normal
+// buttons with zero indication anything went wrong.
+function extractErrorMessage(err: unknown, fallback: string): string {
+  const message = (err as AxiosError<{ message?: string | string[] }> | undefined)?.response?.data?.message;
+  if (!message) return fallback;
+  return Array.isArray(message) ? message.join(', ') : message;
+}
 
 const STATUS_LABELS: Record<TenantStatus, string> = { ACTIVE: 'Activo', SUSPENDED: 'Suspendido' };
 const STATUS_COLORS: Record<TenantStatus, string> = {
@@ -161,6 +171,11 @@ function TenantRow({ tenant }: { tenant: TenantSummary }) {
             >
               Volver
             </button>
+            {statusMutation.isError && (
+              <span className="text-xs text-red-400">
+                {extractErrorMessage(statusMutation.error, 'No se pudo aplicar el cambio')}
+              </span>
+            )}
           </div>
         ) : impersonating ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -198,6 +213,11 @@ function TenantRow({ tenant }: { tenant: TenantSummary }) {
             >
               Volver
             </button>
+            {impersonateMutation.isError && (
+              <span className="text-xs text-red-400">
+                {extractErrorMessage(impersonateMutation.error, 'No se pudo impersonar a este usuario')}
+              </span>
+            )}
           </div>
         ) : (
           <div className="flex items-center gap-2">

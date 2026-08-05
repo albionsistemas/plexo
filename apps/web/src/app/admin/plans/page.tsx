@@ -2,7 +2,18 @@
 
 import { adminPlansApi, type AdminPlan, type CreatePlanInput, type UpdatePlanInput } from '@/lib/admin';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { AxiosError } from 'axios';
 import { useState } from 'react';
+
+// Same extraction as CompanyFormModal/LoginPage: surface the backend's own
+// validation message (e.g. "maxUsers must not be less than 0", "Ya existe
+// un plan con key...") instead of a fixed guess that's wrong whenever the
+// real cause isn't a duplicate key.
+function extractErrorMessage(err: unknown, fallback: string): string {
+  const message = (err as AxiosError<{ message?: string | string[] }> | undefined)?.response?.data?.message;
+  if (!message) return fallback;
+  return Array.isArray(message) ? message.join(', ') : message;
+}
 
 const EMPTY_FORM: CreatePlanInput = {
   key: '',
@@ -58,7 +69,7 @@ export default function AdminPlansPage() {
           initial={EMPTY_FORM}
           showKey
           saving={createMutation.isPending}
-          error={createMutation.isError ? 'No se pudo crear el plan (¿key repetida?)' : null}
+          error={createMutation.isError ? extractErrorMessage(createMutation.error, 'No se pudo crear el plan') : null}
           onCancel={() => setCreating(false)}
           onSave={(dto) => createMutation.mutate(dto as CreatePlanInput)}
         />
@@ -95,7 +106,11 @@ export default function AdminPlansPage() {
                           <PlanForm
                             initial={plan}
                             saving={updateMutation.isPending}
-                            error={updateMutation.isError ? 'No se pudo guardar el cambio' : null}
+                            error={
+                              updateMutation.isError
+                                ? extractErrorMessage(updateMutation.error, 'No se pudo guardar el cambio')
+                                : null
+                            }
                             onCancel={() => setEditingId(null)}
                             onSave={(dto) => updateMutation.mutate({ id: plan.id, dto })}
                           />

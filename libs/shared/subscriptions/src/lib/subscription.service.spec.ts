@@ -114,6 +114,18 @@ describe('SubscriptionService quota checks', () => {
     );
     expect(count).not.toHaveBeenCalled();
   });
+
+  it('rejects when the subscription is CANCELLED too, even though nothing sets that status yet', async () => {
+    const findUniqueOrThrow = jest.fn().mockResolvedValue(makeActiveSubscription({ status: 'CANCELLED' }));
+    const count = jest.fn();
+    const db = { tenantSubscription: { findUniqueOrThrow }, user: { count } };
+    const service = new SubscriptionService({} as PrismaService);
+
+    await expect(runInTenant(db, () => service.assertCanAddUser())).rejects.toThrow(
+      /período de prueba venció/,
+    );
+    expect(count).not.toHaveBeenCalled();
+  });
 });
 
 describe('SubscriptionService plan catalog (global, no tenant context)', () => {
