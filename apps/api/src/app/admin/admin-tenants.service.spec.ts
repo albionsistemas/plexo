@@ -1,5 +1,6 @@
 import type { PrismaService } from '@plexo/database';
 import type { SubscriptionService } from '@plexo/subscriptions';
+import type { AuthService } from '../auth/auth.service.js';
 import { AdminTenantsService } from './admin-tenants.service.js';
 
 function makePrisma() {
@@ -14,11 +15,15 @@ function makePrisma() {
   return { prisma, fakeTx };
 }
 
+function makeAuthService() {
+  return { impersonate: jest.fn() } as unknown as AuthService;
+}
+
 describe('AdminTenantsService.createTenant', () => {
   it('creates the tenant and its first OWNER user with a temporary password that must be changed', async () => {
     const { prisma, fakeTx } = makePrisma();
     const subscriptionService = { startTrial: jest.fn().mockResolvedValue({}) } as unknown as SubscriptionService;
-    const service = new AdminTenantsService(prisma, subscriptionService);
+    const service = new AdminTenantsService(prisma, subscriptionService, makeAuthService());
 
     const result = await service.createTenant({
       name: 'Nueva Empresa SA',
@@ -61,10 +66,131 @@ describe('AdminTenantsService.createTenant', () => {
         return Promise.resolve({});
       }),
     } as unknown as SubscriptionService;
-    const service = new AdminTenantsService(prisma, subscriptionService);
+    const service = new AdminTenantsService(prisma, subscriptionService, makeAuthService());
 
     await service.createTenant({ name: 'Acme', ownerEmail: 'o@acme.com', planKey: 'GOLD' });
 
     expect(callOrder).toEqual(['tenant', 'user', 'trial']);
+  });
+});
+
+describe('AdminTenantsService.listTenants', () => {
+  function makeListPrisma(tenantIds: string[]) {
+    const fakeTx = {
+      tenant: { findUniqueOrThrow: jest.fn() },
+      user: { count: jest.fn().mockResolvedValue(3) },
+      invoice: { count: jest.fn().mockResolvedValue(7) },
+      tenantSubscription: { findUnique: jest.fn().mockResolvedValue(null) },
+      $executeRaw: jest.fn().mockResolvedValue(undefined),
+    };
+    const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue(tenantIds.map((id) => ({ id }))),
+      $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(fakeTx)),
+    } as unknown as PrismaService;
+    return { prisma, fakeTx };
+  }
+
+  it('returns one summary per tenant with usage metrics', async () => {
+    const { prisma, fakeTx } = makeListPrisma(['tenant-1']);
+    fakeTx.tenant.findUniqueOrThrow.mockResolvedValue({
+      id: 'tenant-1',
+      name: 'Acme',
+      status: 'ACTIVE',
+      createdAt: new Date('2026-01-01'),
+    });
+    const service = new AdminTenantsService(
+      prisma,
+      {} as unknown as SubscriptionService,
+      makeAuthService(),
+    );
+
+    const result = await service.listTenants();
+
+    expect(result).toEqual([
+      {
+        id: 'tenant-1',
+        name: 'Acme',
+        status: 'ACTIVE',
+        createdAt: new Date('2026-01-01'),
+        activeUsers: 3,
+        invoicesThisMonth: 7,
+        planKey: null,
+        subscriptionStatus: null,
+      },
+    ]);
+  });
+
+  it('skips a tenant that fails to load instead of aborting the whole list', async () => {
+    const { prisma, fakeTx } = makeListPrisma(['tenant-1', 'tenant-2']);
+    fakeTx.tenant.findUniqueOrThrow
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ id: 'tenant-2', name: 'Beta', status: 'ACTIVE', createdAt: new Date() });
+    const service = new AdminTenantsService(
+      prisma,
+      {} as unknown as SubscriptionService,
+      makeAuthService(),
+    );
+
+    const result = await service.listTenants();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('tenant-2');
+  });
+});
+
+describe('AdminTenantsService.listTenantUsers', () => {
+  it('returns the tenant users ordered by email, scoped to that tenant context', async () => {
+    const { prisma, fakeTx } = makePrisma();
+    (fakeTx as unknown as { user: { findMany: unknown } }).user.findMany = jest.fn().mockResolvedValue([
+      { id: 'user-1', email: 'a@acme.com', name: 'A', role: 'OWNER' },
+    ]);
+    const service = new AdminTenantsService(
+      prisma,
+      {} as unknown as SubscriptionService,
+      makeAuthService(),
+    );
+
+    const result = await service.listTenantUsers('tenant-1');
+
+    expect(result).toEqual([{ id: 'user-1', email: 'a@acme.com', name: 'A', role: 'OWNER' }]);
+    expect(
+      (fakeTx as unknown as { user: { findMany: jest.Mock } }).user.findMany,
+    ).toHaveBeenCalledWith({
+      select: { id: true, email: true, name: true, role: true },
+      orderBy: { email: 'asc' },
+    });
+  });
+});
+
+describe('AdminTenantsService.updateTenantStatus', () => {
+  it('updates the tenant status inside its own tenant context', async () => {
+    const { prisma, fakeTx } = makePrisma();
+    const tenantUpdate = jest.fn().mockResolvedValue({});
+    (fakeTx as unknown as { tenant: { update: unknown } }).tenant.update = tenantUpdate;
+    const service = new AdminTenantsService(
+      prisma,
+      {} as unknown as SubscriptionService,
+      makeAuthService(),
+    );
+
+    await service.updateTenantStatus('tenant-1', 'SUSPENDED');
+
+    expect(tenantUpdate).toHaveBeenCalledWith({ where: { id: 'tenant-1' }, data: { status: 'SUSPENDED' } });
+  });
+});
+
+describe('AdminTenantsService.impersonate', () => {
+  it('delegates to AuthService.impersonate with the admin identity', () => {
+    const authService = makeAuthService();
+    const service = new AdminTenantsService(
+      {} as unknown as PrismaService,
+      {} as unknown as SubscriptionService,
+      authService,
+    );
+    const admin = { id: 'admin-1', email: 'super@plexo.test' };
+
+    service.impersonate('tenant-1', 'user-2', admin);
+
+    expect(authService.impersonate).toHaveBeenCalledWith('tenant-1', 'user-2', admin);
   });
 });

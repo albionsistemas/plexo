@@ -27,4 +27,9 @@ export interface AuthenticatedUser {
   // UsersService.inviteUser) who hasn't changed it yet - MustChangePasswordGuard
   // blocks everything except the routes marked @AllowWhenPasswordChangeRequired().
   mustChangePassword: boolean;
+  // Only present on a short-lived impersonation token (see
+  // AuthService.impersonate) - purely informational, no guard reads this.
+  // The frontend uses it to know whose identity is "really" behind the
+  // active session (see ImpersonationBanner).
+  impersonatedBy?: { id: string; email: string };
 }

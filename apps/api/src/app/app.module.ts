@@ -32,6 +32,7 @@ import { PurchaseInvoicesModule } from './purchase-invoices/purchase-invoices.mo
 import { SalesModule } from './sales/sales.module.js';
 import { SchedulerModule } from './scheduler/scheduler.module.js';
 import { SupplierReturnsModule } from './supplier-returns/supplier-returns.module.js';
+import { SystemModule } from './system/system.module.js';
 import { UsersModule } from './users/users.module.js';
 
 @Module({
@@ -65,6 +66,7 @@ import { UsersModule } from './users/users.module.js';
     PurchaseInvoicesModule,
     SubscriptionModule,
     AdminModule,
+    SystemModule,
     UsersModule,
   ],
   controllers: [AppController],

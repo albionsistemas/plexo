@@ -13,8 +13,13 @@ describe('AuthService', () => {
     password: 'correct-password',
   };
 
-  function makePrisma(user: unknown, moduleAccess: unknown[] = []) {
+  function makePrisma(
+    user: unknown,
+    moduleAccess: unknown[] = [],
+    tenant: unknown = { id: 'tenant-1', status: 'ACTIVE' },
+  ) {
     const fakeTx = {
+      tenant: { findUnique: jest.fn().mockResolvedValue(tenant) },
       user: { findUnique: jest.fn().mockResolvedValue(user) },
       userModuleAccess: { findMany: jest.fn().mockResolvedValue(moduleAccess) },
       userActivityLog: { create: jest.fn().mockResolvedValue({}) },
@@ -89,6 +94,92 @@ describe('AuthService', () => {
     expect(jwt.signAsync).toHaveBeenCalledWith(
       expect.objectContaining({ mustChangePassword: true }),
     );
+  });
+
+  it('throws when the tenant is suspended even with correct credentials', async () => {
+    const passwordHash = await bcrypt.hash(dto.password, 4);
+    const jwt = makeJwt();
+    const service = new AuthService(
+      makePrisma(
+        { id: 'user-1', email: dto.email, role: 'OWNER', passwordHash, mustChangePassword: false },
+        [],
+        { id: 'tenant-1', status: 'SUSPENDED' },
+      ),
+      jwt,
+      makeActivityLogService(),
+    );
+
+    await expect(service.login(dto, '127.0.0.1')).rejects.toThrow(UnauthorizedException);
+    expect(jwt.signAsync).not.toHaveBeenCalled();
+  });
+
+  describe('impersonate', () => {
+    function makeImpersonationPrisma(user: unknown, moduleAccess: unknown[] = []) {
+      const fakeTx = {
+        user: { findUnique: jest.fn().mockResolvedValue(user) },
+        userModuleAccess: { findMany: jest.fn().mockResolvedValue(moduleAccess) },
+        userActivityLog: { create: jest.fn().mockResolvedValue({}) },
+        $executeRaw: jest.fn().mockResolvedValue(undefined),
+      };
+      const prisma = {
+        $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(fakeTx)),
+      } as unknown as PrismaService;
+      return { prisma, fakeTx };
+    }
+
+    const admin = { id: 'admin-1', email: 'super@plexo.test' };
+
+    it('throws when the target user does not exist in that tenant', async () => {
+      const { prisma } = makeImpersonationPrisma(null);
+      const service = new AuthService(prisma, makeJwt(), makeActivityLogService());
+
+      await expect(service.impersonate('tenant-2', 'user-404', admin)).rejects.toThrow();
+    });
+
+    it('signs a 15-minute token forcing mustChangePassword false and carrying impersonatedBy', async () => {
+      const jwt = makeJwt();
+      const { prisma } = makeImpersonationPrisma(
+        { id: 'user-2', email: 'target@acme.test', role: 'ADMIN', mustChangePassword: true },
+        [{ module: 'sales', canRead: true, canWrite: true }],
+      );
+      const service = new AuthService(prisma, jwt, makeActivityLogService());
+
+      const result = await service.impersonate('tenant-2', 'user-2', admin);
+
+      expect(result.accessToken).toBe('signed.jwt.token');
+      expect(jwt.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: 'user-2',
+          tenantId: 'tenant-2',
+          email: 'target@acme.test',
+          mustChangePassword: false,
+          impersonatedBy: admin,
+        }),
+        { expiresIn: '15m' },
+      );
+    });
+
+    it('records an activity log entry in the target tenant naming both parties', async () => {
+      const { prisma, fakeTx } = makeImpersonationPrisma({
+        id: 'user-2',
+        email: 'target@acme.test',
+        role: 'ADMIN',
+        mustChangePassword: false,
+      });
+      const service = new AuthService(prisma, makeJwt(), makeActivityLogService());
+
+      await service.impersonate('tenant-2', 'user-2', admin);
+
+      expect(fakeTx.userActivityLog.create).toHaveBeenCalledWith({
+        data: {
+          tenantId: 'tenant-2',
+          userId: admin.id,
+          action: 'admin.impersonate',
+          outcome: 'SUCCESS',
+          entityLabel: `target@acme.test (impersonado por ${admin.email})`,
+        },
+      });
+    });
   });
 
   describe('changePassword', () => {

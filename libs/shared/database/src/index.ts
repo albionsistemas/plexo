@@ -65,5 +65,7 @@ export type {
   InventoryCartItem,
   Plan,
   TenantSubscription,
+  SystemErrorLog,
+  DatabaseBackup,
 } from './generated/client.js';
 export * from './generated/enums.js';

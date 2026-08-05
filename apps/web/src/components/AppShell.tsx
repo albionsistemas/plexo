@@ -2,6 +2,7 @@
 
 import { initials, profileApi } from '@/lib/profile';
 import CartButton from './CartButton';
+import ImpersonationBanner from './ImpersonationBanner';
 import TrialBanner from './TrialBanner';
 import { disconnectSocket, getSocket } from '@/lib/socket';
 import { useDensity } from '@/providers/DensityProvider';
@@ -173,6 +174,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <UserMenu />
         </div>
       </header>
+      <ImpersonationBanner />
       <TrialBanner />
       <main className="p-6">{children}</main>
     </div>
@@ -321,6 +323,13 @@ function UserMenu() {
   function handleLogout() {
     localStorage.removeItem('token');
     localStorage.removeItem('tenantId');
+    // If this fires mid-impersonation (logging out via the normal menu
+    // instead of ImpersonationBanner's "Salir"), the stashed admin token
+    // must not survive into the next, unrelated login - otherwise
+    // ImpersonationBanner would wrongly show "impersonating" on a fresh
+    // session that never impersonated anyone.
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('impersonationExpiresAt');
     disconnectSocket();
     router.replace('/login');
   }

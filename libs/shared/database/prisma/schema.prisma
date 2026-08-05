@@ -136,11 +136,23 @@ enum FinancialAccountProvider {
   CASH
 }
 
+// ACTIVE/SUSPENDED es un eje administrativo separado de
+// TenantSubscription.status (ciclo de facturación) - un tenant puede estar
+// ACTIVE en su suscripción y de todos modos SUSPENDED a mano por el
+// SuperAdmin (abuso, mora escalada, etc.). Sólo se revisa en el login
+// (AuthService.login) - un JWT ya emitido es una foto fija, mismo criterio
+// ya aceptado para mustChangePassword/role (ver MustChangePasswordGuard).
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
 model Tenant {
-  id        String   @id @default(uuid())
+  id        String       @id @default(uuid())
   name      String
   taxId     String?
-  createdAt DateTime @default(now())
+  status    TenantStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
 
   settings     TenantSettings?
   subscription TenantSubscription?
@@ -207,6 +219,51 @@ model TenantSubscription {
   updatedAt            DateTime           @updatedAt
 
   @@map("tenant_subscriptions")
+}
+
+// Global como Plan - sin tenantId, sin RLS (ver la migración). Muchos 500
+// pasan ANTES de que exista contexto de tenant (ej. un JWT roto), así que
+// esta tabla no puede depender de uno - GlobalExceptionFilter escribe acá
+// con PrismaService crudo, nunca getTenantDb(). tenantId/userId son
+// informativos, sin FK (el request que falló puede no tener ninguno de
+// los dos resuelto todavía).
+model SystemErrorLog {
+  id         String   @id @default(uuid())
+  statusCode Int
+  message    String
+  stack      String?
+  path       String
+  method     String
+  tenantId   String?
+  userId     String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("system_error_log")
+}
+
+enum BackupStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+// Global como Plan. Una fila por corrida de BackupSchedulerService (éxito
+// o falla, ver ese archivo para por qué la mayoría de las filas hoy van a
+// quedar FAILED con "no configurado" hasta que se instale pg_dump y se
+// setee BACKUP_STORAGE_DIR). La rotación FIFO borra filas COMPLETED más
+// allá de las últimas 5 - "los últimos 5 puntos de restauración" son,
+// literalmente, las filas que sobreviven en esta tabla.
+model DatabaseBackup {
+  id           String       @id @default(uuid())
+  status       BackupStatus @default(PENDING)
+  filePath     String?
+  sizeBytes    BigInt?
+  startedAt    DateTime     @default(now())
+  completedAt  DateTime?
+  errorMessage String?
+
+  @@map("database_backups")
 }
 
 // "homologacion" (sandbox de AFIP) vs "producción" - controla qué WSDL/URL

@@ -13,6 +13,11 @@ RUN npx nx build api --configuration=production
 
 FROM base AS runtime
 ENV NODE_ENV=production
+# pg_dump for BackupSchedulerService's daily cron (see .env.example's
+# BACKUP_STORAGE_DIR) - matches this image's own Postgres major version
+# closely enough via Alpine's postgresql-client package; without it the
+# cron just logs a clean FAILED row instead of crashing (see that service).
+RUN apk add --no-cache postgresql-client
 COPY --from=build /workspace/apps/api/dist ./dist
 COPY --from=build /workspace/libs/shared/database/src/generated ./libs/shared/database/src/generated
 COPY --from=build /workspace/node_modules ./node_modules

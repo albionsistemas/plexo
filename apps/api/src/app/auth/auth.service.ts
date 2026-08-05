@@ -41,6 +41,7 @@ export class AuthService {
   async login(dto: LoginDto, ip: string | null): Promise<{ accessToken: string }> {
     const found = await withTenantContext(this.prisma, dto.tenantId, async () => {
       const db = getTenantDb();
+      const tenant = await db.tenant.findUnique({ where: { id: dto.tenantId } });
       const user = await db.user.findUnique({
         where: { tenantId_email: { tenantId: dto.tenantId, email: dto.email } },
       });
@@ -57,13 +58,22 @@ export class AuthService {
         where: { userId: user.id },
       });
 
-      return { user, moduleAccess };
+      return { user, moduleAccess, tenantSuspended: tenant?.status === 'SUSPENDED' };
     });
 
-    await this.recordLoginAttempt(dto.tenantId, found?.user.id, ip, found ? 'SUCCESS' : 'FAILURE');
+    // Credenciales correctas pero tenant suspendido cuenta como login
+    // fallido en el activity log - no se emitió ningún token.
+    const loginSucceeded = !!found && !found.tenantSuspended;
+    await this.recordLoginAttempt(dto.tenantId, found?.user.id, ip, loginSucceeded ? 'SUCCESS' : 'FAILURE');
 
     if (!found) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+    // Chequeado sólo acá, no en cada request (TenantStatus, ver
+    // schema.prisma) - un JWT ya emitido es una foto fija, mismo criterio
+    // ya aceptado para mustChangePassword/role (MustChangePasswordGuard).
+    if (found.tenantSuspended) {
+      throw new UnauthorizedException('Esta cuenta está suspendida - contactate con el administrador');
     }
 
     const payload: AuthenticatedUser = {
@@ -80,6 +90,76 @@ export class AuthService {
     };
 
     return { accessToken: await this.jwtService.signAsync(payload) };
+  }
+
+  /**
+   * SuperAdmin-only (gated by PlatformAdminGuard at the controller, see
+   * AdminTenantsController) - issues a short-lived token (15 min, not the
+   * normal 8h default) for the SAME AuthenticatedUser payload shape as
+   * login(), but for the TARGET user's own identity. mustChangePassword is
+   * forced to false regardless of the target's real flag - otherwise the
+   * SuperAdmin could get bounced to /profile mid-impersonation (see
+   * MustChangePasswordGuard). impersonatedBy is the one addition to the
+   * payload, purely informational (RolesGuard/ModuleAccessGuard/
+   * MustChangePasswordGuard don't read it).
+   *
+   * Records one activity-log entry in the TARGET tenant (userId = the
+   * admin's own id, entityLabel names both parties) - this is the only
+   * place impersonation becomes visible to that tenant at all, since
+   * ActivityLogInterceptor already logs this same request into the
+   * ADMIN's own tenant (keyed by request.user.tenantId, which is the
+   * admin's tenant, not the target's) without any code here.
+   */
+  async impersonate(
+    targetTenantId: string,
+    targetUserId: string,
+    impersonatedBy: { id: string; email: string },
+  ): Promise<{ accessToken: string; expiresAt: string }> {
+    const EXPIRES_IN_MINUTES = 15;
+
+    const found = await withTenantContext(this.prisma, targetTenantId, async () => {
+      const db = getTenantDb();
+      const user = await db.user.findUnique({ where: { id: targetUserId } });
+      if (!user) {
+        return null;
+      }
+
+      const moduleAccess = await db.userModuleAccess.findMany({ where: { userId: user.id } });
+
+      await db.userActivityLog.create({
+        data: {
+          tenantId: targetTenantId,
+          userId: impersonatedBy.id,
+          action: 'admin.impersonate',
+          outcome: 'SUCCESS',
+          entityLabel: `${user.email} (impersonado por ${impersonatedBy.email})`,
+        },
+      });
+
+      return { user, moduleAccess };
+    });
+
+    if (!found) {
+      throw new NotFoundException('User not found in that tenant');
+    }
+
+    const payload: AuthenticatedUser = {
+      sub: found.user.id,
+      tenantId: targetTenantId,
+      email: found.user.email,
+      role: found.user.role,
+      moduleAccess: found.moduleAccess.map((grant) => ({
+        module: grant.module,
+        canRead: grant.canRead,
+        canWrite: grant.canWrite,
+      })),
+      mustChangePassword: false,
+      impersonatedBy,
+    };
+
+    const accessToken = await this.jwtService.signAsync(payload, { expiresIn: `${EXPIRES_IN_MINUTES}m` });
+    const expiresAt = new Date(Date.now() + EXPIRES_IN_MINUTES * 60_000).toISOString();
+    return { accessToken, expiresAt };
   }
 
   private async recordLoginAttempt(
