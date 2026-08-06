@@ -4,17 +4,63 @@ import type { AuthenticatedUser } from '@plexo/types';
 import type { FastifyRequest } from 'fastify';
 import { AuthService } from './auth.service.js';
 import { ChangePasswordDto } from './dto/change-password.dto.js';
+import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
 import { LoginDto } from './dto/login.dto.js';
+import { ResendCodeDto } from './dto/resend-code.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
+import { ResolveTenantDto } from './dto/resolve-tenant.dto.js';
+import { SignupDto } from './dto/signup.dto.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
+import { VerifyEmailDto } from './dto/verify-email.dto.js';
+import { SignupService } from './signup.service.js';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly signupService: SignupService,
+  ) {}
 
   @Public()
   @Post('login')
   login(@Body() dto: LoginDto, @Req() request: FastifyRequest) {
     return this.authService.login(dto, request.ip ?? null);
+  }
+
+  @Public()
+  @Post('signup')
+  signup(@Body() dto: SignupDto) {
+    return this.signupService.signup(dto);
+  }
+
+  @Public()
+  @Post('verify-email')
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.signupService.verifyEmail(dto);
+  }
+
+  @Public()
+  @Post('resend-code')
+  resendCode(@Body() dto: ResendCodeDto) {
+    return this.signupService.resendCode(dto);
+  }
+
+  @Public()
+  @Post('resolve-tenant')
+  resolveTenant(@Body() dto: ResolveTenantDto) {
+    return this.authService.resolveTenant(dto);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Public()
+  @Post('reset-password')
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
   }
 
   @AllowWhenPasswordChangeRequired()

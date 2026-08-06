@@ -80,6 +80,9 @@
     },
     {
       "path": "./libs/shared/subscriptions"
+    },
+    {
+      "path": "./libs/shared/auth-email"
     }
   ],
   "compilerOptions": {}

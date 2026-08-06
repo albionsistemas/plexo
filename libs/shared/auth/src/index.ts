@@ -8,3 +8,4 @@ export * from './lib/jwt-auth.guard.js';
 export * from './lib/platform-admin.guard.js';
 export * from './lib/allow-when-password-change-required.decorator.js';
 export * from './lib/must-change-password.guard.js';
+export * from './lib/is-platform-admin-email.js';

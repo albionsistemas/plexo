@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { getTenantDb, PrismaService, withTenantContext, type TenantStatus } from '@plexo/database';
-import { SubscriptionService } from '@plexo/subscriptions';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { AuthService } from '../auth/auth.service.js';
+import { TenantProvisioningService } from '../auth/tenant-provisioning.service.js';
 import type { CreateTenantDto } from './dto/create-tenant.dto.js';
 
 export interface CreatedTenant {
@@ -64,8 +64,8 @@ export class AdminTenantsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly subscriptionService: SubscriptionService,
     private readonly authService: AuthService,
+    private readonly tenantProvisioningService: TenantProvisioningService,
   ) {}
 
   /** Un withTenantContext por tenant (list_tenant_ids(), mismo recipe que
@@ -138,23 +138,19 @@ export class AdminTenantsService {
     const tempPassword = randomBytes(9).toString('base64url');
     const passwordHash = await bcrypt.hash(tempPassword, 10);
 
-    await withTenantContext(this.prisma, tenantId, async () => {
-      const db = getTenantDb();
-      await db.tenant.create({ data: { id: tenantId, name: dto.name, taxId: dto.taxId } });
-      await db.user.create({
-        data: {
-          tenantId,
-          email: dto.ownerEmail,
-          name: dto.ownerName,
-          passwordHash,
-          role: 'OWNER',
-          mustChangePassword: true,
-        },
-      });
-      // Corre DENTRO de este callback a propósito: acá getTenantId() ya
-      // resuelve al tenant recién creado (contexto anidado), que es lo que
-      // TenantSubscription (tenant-scoped, con RLS) necesita para el insert.
-      await this.subscriptionService.startTrial(dto.planKey);
+    // autoVerifyEmail: true - un tenant dado de alta acá lo crea el
+    // operador de plataforma a mano, no hace falta el gate de OTP que sí
+    // aplica al signup público (ver SignupService).
+    await this.tenantProvisioningService.provision({
+      tenantId,
+      name: dto.name,
+      taxId: dto.taxId,
+      ownerEmail: dto.ownerEmail,
+      ownerName: dto.ownerName,
+      passwordHash,
+      mustChangePassword: true,
+      autoVerifyEmail: true,
+      planKey: dto.planKey,
     });
 
     return { tenantId, ownerEmail: dto.ownerEmail, tempPassword };

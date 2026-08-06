@@ -1,12 +1,27 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
 import { ActivityLogModule } from '@plexo/activity-log';
+import { AuthEmailModule } from '@plexo/auth-email';
+import { SubscriptionModule } from '@plexo/subscriptions';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
+import { GoogleOAuthGuard } from './oauth/google-oauth.guard.js';
+import { GoogleStrategy } from './oauth/google.strategy.js';
+import { MicrosoftOAuthGuard } from './oauth/microsoft-oauth.guard.js';
+import { MicrosoftStrategy } from './oauth/microsoft.strategy.js';
+import { OAuthConfigService } from './oauth/oauth-config.service.js';
+import { OAuthController } from './oauth/oauth.controller.js';
+import { OAuthService } from './oauth/oauth.service.js';
+import { SignupService } from './signup.service.js';
+import { TenantProvisioningService } from './tenant-provisioning.service.js';
 
 @Module({
   imports: [
     ActivityLogModule,
+    SubscriptionModule,
+    AuthEmailModule,
+    PassportModule,
     JwtModule.registerAsync({
       global: true,
       useFactory: () => {
@@ -21,8 +36,18 @@ import { AuthService } from './auth.service.js';
       },
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthService],
-  exports: [AuthService],
+  controllers: [AuthController, OAuthController],
+  providers: [
+    AuthService,
+    TenantProvisioningService,
+    SignupService,
+    OAuthConfigService,
+    OAuthService,
+    GoogleStrategy,
+    MicrosoftStrategy,
+    GoogleOAuthGuard,
+    MicrosoftOAuthGuard,
+  ],
+  exports: [AuthService, TenantProvisioningService],
 })
 export class AuthModule {}

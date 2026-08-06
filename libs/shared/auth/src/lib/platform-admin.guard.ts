@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import type { AuthenticatedUser } from '@plexo/types';
 import type { FastifyRequest } from 'fastify';
+import { isPlatformAdminEmail } from './is-platform-admin-email.js';
 
 type RequestWithUser = FastifyRequest & { user?: AuthenticatedUser };
 
@@ -26,12 +27,7 @@ export class PlatformAdminGuard implements CanActivate {
       throw new ForbiddenException('No authenticated user on request');
     }
 
-    const allowedEmails = (process.env['PLATFORM_ADMIN_EMAILS'] ?? '')
-      .split(',')
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean);
-
-    if (!allowedEmails.includes(user.email.toLowerCase())) {
+    if (!isPlatformAdminEmail(user.email)) {
       throw new ForbiddenException('No tenés acceso de administrador de plataforma');
     }
     return true;

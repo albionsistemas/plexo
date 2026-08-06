@@ -416,6 +416,11 @@ model User {
   quoteNextNumber          Int      @default(1)
   quotePdfStyle            PdfStyle @default(MODERNO)
   createdAt                DateTime @default(now())
+  // null = todavía no verificado. Backfill a createdAt para toda fila
+  // existente al momento de esta migración (ver 20260826000000_auth_onboarding)
+  // - el gate de verificación sólo aplica a cuentas nuevas del signup público,
+  // nunca a las ya creadas por seed/admin backoffice.
+  emailVerifiedAt          DateTime?
 
   moduleAccess             UserModuleAccess[]
   issuedInvoices           Invoice[]
@@ -429,10 +434,79 @@ model User {
   recordedSupplierPayments SupplierPayment[]
   cartItems                InventoryCartItem[]
   createdQuotes            Quote[]
+  emailVerificationCode    EmailVerificationCode?
+  passwordResetTokens      PasswordResetToken[]
+  oauthAccounts            OAuthAccount[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
   @@map("users")
+}
+
+// Un código activo por usuario a la vez - reenviar (resendCode) sobreescribe
+// el mismo row en vez de acumular filas viejas, evita la pregunta de "cuál
+// de los 3 códigos es el vigente". codeHash es sha256 (no bcrypt) porque la
+// defensa real es attemptCount, no el costo de hashing - el código sólo vive
+// unos minutos.
+model EmailVerificationCode {
+  id           String   @id @default(uuid())
+  tenantId     String
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  codeHash     String
+  expiresAt    DateTime
+  attemptCount Int      @default(0)
+  lastSentAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+  @@map("email_verification_codes")
+}
+
+// Append-only a propósito (a diferencia de EmailVerificationCode) - un link
+// de reseteo de contraseña puede quedar sin clickear y no debe desaparecer;
+// usedAt lo invalida sin borrarlo. AuthService.forgotPassword marca como
+// usado cualquier token previo sin usar del mismo usuario al crear uno
+// nuevo, para que un link viejo nunca quede vigente en simultáneo con el
+// último enviado.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  tenantId  String
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tenantId])
+  @@map("password_reset_tokens")
+}
+
+enum OAuthProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+// 0, 1 o 2 filas por usuario (un provider vinculado como mucho una vez cada
+// uno). providerAccountId es el id estable que entrega cada proveedor (el
+// "sub" de Google, el "oid" de Microsoft) - nunca el email, que puede
+// cambiar del lado del proveedor sin que la cuenta deje de ser la misma.
+model OAuthAccount {
+  id                String        @id @default(uuid())
+  tenantId          String
+  userId            String
+  user              User          @relation(fields: [userId], references: [id])
+  provider          OAuthProvider
+  providerAccountId String
+  email             String
+  createdAt         DateTime      @default(now())
+
+  @@unique([provider, providerAccountId])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("oauth_accounts")
 }
 
 model UserModuleAccess {

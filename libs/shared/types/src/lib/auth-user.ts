@@ -32,4 +32,12 @@ export interface AuthenticatedUser {
   // The frontend uses it to know whose identity is "really" behind the
   // active session (see ImpersonationBanner).
   impersonatedBy?: { id: string; email: string };
+  // Not a UserRole, not a separate account - purely an email allowlist check
+  // (see isPlatformAdminEmail/PLATFORM_ADMIN_EMAILS), stamped onto the token
+  // once at issuance so the frontend can decide where to redirect after
+  // login without a second round-trip. No guard reads this off the JWT;
+  // PlatformAdminGuard re-checks the email server-side on every request.
+  // Optional (like impersonatedBy) so existing mock AuthenticatedUser
+  // literals in tests across the codebase don't all need updating.
+  isPlatformAdmin?: boolean;
 }
