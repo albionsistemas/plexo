@@ -1,6 +1,7 @@
 'use client';
 
 import { ParticleCanvasBackground } from '@/components/auth/ParticleCanvasBackground';
+import { PlexoLogo } from '@/components/ui/PlexoLogo';
 import { useTheme } from '@/providers/ThemeProvider';
 import { motion } from 'framer-motion';
 import { Moon, Sun } from 'lucide-react';
@@ -37,9 +38,12 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="relative z-10 text-2xl font-bold tracking-tight text-white"
+          className="relative z-10"
         >
-          PLEXO
+          {/* Fixed-dark panel regardless of the app's own light/dark
+              toggle - overrides PlexoLogo's default indigo (assumes a
+              normal page background) with plain white for contrast. */}
+          <PlexoLogo size={32} colorClassName="text-white" />
         </motion.div>
 
         <motion.div
@@ -69,8 +73,8 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
 
-        <div className="mb-6 text-xl font-bold tracking-tight text-indigo-600 dark:text-indigo-400 lg:hidden">
-          PLEXO
+        <div className="mb-6 lg:hidden">
+          <PlexoLogo size={26} />
         </div>
 
         {children}

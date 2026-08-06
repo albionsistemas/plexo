@@ -6,6 +6,8 @@ import { AuthEmailModule } from '@plexo/auth-email';
 import { SubscriptionModule } from '@plexo/subscriptions';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
+import { AppleOAuthGuard } from './oauth/apple-oauth.guard.js';
+import { AppleStrategy } from './oauth/apple.strategy.js';
 import { GoogleOAuthGuard } from './oauth/google-oauth.guard.js';
 import { GoogleStrategy } from './oauth/google.strategy.js';
 import { MicrosoftOAuthGuard } from './oauth/microsoft-oauth.guard.js';
@@ -45,8 +47,10 @@ import { TenantProvisioningService } from './tenant-provisioning.service.js';
     OAuthService,
     GoogleStrategy,
     MicrosoftStrategy,
+    AppleStrategy,
     GoogleOAuthGuard,
     MicrosoftOAuthGuard,
+    AppleOAuthGuard,
   ],
   exports: [AuthService, TenantProvisioningService],
 })

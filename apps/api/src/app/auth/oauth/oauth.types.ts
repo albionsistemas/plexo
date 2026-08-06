@@ -1,4 +1,4 @@
-export type OAuthProviderName = 'GOOGLE' | 'MICROSOFT';
+export type OAuthProviderName = 'GOOGLE' | 'MICROSOFT' | 'APPLE';
 
 /** What both strategies' validate() normalize their provider-specific
  * profile shape into, before OAuthService ever sees it - OAuthController

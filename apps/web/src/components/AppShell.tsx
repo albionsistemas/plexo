@@ -1,6 +1,7 @@
 'use client';
 
 import { initials, profileApi } from '@/lib/profile';
+import { PlexoLogo } from '@/components/ui/PlexoLogo';
 import CartButton from './CartButton';
 import ImpersonationBanner from './ImpersonationBanner';
 import TrialBanner from './TrialBanner';
@@ -146,7 +147,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
       <header className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-6 py-3">
         <div className="flex items-center gap-6">
-          <span className="text-lg font-bold tracking-tight text-indigo-600 dark:text-indigo-400">PLEXO</span>
+          <PlexoLogo size={22} />
           <nav className="flex items-center gap-4">
             {NAV_ENTRIES.map((entry) =>
               entry.kind === 'link' ? (

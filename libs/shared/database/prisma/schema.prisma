@@ -487,6 +487,7 @@ model PasswordResetToken {
 enum OAuthProvider {
   GOOGLE
   MICROSOFT
+  APPLE
 }
 
 // 0, 1 o 2 filas por usuario (un provider vinculado como mucho una vez cada

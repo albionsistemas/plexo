@@ -22,6 +22,13 @@ async function bootstrap() {
     new FastifyAdapter(),
   );
   await app.register(multipart, { limits: { fileSize: 5_000_000 } });
+  // No extra plugin needed for "Sign in with Apple"'s POST
+  // application/x-www-form-urlencoded callback (response_mode "form_post",
+  // unlike Google/Microsoft's plain GET redirect) - @nestjs/platform-fastify's
+  // FastifyAdapter already registers both a JSON and an urlencoded body
+  // parser by default (see registerParserMiddleware/
+  // registerUrlencodedContentParser in its source); adding @fastify/formbody
+  // on top collides with it ("Content type parser already present").
   // Serves uploaded article images (see ArticleImageService) unauthenticated,
   // from a random-uuid filename rather than a tenantId-scoped path - a
   // deliberate, narrow exception to "everything is RLS/tenant-protected"

@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 export interface OAuthProvidersStatus {
   google: boolean;
   microsoft: boolean;
+  apple: boolean;
 }
 
 /**
@@ -22,7 +23,20 @@ export class OAuthConfigService {
     return Boolean(process.env['MICROSOFT_CLIENT_ID'] && process.env['MICROSOFT_CLIENT_SECRET']);
   }
 
+  isAppleConfigured(): boolean {
+    return Boolean(
+      process.env['APPLE_CLIENT_ID'] &&
+        process.env['APPLE_TEAM_ID'] &&
+        process.env['APPLE_KEY_ID'] &&
+        process.env['APPLE_PRIVATE_KEY'],
+    );
+  }
+
   getProviders(): OAuthProvidersStatus {
-    return { google: this.isGoogleConfigured(), microsoft: this.isMicrosoftConfigured() };
+    return {
+      google: this.isGoogleConfigured(),
+      microsoft: this.isMicrosoftConfigured(),
+      apple: this.isAppleConfigured(),
+    };
   }
 }

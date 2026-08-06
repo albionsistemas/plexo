@@ -1,5 +1,6 @@
 'use client';
 
+import { PlexoLogo } from '@/components/ui/PlexoLogo';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
@@ -38,8 +39,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="flex items-center justify-between border-b border-slate-800 px-6 py-3">
         <div className="flex items-center gap-6">
-          <span className="flex items-center gap-2 text-lg font-bold tracking-tight">
-            PLEXO
+          <span className="flex items-center gap-2">
+            <PlexoLogo size={22} colorClassName="text-slate-100" />
             <span className="rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-900">
               Admin
             </span>

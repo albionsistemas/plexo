@@ -3,6 +3,7 @@ import { Public } from '@plexo/auth';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { OAuthChooseTenantDto } from '../dto/oauth-choose-tenant.dto.js';
 import { OAuthCompleteSignupDto } from '../dto/oauth-complete-signup.dto.js';
+import { AppleOAuthGuard } from './apple-oauth.guard.js';
 import { GoogleOAuthGuard } from './google-oauth.guard.js';
 import { MicrosoftOAuthGuard } from './microsoft-oauth.guard.js';
 import { OAuthConfigService } from './oauth-config.service.js';
@@ -56,6 +57,25 @@ export class OAuthController {
     @Req() request: RequestWithOAuthProfile,
     @Res({ passthrough: false }) reply: FastifyReply,
   ) {
+    await this.finishOAuth(request.user, reply);
+  }
+
+  // Never actually runs, same as googleAuth/microsoftAuth above.
+  @Public()
+  @UseGuards(AppleOAuthGuard)
+  @Get('apple')
+  // eslint-disable-next-line @typescript-eslint/no-empty-function -- guard redirects before this runs
+  appleAuth() {}
+
+  // POST, not GET - Apple's own strategy hardcodes response_mode:"form_post"
+  // (see passport-apple's authorizationParams), so the browser lands back
+  // here via a real form submission, not a query-string redirect like
+  // Google/Microsoft. Requires @fastify/formbody registered in main.ts to
+  // parse the application/x-www-form-urlencoded body at all.
+  @Public()
+  @UseGuards(AppleOAuthGuard)
+  @Post('apple/callback')
+  async appleCallback(@Req() request: RequestWithOAuthProfile, @Res({ passthrough: false }) reply: FastifyReply) {
     await this.finishOAuth(request.user, reply);
   }
 

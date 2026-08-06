@@ -65,6 +65,7 @@ export async function resetPassword(input: {
 export interface OAuthProvidersStatus {
   google: boolean;
   microsoft: boolean;
+  apple: boolean;
 }
 
 export async function getOAuthProviders(): Promise<OAuthProvidersStatus> {
