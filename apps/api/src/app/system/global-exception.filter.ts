@@ -28,7 +28,7 @@ export class GlobalExceptionFilter extends BaseExceptionFilter {
     super(httpAdapter);
   }
 
-  catch(exception: unknown, host: ArgumentsHost): void {
+  override catch(exception: unknown, host: ArgumentsHost): void {
     const statusCode =
       exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
 

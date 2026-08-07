@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import type { SignOptions } from 'jsonwebtoken';
 import { ActivityLogModule } from '@plexo/activity-log';
 import { AuthEmailModule } from '@plexo/auth-email';
 import { SubscriptionModule } from '@plexo/subscriptions';
@@ -33,7 +34,7 @@ import { TenantProvisioningService } from './tenant-provisioning.service.js';
         }
         return {
           secret,
-          signOptions: { expiresIn: process.env['JWT_EXPIRES_IN'] ?? '8h' },
+          signOptions: { expiresIn: (process.env['JWT_EXPIRES_IN'] ?? '8h') as SignOptions['expiresIn'] },
         };
       },
     }),

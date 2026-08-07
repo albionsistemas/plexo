@@ -6,6 +6,7 @@ import { AUTH_EMAIL_SENDER, type AuthEmailSender } from '@plexo/auth-email';
 import { getTenantDb, PrismaService, withTenantContext, type User } from '@plexo/database';
 import type { AuthenticatedUser, ModuleAccessClaim } from '@plexo/types';
 import * as bcrypt from 'bcryptjs';
+import type { SignOptions } from 'jsonwebtoken';
 import { createHash, randomBytes } from 'node:crypto';
 import type { ChangePasswordDto } from './dto/change-password.dto.js';
 import type { ForgotPasswordDto } from './dto/forgot-password.dto.js';
@@ -174,7 +175,7 @@ export class AuthService {
 
     const expiresIn = opts?.expiresIn ?? (opts?.rememberMe ? process.env['JWT_REMEMBER_ME_EXPIRES_IN'] ?? '30d' : undefined);
     if (expiresIn) {
-      return this.jwtService.signAsync(payload, { expiresIn });
+      return this.jwtService.signAsync(payload, { expiresIn: expiresIn as SignOptions['expiresIn'] });
     }
     return this.jwtService.signAsync(payload);
   }
