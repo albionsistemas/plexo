@@ -118,10 +118,24 @@ export default function InviteMemberModal({ onClose }: { onClose: () => void }) 
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex gap-2">
-              <button type="button" onClick={() => setMode('INVITE')} className={pillClass(mode === 'INVITE')}>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('INVITE');
+                  setError('');
+                }}
+                className={pillClass(mode === 'INVITE')}
+              >
                 Invitar por mail
               </button>
-              <button type="button" onClick={() => setMode('PASSWORD')} className={pillClass(mode === 'PASSWORD')}>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('PASSWORD');
+                  setError('');
+                }}
+                className={pillClass(mode === 'PASSWORD')}
+              >
                 Alta con clave temporal
               </button>
             </div>

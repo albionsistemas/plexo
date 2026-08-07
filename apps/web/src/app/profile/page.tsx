@@ -12,6 +12,7 @@ const ROLE_LABELS: Record<string, string> = {
   OWNER: 'Dueño',
   ADMIN: 'Administrador',
   SALES: 'Ventas',
+  PURCHASES: 'Compras',
   INVENTORY: 'Inventario',
   ACCOUNTANT: 'Contador',
   VIEWER: 'Solo lectura',
