@@ -10,6 +10,14 @@ export interface SendPasswordResetLinkPayload {
   expiresInMinutes: number;
 }
 
+export interface SendInvitationPayload {
+  to: string;
+  tenantName: string;
+  role: string;
+  acceptUrl: string;
+  expiresInMinutes: number;
+}
+
 /**
  * Mismo patrón puerto/adaptador que EmailSender de Facturación
  * (libs/modules/invoicing/src/lib/email-sender.port.ts) - SignupService y
@@ -18,6 +26,7 @@ export interface SendPasswordResetLinkPayload {
 export interface AuthEmailSender {
   sendVerificationCode(payload: SendVerificationCodePayload): Promise<void>;
   sendPasswordResetLink(payload: SendPasswordResetLinkPayload): Promise<void>;
+  sendInvitation(payload: SendInvitationPayload): Promise<void>;
 }
 
 export const AUTH_EMAIL_SENDER = Symbol('AUTH_EMAIL_SENDER');

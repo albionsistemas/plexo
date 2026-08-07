@@ -87,6 +87,14 @@ export default function LoginPage() {
         router.push(`/verify-email?tenantId=${tenantId}&email=${encodeURIComponent(email)}`);
         return;
       }
+      // A diferencia de contraseña incorrecta (mensaje genérico a propósito,
+      // anti-enumeración), una cuenta suspendida sí muestra el motivo real -
+      // no hay nada que enumerar, el usuario ya demostró conocer el email y
+      // la contraseña correctos.
+      if (body?.code === 'ACCOUNT_SUSPENDED' && body.message) {
+        passwordForm.setError('password', { message: body.message });
+        return;
+      }
       passwordForm.setError('password', { message: 'Credenciales inválidas' });
     }
   }

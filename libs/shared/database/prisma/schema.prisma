@@ -11,9 +11,15 @@ enum UserRole {
   OWNER
   ADMIN
   SALES
+  PURCHASES
   INVENTORY
   ACCOUNTANT
   VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
 }
 
 enum EmailSenderMode {
@@ -374,16 +380,21 @@ model TenantSettings {
 }
 
 model User {
-  id                       String   @id @default(uuid())
+  id                       String     @id @default(uuid())
   tenantId                 String
   email                    String
   passwordHash             String
-  role                     UserRole @default(VIEWER)
-  isExternalAccountant     Boolean  @default(false)
+  role                     UserRole   @default(VIEWER)
+  // Suspender a un compañero de equipo (ver UsersService.toggleStatus) le
+  // corta el login (chequeado en AuthService.login, mismo criterio que
+  // Tenant.status) sin borrar sus registros históricos - eje administrativo
+  // separado del rol, igual relación que TenantStatus tiene con Tenant.
+  status                   UserStatus @default(ACTIVE)
+  isExternalAccountant     Boolean    @default(false)
   // True para un usuario recién invitado (ver UsersService.inviteUser) con
   // una contraseña temporal - MustChangePasswordGuard bloquea el resto de
   // la API hasta que pase por /auth/change-password, que lo limpia a false.
-  mustChangePassword       Boolean  @default(false)
+  mustChangePassword       Boolean    @default(false)
   name                     String?
   avatarUrl                String?
   // Opt-in: whether this user's online/offline state is broadcast to
@@ -391,7 +402,7 @@ model User {
   // Off by default would mean nobody's presence shows until they opt in;
   // on by default matches how presence indicators normally work elsewhere
   // and is easy to turn off from the profile screen.
-  showOnlinePresence       Boolean  @default(true)
+  showOnlinePresence       Boolean    @default(true)
   // Per-user document numbering for Compras (see QuoteRequest/PurchaseOrder)
   // - deliberately a separate series per user, not one shared per tenant
   // (decision with the user, 2026-07-27): each buyer identifies their own
@@ -400,22 +411,22 @@ model User {
   // atomically via Prisma's `{ increment: 1 }`, not read-then-write, so
   // it's race-free unlike Invoice.number - see nextInvoiceNumber's docstring
   // in invoicing.service.ts for the pattern this deliberately improves on).
-  quoteRequestPrefix       String   @default("PED")
-  quoteRequestNextNumber   Int      @default(1)
-  purchaseOrderPrefix      String   @default("OC")
-  purchaseOrderNextNumber  Int      @default(1)
+  quoteRequestPrefix       String     @default("PED")
+  quoteRequestNextNumber   Int        @default(1)
+  purchaseOrderPrefix      String     @default("OC")
+  purchaseOrderNextNumber  Int        @default(1)
   // Default template for "Descargar PDF" on a QuoteRequest/PurchaseOrder;
   // overridable per-download without persisting (see PurchasesController).
-  purchaseDocumentPdfStyle PdfStyle @default(MODERNO)
+  purchaseDocumentPdfStyle PdfStyle   @default(MODERNO)
   // Same per-user numbering/PDF-style pattern as the Compras fields above,
   // for Cotizaciones (@plexo/quotes) - a separate series on purpose, not
   // shared with quoteRequestPrefix even though both start from "cotización"
   // in Spanish; they're unrelated documents (see the comment on model
   // Quote/QuoteRequest).
-  quotePrefix              String   @default("PRE")
-  quoteNextNumber          Int      @default(1)
-  quotePdfStyle            PdfStyle @default(MODERNO)
-  createdAt                DateTime @default(now())
+  quotePrefix              String     @default("PRE")
+  quoteNextNumber          Int        @default(1)
+  quotePdfStyle            PdfStyle   @default(MODERNO)
+  createdAt                DateTime   @default(now())
   // null = todavía no verificado. Backfill a createdAt para toda fila
   // existente al momento de esta migración (ver 20260826000000_auth_onboarding)
   // - el gate de verificación sólo aplica a cuentas nuevas del signup público,
@@ -482,6 +493,26 @@ model PasswordResetToken {
   @@index([userId])
   @@index([tenantId])
   @@map("password_reset_tokens")
+}
+
+// Mismo patrón append-only que PasswordResetToken: invitar de nuevo al mismo
+// email invalida (usedAt) cualquier invitación previa sin usar en vez de
+// borrarla. No hay relación a User porque el invitado todavía no tiene fila
+// propia - UsersService.acceptInvitation es quien la crea recién al aceptar.
+model TeamInvitation {
+  id              String    @id @default(uuid())
+  tenantId        String
+  email           String
+  role            UserRole
+  tokenHash       String
+  expiresAt       DateTime
+  usedAt          DateTime?
+  invitedByUserId String
+  createdAt       DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([tokenHash])
+  @@map("team_invitations")
 }
 
 enum OAuthProvider {
@@ -1189,29 +1220,29 @@ enum QuoteSendChannel {
 // QuoteRequest already has (currency, notes, creator, sent tracking,
 // real status enum) when the module was actually implemented.
 model Quote {
-  id              String       @id @default(uuid())
+  id              String      @id @default(uuid())
   tenantId        String
   // "{createdBy.quotePrefix}-{n padded to 6}" - same frozen-at-creation
   // per-user numbering as QuoteRequest.number, see User fields below.
   number          String
   customerId      String
-  customer        Company      @relation(fields: [customerId], references: [id])
-  status          QuoteStatus  @default(DRAFT)
+  customer        Company     @relation(fields: [customerId], references: [id])
+  status          QuoteStatus @default(DRAFT)
   currencyId      String
-  currency        Currency     @relation(fields: [currencyId], references: [id])
+  currency        Currency    @relation(fields: [currencyId], references: [id])
   validUntil      DateTime?
   notes           String?
   brandingLogoUrl String?
-  total           Decimal      @db.Decimal(14, 2)
+  total           Decimal     @db.Decimal(14, 2)
 
   // How/whether this was sent to the customer - same "user-confirmed, no
   // delivery receipt" semantics as PurchaseOrder.sentAt/sentVia.
-  sentAt          DateTime?
-  sentVia         QuoteSendChannel?
+  sentAt  DateTime?
+  sentVia QuoteSendChannel?
 
   createdByUserId String
-  createdBy       User         @relation(fields: [createdByUserId], references: [id])
-  createdAt       DateTime     @default(now())
+  createdBy       User     @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
 
   lines QuoteLine[]
 
@@ -1687,8 +1718,8 @@ model PurchaseOrder {
   // Both null until PurchaseOrderService.sendEmail()/markSentWhatsapp()
   // runs - "solo guardar" in the send dialog leaves the order DRAFT with
   // both still null.
-  sentAt  DateTime?
-  sentVia PurchaseSendChannel?
+  sentAt                 DateTime?
+  sentVia                PurchaseSendChannel?
   // Snapshot of who actually got the last send - sentToEmail for EMAIL
   // (always the supplier's email at that moment, see sendEmail()),
   // sentToPhone/sentToContactName for WHATSAPP (the contact picked in
@@ -1700,9 +1731,9 @@ model PurchaseOrder {
   // but this order was sent to whoever/whatever it actually was sent to.
   // Orders sent before this field existed keep these null - shown as "no
   // registrado" in the UI, not backfilled.
-  sentToEmail       String?
-  sentToPhone       String?
-  sentToContactName String?
+  sentToEmail            String?
+  sentToPhone            String?
+  sentToContactName      String?
   // Same snapshot-at-send-time reasoning as sentToContactName above -
   // copies Person.avatarUrl at the moment of the WhatsApp send (whatever
   // it was then, whether uploaded to /uploads/people or a pasted URL).

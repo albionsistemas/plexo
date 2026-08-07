@@ -186,6 +186,28 @@ describe('AuthService', () => {
     expect(jwt.signAsync).not.toHaveBeenCalled();
   });
 
+  it('throws when the individual user is suspended even with an active tenant and correct credentials', async () => {
+    const passwordHash = await bcrypt.hash(dto.password, 4);
+    const jwt = makeJwt();
+    const service = new AuthService(
+      makePrisma({
+        id: 'user-1',
+        email: dto.email,
+        role: 'SALES',
+        status: 'SUSPENDED',
+        passwordHash,
+        mustChangePassword: false,
+        emailVerifiedAt: new Date('2026-01-01'),
+      }),
+      jwt,
+      makeActivityLogService(),
+      makeAuthEmailSender(),
+    );
+
+    await expect(service.login(dto, '127.0.0.1')).rejects.toThrow(UnauthorizedException);
+    expect(jwt.signAsync).not.toHaveBeenCalled();
+  });
+
   it('throws EmailNotVerifiedError when the password is correct but the email is unverified', async () => {
     const passwordHash = await bcrypt.hash(dto.password, 4);
     const jwt = makeJwt();

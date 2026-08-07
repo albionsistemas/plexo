@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type {
   AuthEmailSender,
+  SendInvitationPayload,
   SendPasswordResetLinkPayload,
   SendVerificationCodePayload,
 } from './auth-email-sender.port.js';
@@ -20,6 +21,12 @@ export class ConsoleAuthEmailSender implements AuthEmailSender {
   async sendPasswordResetLink(payload: SendPasswordResetLinkPayload): Promise<void> {
     this.logger.log(
       `[stub] password reset link for ${payload.to}: ${payload.resetUrl} (expira en ${payload.expiresInMinutes} min)`,
+    );
+  }
+
+  async sendInvitation(payload: SendInvitationPayload): Promise<void> {
+    this.logger.log(
+      `[stub] invitation for ${payload.to} to join ${payload.tenantName} as ${payload.role}: ${payload.acceptUrl} (expira en ${payload.expiresInMinutes} min)`,
     );
   }
 }

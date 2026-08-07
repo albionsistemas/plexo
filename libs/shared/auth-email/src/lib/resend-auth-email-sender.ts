@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Resend } from 'resend';
 import type {
   AuthEmailSender,
+  SendInvitationPayload,
   SendPasswordResetLinkPayload,
   SendVerificationCodePayload,
 } from './auth-email-sender.port.js';
@@ -50,6 +51,19 @@ export class ResendAuthEmailSender implements AuthEmailSender {
 
     if (error) {
       this.logger.error(`Failed to email password reset link to ${payload.to}: ${error.message}`);
+    }
+  }
+
+  async sendInvitation(payload: SendInvitationPayload): Promise<void> {
+    const { error } = await this.resend.emails.send({
+      from: this.from,
+      to: payload.to,
+      subject: `Te invitaron a sumarte a ${payload.tenantName} en Plexo`,
+      text: `Te invitaron a unirte a ${payload.tenantName} en Plexo con el rol ${payload.role}. Para aceptar, entrá a ${payload.acceptUrl}. El link expira en ${payload.expiresInMinutes} minutos. Si no esperabas esta invitación, ignorá este mensaje.`,
+    });
+
+    if (error) {
+      this.logger.error(`Failed to email invitation to ${payload.to}: ${error.message}`);
     }
   }
 }

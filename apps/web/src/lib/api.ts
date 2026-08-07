@@ -23,7 +23,8 @@ api.interceptors.request.use((config) => {
 // validation (wrong password, wrong OTP, expired reset token, etc.), with
 // no token involved yet. None of that should trigger the "your session
 // expired" redirect below - each of those pages already renders its own
-// inline error for its own 401.
+// inline error for its own 401. /users/invitations/accept is the same case
+// (invalid/expired invitation link) even though it doesn't live under /auth.
 const PUBLIC_AUTH_PATHS = [
   '/auth/login',
   '/auth/signup',
@@ -33,6 +34,7 @@ const PUBLIC_AUTH_PATHS = [
   '/auth/forgot-password',
   '/auth/reset-password',
   '/auth/oauth/',
+  '/users/invitations/accept',
 ];
 
 function isPublicAuthRequest(url: unknown): boolean {

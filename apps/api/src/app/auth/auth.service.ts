@@ -84,24 +84,45 @@ export class AuthService {
         where: { userId: user.id },
       });
 
-      return { user, moduleAccess, tenantSuspended: tenant?.status === 'SUSPENDED' };
+      return {
+        user,
+        moduleAccess,
+        tenantSuspended: tenant?.status === 'SUSPENDED',
+        userSuspended: user.status === 'SUSPENDED',
+      };
     });
 
-    // Credenciales correctas pero tenant suspendido cuenta como login
-    // fallido en el activity log - no se emitió ningún token. Lo mismo para
-    // email sin verificar: la contraseña era correcta, pero no se emite
-    // token - ver el comentario de EmailNotVerifiedError.
-    const loginSucceeded = !!found && !found.tenantSuspended && !!found.user.emailVerifiedAt;
+    // Credenciales correctas pero tenant/usuario suspendido cuenta como
+    // login fallido en el activity log - no se emitió ningún token. Lo
+    // mismo para email sin verificar: la contraseña era correcta, pero no
+    // se emite token - ver el comentario de EmailNotVerifiedError.
+    const loginSucceeded = !!found && !found.tenantSuspended && !found.userSuspended && !!found.user.emailVerifiedAt;
     await this.recordLoginAttempt(dto.tenantId, found?.user.id, ip, loginSucceeded ? 'SUCCESS' : 'FAILURE');
 
     if (!found) {
       throw new UnauthorizedException('Invalid credentials');
     }
-    // Chequeado sólo acá, no en cada request (TenantStatus, ver
+    // Chequeado sólo acá, no en cada request (TenantStatus/UserStatus, ver
     // schema.prisma) - un JWT ya emitido es una foto fija, mismo criterio
     // ya aceptado para mustChangePassword/role (MustChangePasswordGuard).
+    // code: 'ACCOUNT_SUSPENDED' en ambos - igual que EMAIL_NOT_VERIFIED más
+    // abajo, es lo que el login del frontend usa para mostrar el mensaje
+    // real en vez de pisarlo con el genérico "Credenciales inválidas" que
+    // usa para contraseña incorrecta.
     if (found.tenantSuspended) {
-      throw new UnauthorizedException('Esta cuenta está suspendida - contactate con el administrador');
+      throw new UnauthorizedException({
+        code: 'ACCOUNT_SUSPENDED',
+        message: 'Esta cuenta está suspendida - contactate con el administrador',
+      });
+    }
+    // Distinto del bloqueo de tenant de arriba: acá el tenant sigue activo,
+    // es este usuario puntual al que un OWNER/ADMIN suspendió desde
+    // /settings/team (UsersService.toggleStatus) sin borrar su historial.
+    if (found.userSuspended) {
+      throw new UnauthorizedException({
+        code: 'ACCOUNT_SUSPENDED',
+        message: 'Tu usuario fue suspendido - contactate con el administrador de tu cuenta',
+      });
     }
     if (!found.user.emailVerifiedAt) {
       throw new EmailNotVerifiedError(dto.tenantId, found.user.email);
