@@ -1,6 +1,8 @@
 # PLEXO — Estado del proyecto
 
-Última actualización: 2026-08-07. Repo: `github.com/albionsistemas/plexo`, rama `main`.
+Última actualización: 2026-08-08. Repo: `github.com/albionsistemas/plexo`, rama `main`.
+
+**Nota para PC_TRABAJO** (o cualquier otra máquina que retome desde acá): el commit `8899f3e` (rename de branding Plexo→Oplex, ver sección de abajo) ya está pulleado, `npm install` corrido y verificado en vivo en Chrome en **PC_DEPARTAMENTO** (2026-08-08). Si retomás en otra máquina, alcanza con `git pull` + `npm install` — no hace falta re-verificar el branding, ya se probó ahí. Esto también confirma que la sesión confundida de pnpm/npm del 2026-08-07 en PC_TRABAJO no dejó nada roto en lo que llegó a `main`.
 
 ## Resumen ejecutivo
 
