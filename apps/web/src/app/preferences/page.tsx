@@ -703,7 +703,7 @@ function EmailSettingsCard({ settings }: { settings: TenantSettings }) {
             onClick={() => setEmailSenderMode('SHARED')}
             className={pillClass(emailSenderMode === 'SHARED')}
           >
-            Compartido Plexo
+            Compartido Oplex
           </button>
         </div>
 
@@ -776,7 +776,7 @@ function EmailSettingsCard({ settings }: { settings: TenantSettings }) {
             {isPendingVerification && (
               <p className="text-xs text-amber-600 dark:text-amber-400">
                 Mientras el dominio no esté verificado, los emails a clientes se siguen enviando
-                desde el remitente compartido de Plexo.
+                desde el remitente compartido de Oplex.
               </p>
             )}
 

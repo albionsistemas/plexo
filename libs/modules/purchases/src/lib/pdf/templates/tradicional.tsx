@@ -82,7 +82,7 @@ export function TradicionalTemplate({ data }: { data: PurchaseDocumentPdfData })
           <Text style={styles.signatureLine}>Recibido por</Text>
         </View>
 
-        <Text style={styles.footer}>Generado por Plexo</Text>
+        <Text style={styles.footer}>Generado por Oplex</Text>
       </Page>
     </Document>
   );

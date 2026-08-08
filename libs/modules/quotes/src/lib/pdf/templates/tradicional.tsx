@@ -80,7 +80,7 @@ export function TradicionalTemplate({ data }: { data: QuotePdfData }) {
           <Text style={styles.signatureLine}>Aceptado por</Text>
         </View>
 
-        <Text style={styles.footer}>Generado por Plexo</Text>
+        <Text style={styles.footer}>Generado por Oplex</Text>
       </Page>
     </Document>
   );

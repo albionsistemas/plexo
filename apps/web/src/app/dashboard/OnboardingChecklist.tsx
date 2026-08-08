@@ -83,7 +83,7 @@ export default function OnboardingChecklist() {
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-medium text-slate-600 dark:text-slate-400">Primeros pasos en PLEXO</h2>
+        <h2 className="text-sm font-medium text-slate-600 dark:text-slate-400">Primeros pasos en OPLEX</h2>
         <button
           onClick={dismiss}
           aria-label="Descartar"

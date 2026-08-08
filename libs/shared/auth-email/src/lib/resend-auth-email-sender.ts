@@ -45,7 +45,7 @@ export class ResendAuthEmailSender implements AuthEmailSender {
     const { error } = await this.resend.emails.send({
       from: this.from,
       to: payload.to,
-      subject: 'Recuperar tu contraseña de Plexo',
+      subject: 'Recuperar tu contraseña de Oplex',
       text: `Para elegir una contraseña nueva, entrá a ${payload.resetUrl}. El link expira en ${payload.expiresInMinutes} minutos. Si no pediste esto, ignorá este mensaje.`,
     });
 
@@ -58,8 +58,8 @@ export class ResendAuthEmailSender implements AuthEmailSender {
     const { error } = await this.resend.emails.send({
       from: this.from,
       to: payload.to,
-      subject: `Te invitaron a sumarte a ${payload.tenantName} en Plexo`,
-      text: `Te invitaron a unirte a ${payload.tenantName} en Plexo con el rol ${payload.role}. Para aceptar, entrá a ${payload.acceptUrl}. El link expira en ${payload.expiresInMinutes} minutos. Si no esperabas esta invitación, ignorá este mensaje.`,
+      subject: `Te invitaron a sumarte a ${payload.tenantName} en Oplex`,
+      text: `Te invitaron a unirte a ${payload.tenantName} en Oplex con el rol ${payload.role}. Para aceptar, entrá a ${payload.acceptUrl}. El link expira en ${payload.expiresInMinutes} minutos. Si no esperabas esta invitación, ignorá este mensaje.`,
     });
 
     if (error) {

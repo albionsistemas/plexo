@@ -6,6 +6,27 @@
 
 Los 9 módulos de negocio del brief original están construidos y commiteados. Hoy, por primera vez, se corrió todo contra una base de datos real (hasta ahora solo compilaba/testeaba con mocks) — se encontró y arregló un bug real, y se confirmó que el aislamiento por tenant (RLS) funciona de verdad, no solo en el papel.
 
+## Rename del producto: Plexo → Oplex (2026-08-08)
+
+El nombre "Plexo" quedó inutilizable de cara a AFIP (dominio/nombre ocupado, según reportó el usuario) — se decidió renombrar el producto a **Oplex**. El usuario ya registró y pagó `oplex.com.ar` en NIC Argentina.
+
+**Alcance de este cambio, decidido explícitamente por el usuario**: solo branding visible al usuario final, nada de infraestructura ni identificadores de código:
+- Wordmark del logo (`PlexoLogo.tsx`, el componente y el archivo **mantienen su nombre viejo** — solo cambió el texto renderizado "PLEXO"→"OPLEX" y el `aria-label`).
+- `<title>`/`description` de la app (`apps/web/src/app/layout.tsx`).
+- Checklist de onboarding del Tablero, toggle "remitente compartido" y su texto de ayuda en Preferencias.
+- Los 3 emails transaccionales (bienvenida/verificación, reset de contraseña, invitación a equipo) en `libs/shared/auth-email`.
+- Mensaje de suscripción vencida (`subscription.service.ts`).
+- Pie de página "Generado por Oplex" en los 10 templates de PDF (5 de Cotizaciones + 5 de Compras) y en el PDF de lista de carrito de Inventario. La Facturación (invoices) no tiene footer de marca, no había nada que tocar ahí.
+
+**Deliberadamente NO tocado todavía** (decisión explícita del usuario, para no romper nada compartido entre máquinas):
+- El repo de GitHub sigue siendo `github.com/albionsistemas/plexo` — no se renombró.
+- Nombres de paquete/imports (`@plexo/*` en todo el monorepo), nombres de carpetas, el rol/base de Postgres (`plexo_app`/`plexo`).
+- Este archivo (`PROGRESS.md`) y `CLAUDE.md` siguen refiriéndose al proyecto como Plexo en su prosa histórica/título — no se reescribió retroactivamente.
+
+Si más adelante se decide ir a fondo (renombrar repo, paquetes, rol de DB), hay que coordinarlo explícitamente en cada máquina (PC_TRABAJO, PC_DEPARTAMENTO) porque el `.env`/la conexión a Postgres de cada una es local y no viaja con git — ver sección de setup más abajo.
+
+**Pendiente, fuera del alcance de código**: `EMAIL_FROM` en el `.env` de cada máquina sigue siendo el placeholder `facturas@tudominio.com` (o el `onboarding@resend.dev` de sandbox, según la máquina) — falta dar de alta el envío real contra `oplex.com.ar` en Resend (DNS, dominio verificado) cuando el usuario quiera activarlo.
+
 ## Módulos completos (orden de commits en `main`)
 
 | Commit | Qué es |

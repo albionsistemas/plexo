@@ -4,8 +4,8 @@ import { QueryProvider } from '@/providers/QueryProvider';
 import { ThemeProvider } from '@/providers/ThemeProvider';
 
 export const metadata = {
-  title: 'PLEXO',
-  description: 'PLEXO — ERP SaaS',
+  title: 'OPLEX',
+  description: 'OPLEX — ERP SaaS',
 };
 
 // Applied before hydration so the correct theme paints on the first frame

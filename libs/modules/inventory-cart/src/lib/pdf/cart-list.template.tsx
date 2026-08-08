@@ -96,7 +96,7 @@ export function CartListTemplate({ data }: { data: CartPdfData }) {
           <Text style={styles.label}>{data.total}</Text>
         </View>
 
-        <Text style={styles.footer}>Generado por Plexo</Text>
+        <Text style={styles.footer}>Generado por Oplex</Text>
       </Page>
     </Document>
   );

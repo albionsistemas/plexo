@@ -39,7 +39,7 @@ export function buildVerificationEmailCopy({
             </tr>
             <tr>
               <td style="padding:36px 40px 0;text-align:center;">
-                <h1 style="margin:0;font-size:22px;line-height:1.3;color:#0f172a;font-weight:700;">¡Bienvenido a Plexo! 🎉</h1>
+                <h1 style="margin:0;font-size:22px;line-height:1.3;color:#0f172a;font-weight:700;">¡Bienvenido a Oplex! 🎉</h1>
                 <p style="margin:12px 0 0;font-size:15px;line-height:1.6;color:#475569;">
                   Estás a un paso de tener tu facturación, inventario y contabilidad funcionando en un solo lugar. Confirmá tu email con este código para arrancar:
                 </p>
@@ -56,14 +56,14 @@ export function buildVerificationEmailCopy({
             <tr>
               <td style="padding:20px 40px 32px;text-align:center;">
                 <p style="margin:0;font-size:13px;line-height:1.6;color:#94a3b8;">
-                  ¿No creaste una cuenta en Plexo? Ignorá este email - no se tomó ninguna acción.
+                  ¿No creaste una cuenta en Oplex? Ignorá este email - no se tomó ninguna acción.
                 </p>
               </td>
             </tr>
             <tr>
               <td style="padding:18px 40px;background-color:#f8fafc;text-align:center;border-top:1px solid #eef2f7;">
-                <p style="margin:0;font-size:12px;color:#94a3b8;">Plexo · el ERP que crece con tu negocio</p>
-                <p style="margin:6px 0 0;font-size:10px;color:#cbd5e1;text-align:center;">Equipo de Plexo</p>
+                <p style="margin:0;font-size:12px;color:#94a3b8;">Oplex · el ERP que crece con tu negocio</p>
+                <p style="margin:6px 0 0;font-size:10px;color:#cbd5e1;text-align:center;">Equipo de Oplex</p>
               </td>
             </tr>
           </table>
@@ -73,14 +73,14 @@ export function buildVerificationEmailCopy({
   </body>
 </html>`;
 
-  const text = `¡Bienvenido a Plexo!
+  const text = `¡Bienvenido a Oplex!
 
 Estás a un paso de tener tu facturación, inventario y contabilidad funcionando en un solo lugar.
 
 Tu código de verificación es: ${code}
 Vence en ${expiresInMinutes} minutos.
 
-¿No creaste una cuenta en Plexo? Podés ignorar este mensaje - no se tomó ninguna acción.`;
+¿No creaste una cuenta en Oplex? Podés ignorar este mensaje - no se tomó ninguna acción.`;
 
-  return { subject: '¡Bienvenido a Plexo! Confirmá tu email con tu código de verificación', html, text };
+  return { subject: '¡Bienvenido a Oplex! Confirmá tu email con tu código de verificación', html, text };
 }

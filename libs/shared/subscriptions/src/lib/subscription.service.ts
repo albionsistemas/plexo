@@ -134,7 +134,7 @@ export class SubscriptionService {
     const subscription = await this.getCurrentForTenant();
     if (subscription.status === 'EXPIRED' || subscription.status === 'CANCELLED') {
       throw new ForbiddenException(
-        'Tu período de prueba venció - actualizá tu plan para seguir usando Plexo',
+        'Tu período de prueba venció - actualizá tu plan para seguir usando Oplex',
       );
     }
     return subscription;

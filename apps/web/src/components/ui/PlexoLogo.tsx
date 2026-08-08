@@ -9,7 +9,7 @@ interface PlexoLogoProps {
    * never looks squashed/stretched. The wordmark's font-size scales off
    * this same number. Default matches the size the auth screens use. */
   size?: number;
-  /** Icon-only, no "PLEXO" text - for tight spaces (mobile compact header,
+  /** Icon-only, no "OPLEX" text - for tight spaces (mobile compact header,
    * anywhere the wordmark would wrap/crowd). */
   iconOnly?: boolean;
   /** Both the icon and the wordmark share ONE color (via currentColor) -
@@ -36,7 +36,7 @@ interface PlexoLogoProps {
  * as the favicon). Isolating just the letterform sub-path and filling IT
  * directly (confirmed by rendering both ways side by side) gives a clean
  * solid glyph on a transparent background instead - the right shape for
- * sitting inline next to the "PLEXO" wordmark in a header, not a favicon
+ * sitting inline next to the "OPLEX" wordmark in a header, not a favicon
  * tile.
  *
  * Recolored via currentColor (the source path was a fixed navy, matching
@@ -58,13 +58,13 @@ export function PlexoLogo({
         viewBox={MARK_VIEWBOX}
         aria-hidden={!iconOnly}
         role={iconOnly ? 'img' : undefined}
-        aria-label={iconOnly ? 'Plexo' : undefined}
+        aria-label={iconOnly ? 'Oplex' : undefined}
       >
         <path d={MARK_PATH} fill="currentColor" fillRule="evenodd" />
       </svg>
       {!iconOnly && (
         <span className="font-bold tracking-tight" style={{ fontSize: size * 0.75 }}>
-          PLEXO
+          OPLEX
         </span>
       )}
     </span>

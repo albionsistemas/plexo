@@ -62,7 +62,7 @@ export function LetrasGrandesTemplate({ data }: { data: PurchaseDocumentPdfData 
           </View>
         )}
 
-        <Text style={styles.footer}>Generado por Plexo</Text>
+        <Text style={styles.footer}>Generado por Oplex</Text>
       </Page>
     </Document>
   );
