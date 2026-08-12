@@ -20,6 +20,8 @@ export * from './lib/purchase-invoice-attachment.service.js';
 export * from './lib/dto/create-purchase-invoice.dto.js';
 export * from './lib/dto/purchase-invoice-tax-line.dto.js';
 export * from './lib/dto/record-supplier-payment.dto.js';
+export * from './lib/purchase-credit-note.service.js';
+export * from './lib/dto/create-purchase-credit-note.dto.js';
 export * from './lib/catalog-type.js';
 export * from './lib/dto/create-catalog-item.dto.js';
 export * from './lib/dto/update-catalog-item.dto.js';

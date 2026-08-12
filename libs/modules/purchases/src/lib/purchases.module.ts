@@ -7,6 +7,7 @@ import { GoodsReceiptService } from './goods-receipt.service.js';
 import { PdfGeneratorService } from './pdf/pdf-generator.service.js';
 import { PurchaseCatalogsController } from './purchase-catalogs.controller.js';
 import { PurchaseCatalogsService } from './purchase-catalogs.service.js';
+import { PurchaseCreditNoteService } from './purchase-credit-note.service.js';
 import { PurchaseInvoiceAttachmentService } from './purchase-invoice-attachment.service.js';
 import { PurchaseInvoiceService } from './purchase-invoice.service.js';
 import { PurchaseNumberingService } from './purchase-numbering.service.js';
@@ -56,13 +57,15 @@ function createPurchaseEmailSender(): PurchaseEmailSender {
     SupplierReturnService,
     PurchaseInvoiceService,
     PurchaseInvoiceAttachmentService,
+    PurchaseCreditNoteService,
     { provide: PURCHASE_EMAIL_SENDER, useFactory: createPurchaseEmailSender },
   ],
   // GoodsReceiptService/GoodsReceiptAttachmentService/SupplierReturnService/
-  // PurchaseInvoiceService have no controller of their own here - apps/api's
-  // GoodsReceiptsModule/SupplierReturnsModule/PurchaseInvoicesModule compose
-  // them with InventoryService/AccountingService (see those modules' own
-  // doc comments for why that composition can't live inside this lib).
+  // PurchaseInvoiceService/PurchaseCreditNoteService have no controller of
+  // their own here - apps/api's GoodsReceiptsModule/SupplierReturnsModule/
+  // PurchaseInvoicesModule/PurchaseCreditNotesModule compose them with
+  // InventoryService/AccountingService (see those modules' own doc
+  // comments for why that composition can't live inside this lib).
   exports: [
     QuoteRequestService,
     PurchaseOrderService,
@@ -71,6 +74,7 @@ function createPurchaseEmailSender(): PurchaseEmailSender {
     SupplierReturnService,
     PurchaseInvoiceService,
     PurchaseInvoiceAttachmentService,
+    PurchaseCreditNoteService,
   ],
 })
 export class PurchasesModule {}

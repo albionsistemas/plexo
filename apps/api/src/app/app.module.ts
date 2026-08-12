@@ -28,6 +28,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { GoodsReceiptsModule } from './goods-receipts/goods-receipts.module.js';
 import { InventoryCartCheckoutModule } from './inventory-cart-checkout/inventory-cart-checkout.module.js';
+import { PurchaseCreditNotesModule } from './purchase-credit-notes/purchase-credit-notes.module.js';
 import { PurchaseInvoicesModule } from './purchase-invoices/purchase-invoices.module.js';
 import { SalesModule } from './sales/sales.module.js';
 import { SchedulerModule } from './scheduler/scheduler.module.js';
@@ -64,6 +65,7 @@ import { UsersModule } from './users/users.module.js';
     GoodsReceiptsModule,
     SupplierReturnsModule,
     PurchaseInvoicesModule,
+    PurchaseCreditNotesModule,
     SubscriptionModule,
     AdminModule,
     SystemModule,

@@ -17,7 +17,9 @@
   "exclude": [
     "jest.config.ts",
     "jest.config.cts",
+    "jest.rls.config.cts",
     "src/**/*.spec.ts",
-    "src/**/*.test.ts"
+    "src/**/*.test.ts",
+    "src/**/*.rls-spec.ts"
   ]
 }

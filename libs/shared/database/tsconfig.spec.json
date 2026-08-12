@@ -8,8 +8,10 @@
   "include": [
     "jest.config.ts",
     "jest.config.cts",
+    "jest.rls.config.cts",
     "src/**/*.test.ts",
     "src/**/*.spec.ts",
+    "src/**/*.rls-spec.ts",
     "src/**/*.d.ts"
   ],
   "references": [

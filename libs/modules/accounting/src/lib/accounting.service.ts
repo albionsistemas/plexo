@@ -169,6 +169,14 @@ export interface PostPurchaseInvoiceJournalEntryInput {
   date?: Date;
 }
 
+export interface PostPurchaseCreditNoteJournalEntryInput {
+  purchaseCreditNoteId: string;
+  subtotal: Prisma.Decimal | number | string;
+  taxTotal: Prisma.Decimal | number | string;
+  total: Prisma.Decimal | number | string;
+  date?: Date;
+}
+
 export interface SupplierPaymentWithholdingInput {
   taxType: WithholdingTaxType;
   amount: Prisma.Decimal | number | string;
@@ -497,6 +505,7 @@ export class AccountingService {
       goodsReceiptId?: string;
       supplierReturnId?: string;
       purchaseInvoiceId?: string;
+      purchaseCreditNoteId?: string;
       supplierPaymentId?: string;
       receiptId?: string;
     },
@@ -531,6 +540,7 @@ export class AccountingService {
         goodsReceiptId: opts.goodsReceiptId,
         supplierReturnId: opts.supplierReturnId,
         purchaseInvoiceId: opts.purchaseInvoiceId,
+        purchaseCreditNoteId: opts.purchaseCreditNoteId,
         supplierPaymentId: opts.supplierPaymentId,
         receiptId: opts.receiptId,
         createdById,
@@ -708,6 +718,52 @@ export class AccountingService {
       `Factura de compra - comprobante ${input.purchaseInvoiceId}`,
       lines,
       { date: input.date, purchaseInvoiceId: input.purchaseInvoiceId },
+    );
+  }
+
+  /**
+   * Posted when a Nota de Crédito de Compra is recorded (see apps/api's
+   * PurchaseCreditNotesService, composing PurchaseCreditNoteService +
+   * AccountingService) - the mirror image of postPurchaseInvoiceJournalEntry,
+   * simplified for a header-level document with no GRNI/receipt split: debit
+   * Proveedores for the total (we owe the supplier less), credit IVA
+   * Crédito Fiscal for the tax portion (less credit to claim) and credit
+   * Mercaderías for the subtotal. Balanced by construction the same way the
+   * invoice side is: total is defined as subtotal + taxTotal.
+   *
+   * Skips posting entirely for a zero-total credit note, same defensive
+   * skip as every other post* method here.
+   */
+  async postPurchaseCreditNoteJournalEntry(
+    input: PostPurchaseCreditNoteJournalEntryInput,
+  ): Promise<JournalEntryWithLines | undefined> {
+    const total = new Prisma.Decimal(input.total);
+    if (total.lte(0)) {
+      return undefined;
+    }
+    const subtotal = new Prisma.Decimal(input.subtotal);
+    const taxTotal = new Prisma.Decimal(input.taxTotal);
+
+    const [payable, vatCredit, inventory] = await Promise.all([
+      this.getOrCreateAccount(ACCOUNTS_PAYABLE_ACCOUNT),
+      taxTotal.gt(0) ? this.getOrCreateAccount(VAT_CREDIT_ACCOUNT) : Promise.resolve(undefined),
+      subtotal.gt(0) ? this.getOrCreateAccount(INVENTORY_ASSET_ACCOUNT) : Promise.resolve(undefined),
+    ]);
+
+    const lines: PostJournalEntryDto['lines'] = [
+      { accountId: payable.id, direction: 'DEBIT', amount: total.toNumber() },
+    ];
+    if (vatCredit && taxTotal.gt(0)) {
+      lines.push({ accountId: vatCredit.id, direction: 'CREDIT', amount: taxTotal.toNumber() });
+    }
+    if (inventory && subtotal.gt(0)) {
+      lines.push({ accountId: inventory.id, direction: 'CREDIT', amount: subtotal.toNumber() });
+    }
+
+    return this.createBalancedEntry(
+      `Nota de crédito de compra - comprobante ${input.purchaseCreditNoteId}`,
+      lines,
+      { date: input.date, purchaseCreditNoteId: input.purchaseCreditNoteId },
     );
   }
 

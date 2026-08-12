@@ -59,6 +59,8 @@ export type {
   PurchaseInvoice,
   PurchaseInvoiceTaxLine,
   PurchaseInvoiceReceipt,
+  PurchaseCreditNote,
+  PurchaseCreditNoteTaxLine,
   SupplierPayment,
   WithholdingRegime,
   SupplierPaymentWithholding,
