@@ -281,7 +281,6 @@ export class AccountingService {
         lines: {
           createMany: {
             data: dto.lines.map((line) => ({
-              tenantId,
               accountId: line.accountId,
               direction: line.direction,
               amount: line.amount,
@@ -477,7 +476,6 @@ export class AccountingService {
         lines: {
           createMany: {
             data: lines.map((line) => ({
-              tenantId,
               accountId: line.accountId,
               direction: line.direction,
               amount: line.amount,
@@ -547,7 +545,6 @@ export class AccountingService {
         lines: {
           createMany: {
             data: lines.map((line) => ({
-              tenantId,
               accountId: line.accountId,
               direction: line.direction,
               amount: line.amount,
@@ -886,7 +883,6 @@ export class AccountingService {
         lines: {
           createMany: {
             data: original.lines.map((line) => ({
-              tenantId,
               accountId: line.accountId,
               direction: line.direction === 'DEBIT' ? 'CREDIT' : 'DEBIT',
               amount: line.amount,

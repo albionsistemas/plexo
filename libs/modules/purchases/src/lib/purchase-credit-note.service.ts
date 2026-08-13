@@ -100,7 +100,6 @@ export class PurchaseCreditNoteService {
         taxLines: {
           createMany: {
             data: taxLines.map((line) => ({
-              tenantId,
               type: line.type,
               concept: line.concept,
               amount: line.amount,

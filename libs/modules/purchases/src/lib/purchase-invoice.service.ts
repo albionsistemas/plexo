@@ -159,7 +159,6 @@ export class PurchaseInvoiceService {
         taxLines: {
           createMany: {
             data: taxLines.map((line) => ({
-              tenantId,
               type: line.type,
               concept: line.concept,
               amount: line.amount,
@@ -167,7 +166,7 @@ export class PurchaseInvoiceService {
           },
         },
         receiptLinks: {
-          createMany: { data: goodsReceiptIds.map((goodsReceiptId) => ({ tenantId, goodsReceiptId })) },
+          createMany: { data: goodsReceiptIds.map((goodsReceiptId) => ({ goodsReceiptId })) },
         },
       },
       include: INVOICE_DETAIL_INCLUDE,
@@ -223,7 +222,6 @@ export class PurchaseInvoiceService {
         withholdings: {
           createMany: {
             data: withholdings.map((w) => ({
-              tenantId,
               regimeId: w.regimeId,
               taxType: w.taxType,
               jurisdiction: w.jurisdiction,

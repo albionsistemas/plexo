@@ -93,9 +93,9 @@ describe('AccountingService.postInvoiceJournalEntry', () => {
     const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
     expect(createArgs.data.invoiceId).toBe('inv-1');
     expect(createArgs.data.lines.createMany.data).toEqual([
-      { tenantId: 'tenant-1', accountId: 'acc-1.1.02', direction: 'DEBIT', amount: 121 },
-      { tenantId: 'tenant-1', accountId: 'acc-4.1.01', direction: 'CREDIT', amount: 100 },
-      { tenantId: 'tenant-1', accountId: 'acc-2.1.03', direction: 'CREDIT', amount: 21 },
+      { accountId: 'acc-1.1.02', direction: 'DEBIT', amount: 121 },
+      { accountId: 'acc-4.1.01', direction: 'CREDIT', amount: 100 },
+      { accountId: 'acc-2.1.03', direction: 'CREDIT', amount: 21 },
     ]);
   });
 
@@ -194,9 +194,9 @@ describe('AccountingService.postCreditNoteJournalEntry', () => {
     expect(createArgs.data.creditNoteId).toBe('cn-1');
     expect(createArgs.data.description).toBe('Nota de crédito - comprobante inv-1');
     expect(createArgs.data.lines.createMany.data).toEqual([
-      { tenantId: 'tenant-1', accountId: 'acc-1.1.02', direction: 'CREDIT', amount: 121 },
-      { tenantId: 'tenant-1', accountId: 'acc-4.1.01', direction: 'DEBIT', amount: 100 },
-      { tenantId: 'tenant-1', accountId: 'acc-2.1.03', direction: 'DEBIT', amount: 21 },
+      { accountId: 'acc-1.1.02', direction: 'CREDIT', amount: 121 },
+      { accountId: 'acc-4.1.01', direction: 'DEBIT', amount: 100 },
+      { accountId: 'acc-2.1.03', direction: 'DEBIT', amount: 21 },
     ]);
   });
 
@@ -237,8 +237,8 @@ describe('AccountingService.postCreditNoteJournalEntry', () => {
     const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
     expect(createArgs.data.lines.createMany.data).toEqual(
       expect.arrayContaining([
-        { tenantId: 'tenant-1', accountId: 'acc-5.1.01', direction: 'CREDIT', amount: 60 },
-        { tenantId: 'tenant-1', accountId: 'acc-1.1.04', direction: 'DEBIT', amount: 60 },
+        { accountId: 'acc-5.1.01', direction: 'CREDIT', amount: 60 },
+        { accountId: 'acc-1.1.04', direction: 'DEBIT', amount: 60 },
       ]),
     );
   });
@@ -278,9 +278,9 @@ describe('AccountingService.createReversingEntry', () => {
     expect(createArgs.data.reversalOfId).toBe('entry-1');
     expect(createArgs.data.description).toBe('Reversal of: Sale on credit');
     expect(createArgs.data.lines.createMany.data).toEqual([
-      { tenantId: 'tenant-1', accountId: 'acc-ar', direction: 'CREDIT', amount: original.lines[0].amount },
-      { tenantId: 'tenant-1', accountId: 'acc-sales', direction: 'DEBIT', amount: original.lines[1].amount },
-      { tenantId: 'tenant-1', accountId: 'acc-vat', direction: 'DEBIT', amount: original.lines[2].amount },
+      { accountId: 'acc-ar', direction: 'CREDIT', amount: original.lines[0].amount },
+      { accountId: 'acc-sales', direction: 'DEBIT', amount: original.lines[1].amount },
+      { accountId: 'acc-vat', direction: 'DEBIT', amount: original.lines[2].amount },
     ]);
   });
 });
@@ -374,8 +374,8 @@ describe('AccountingService.postGoodsReceiptAccrual', () => {
     const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
     expect(createArgs.data.goodsReceiptId).toBe('receipt-1');
     expect(createArgs.data.lines.createMany.data).toEqual([
-      { tenantId: 'tenant-1', accountId: 'acc-1.1.04', direction: 'DEBIT', amount: 18150 },
-      { tenantId: 'tenant-1', accountId: 'acc-2.1.04', direction: 'CREDIT', amount: 18150 },
+      { accountId: 'acc-1.1.04', direction: 'DEBIT', amount: 18150 },
+      { accountId: 'acc-2.1.04', direction: 'CREDIT', amount: 18150 },
     ]);
   });
 
@@ -404,8 +404,8 @@ describe('AccountingService.reverseSupplierReturnAccrual', () => {
     const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
     expect(createArgs.data.supplierReturnId).toBe('return-1');
     expect(createArgs.data.lines.createMany.data).toEqual([
-      { tenantId: 'tenant-1', accountId: 'acc-2.1.04', direction: 'DEBIT', amount: 300 },
-      { tenantId: 'tenant-1', accountId: 'acc-1.1.04', direction: 'CREDIT', amount: 300 },
+      { accountId: 'acc-2.1.04', direction: 'DEBIT', amount: 300 },
+      { accountId: 'acc-1.1.04', direction: 'CREDIT', amount: 300 },
     ]);
   });
 });
@@ -433,25 +433,21 @@ describe('AccountingService.postPurchaseInvoiceJournalEntry', () => {
     expect(createArgs.data.purchaseInvoiceId).toBe('pinv-1');
     const lines = createArgs.data.lines.createMany.data;
     expect(lines).toContainEqual({
-      tenantId: 'tenant-1',
       accountId: 'acc-2.1.05',
       direction: 'CREDIT',
       amount: 22161.5,
     });
     expect(lines).toContainEqual({
-      tenantId: 'tenant-1',
       accountId: 'acc-2.1.04',
       direction: 'DEBIT',
       amount: 18150,
     });
     expect(lines).toContainEqual({
-      tenantId: 'tenant-1',
       accountId: 'acc-1.1.05',
       direction: 'DEBIT',
       amount: 3811.5,
     });
     expect(lines).toContainEqual({
-      tenantId: 'tenant-1',
       accountId: 'acc-1.1.06',
       direction: 'DEBIT',
       amount: 200,
@@ -479,7 +475,6 @@ describe('AccountingService.postPurchaseInvoiceJournalEntry', () => {
     const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
     const lines = createArgs.data.lines.createMany.data;
     expect(lines).toContainEqual({
-      tenantId: 'tenant-1',
       accountId: 'acc-5.1.02',
       direction: 'DEBIT',
       amount: 1000,
@@ -519,8 +514,8 @@ describe('AccountingService.postSupplierPaymentJournalEntry', () => {
     const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
     expect(createArgs.data.supplierPaymentId).toBe('pay-1');
     expect(createArgs.data.lines.createMany.data).toEqual([
-      { tenantId: 'tenant-1', accountId: 'acc-2.1.05', direction: 'DEBIT', amount: 500 },
-      { tenantId: 'tenant-1', accountId: 'acc-1.1.03', direction: 'CREDIT', amount: 500 },
+      { accountId: 'acc-2.1.05', direction: 'DEBIT', amount: 500 },
+      { accountId: 'acc-1.1.03', direction: 'CREDIT', amount: 500 },
     ]);
   });
 
@@ -556,13 +551,13 @@ describe('AccountingService.postSupplierPaymentJournalEntry', () => {
     const lines = createArgs.data.lines.createMany.data;
     // Proveedores debited for the full 875 cancelled (700 cash + 175
     // withheld) - always balanced by construction.
-    expect(lines).toContainEqual({ tenantId: 'tenant-1', accountId: 'acc-2.1.05', direction: 'DEBIT', amount: 875 });
-    expect(lines).toContainEqual({ tenantId: 'tenant-1', accountId: 'acc-1.1.03', direction: 'CREDIT', amount: 700 });
-    expect(lines).toContainEqual({ tenantId: 'tenant-1', accountId: 'acc-2.1.06', direction: 'CREDIT', amount: 100 });
+    expect(lines).toContainEqual({ accountId: 'acc-2.1.05', direction: 'DEBIT', amount: 875 });
+    expect(lines).toContainEqual({ accountId: 'acc-1.1.03', direction: 'CREDIT', amount: 700 });
+    expect(lines).toContainEqual({ accountId: 'acc-2.1.06', direction: 'CREDIT', amount: 100 });
     // Two GROSS_INCOME lines (different jurisdictions in real usage) summed
     // into a single 2.1.08 credit line - one aggregate account, not one per
     // withholding line.
-    expect(lines).toContainEqual({ tenantId: 'tenant-1', accountId: 'acc-2.1.08', direction: 'CREDIT', amount: 75 });
+    expect(lines).toContainEqual({ accountId: 'acc-2.1.08', direction: 'CREDIT', amount: 75 });
     expect(lines).toHaveLength(4);
     expect(db._created.some((a) => a.code === '2.1.07')).toBe(false);
   });
@@ -582,8 +577,8 @@ describe('AccountingService.postSupplierPaymentJournalEntry', () => {
     const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
     const lines = createArgs.data.lines.createMany.data;
     expect(lines).toEqual([
-      { tenantId: 'tenant-1', accountId: 'acc-2.1.05', direction: 'DEBIT', amount: 50 },
-      { tenantId: 'tenant-1', accountId: 'acc-2.1.07', direction: 'CREDIT', amount: 50 },
+      { accountId: 'acc-2.1.05', direction: 'DEBIT', amount: 50 },
+      { accountId: 'acc-2.1.07', direction: 'CREDIT', amount: 50 },
     ]);
   });
 });
@@ -600,8 +595,8 @@ describe('AccountingService.postReceiptJournalEntry', () => {
     const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
     expect(createArgs.data.receiptId).toBe('receipt-1');
     expect(createArgs.data.lines.createMany.data).toEqual([
-      { tenantId: 'tenant-1', accountId: 'acc-1.1.03', direction: 'DEBIT', amount: 300 },
-      { tenantId: 'tenant-1', accountId: 'acc-1.1.02', direction: 'CREDIT', amount: 300 },
+      { accountId: 'acc-1.1.03', direction: 'DEBIT', amount: 300 },
+      { accountId: 'acc-1.1.02', direction: 'CREDIT', amount: 300 },
     ]);
   });
 
