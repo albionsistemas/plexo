@@ -1102,6 +1102,7 @@ model Invoice {
   creditNotes  CreditNote[]
 
   @@unique([tenantId, documentLetter, pointOfSale, number])
+  @@unique([tenantId, id])
   @@index([tenantId, customerId])
   @@map("invoices")
 }
@@ -1110,7 +1111,7 @@ model InvoiceLine {
   id               String         @id @default(uuid())
   tenantId         String
   invoiceId        String
-  invoice          Invoice        @relation(fields: [invoiceId], references: [id])
+  invoice          Invoice        @relation(fields: [tenantId, invoiceId], references: [tenantId, id])
   articleVariantId String
   articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
   quantity         Decimal        @db.Decimal(14, 3)
@@ -1136,6 +1137,7 @@ model InvoiceLine {
   creditNoteLines CreditNoteLine[]
   stockMovements  StockMovement[]
 
+  @@unique([tenantId, id])
   @@index([tenantId])
   @@map("invoice_lines")
 }
@@ -1148,7 +1150,7 @@ model CreditNote {
   id             String         @id @default(uuid())
   tenantId       String
   invoiceId      String
-  invoice        Invoice        @relation(fields: [invoiceId], references: [id])
+  invoice        Invoice        @relation(fields: [tenantId, invoiceId], references: [tenantId, id])
   documentLetter DocumentLetter
   pointOfSale    String
   number         String
@@ -1169,6 +1171,7 @@ model CreditNote {
   journalEntry JournalEntry?
 
   @@unique([tenantId, documentLetter, pointOfSale, number])
+  @@unique([tenantId, id])
   @@index([tenantId, invoiceId])
   @@map("credit_notes")
 }
@@ -1186,7 +1189,7 @@ model CreditNoteLine {
   creditNoteId  String
   creditNote    CreditNote  @relation(fields: [creditNoteId], references: [id])
   invoiceLineId String
-  invoiceLine   InvoiceLine @relation(fields: [invoiceLineId], references: [id])
+  invoiceLine   InvoiceLine @relation(fields: [tenantId, invoiceLineId], references: [tenantId, id])
   quantity      Decimal     @db.Decimal(14, 3)
   // Proportional slice of the InvoiceLine's netAmount/tax/lineTotal for
   // this credited quantity - same computed-field shape as InvoiceLine.
@@ -1274,7 +1277,7 @@ model Receipt {
   id                 String            @id @default(uuid())
   tenantId           String
   invoiceId          String
-  invoice            Invoice           @relation(fields: [invoiceId], references: [id])
+  invoice            Invoice           @relation(fields: [tenantId, invoiceId], references: [tenantId, id])
   amount             Decimal           @db.Decimal(14, 2)
   method             String
   financialAccountId String?
@@ -1283,6 +1286,7 @@ model Receipt {
 
   journalEntry JournalEntry?
 
+  @@unique([tenantId, id])
   @@map("receipts")
 }
 
@@ -1296,6 +1300,7 @@ model AccountingAccount {
   lines JournalEntryLine[]
 
   @@unique([tenantId, code])
+  @@unique([tenantId, id])
   @@index([tenantId])
   @@map("accounting_accounts")
 }
@@ -1307,7 +1312,7 @@ model JournalEntry {
   id                   String              @id @default(uuid())
   tenantId             String
   invoiceId            String?             @unique
-  invoice              Invoice?            @relation(fields: [invoiceId], references: [id])
+  invoice              Invoice?            @relation(fields: [tenantId, invoiceId], references: [tenantId, id])
   // One entry per credit note, resolved-or-created the same way the sale's
   // entry is resolved by invoiceId - NOT via reversalOfId/createReversingEntry,
   // since a credit note posts its own independently-balanced (possibly
@@ -1315,7 +1320,7 @@ model JournalEntry {
   // invoiceId/reversalOfId being @unique would block a second partial
   // credit note from ever linking back to the same original sale entry.
   creditNoteId         String?             @unique
-  creditNote           CreditNote?         @relation(fields: [creditNoteId], references: [id])
+  creditNote           CreditNote?         @relation(fields: [tenantId, creditNoteId], references: [tenantId, id])
   // Compras/Cuentas a Pagar - same one-entry-per-document precedent as
   // invoiceId/creditNoteId above, not a polymorphic sourceType/sourceId:
   // each of these needs its own uniqueness guarantee (a goods receipt's
@@ -1325,23 +1330,23 @@ model JournalEntry {
   // reverseSupplierReturnAccrual / postPurchaseInvoiceJournalEntry /
   // postSupplierPaymentJournalEntry.
   goodsReceiptId       String?             @unique
-  goodsReceipt         GoodsReceipt?       @relation(fields: [goodsReceiptId], references: [id])
+  goodsReceipt         GoodsReceipt?       @relation(fields: [tenantId, goodsReceiptId], references: [tenantId, id])
   supplierReturnId     String?             @unique
-  supplierReturn       SupplierReturn?     @relation(fields: [supplierReturnId], references: [id])
+  supplierReturn       SupplierReturn?     @relation(fields: [tenantId, supplierReturnId], references: [tenantId, id])
   purchaseInvoiceId    String?             @unique
-  purchaseInvoice      PurchaseInvoice?    @relation(fields: [purchaseInvoiceId], references: [id])
+  purchaseInvoice      PurchaseInvoice?    @relation(fields: [tenantId, purchaseInvoiceId], references: [tenantId, id])
   // Mirror-image entry of a Nota de Crédito de Compra - same one-per-document
   // precedent as purchaseInvoiceId right above. See
   // AccountingService.postPurchaseCreditNoteJournalEntry.
   purchaseCreditNoteId String?             @unique
-  purchaseCreditNote   PurchaseCreditNote? @relation(fields: [purchaseCreditNoteId], references: [id])
+  purchaseCreditNote   PurchaseCreditNote? @relation(fields: [tenantId, purchaseCreditNoteId], references: [tenantId, id])
   supplierPaymentId    String?             @unique
-  supplierPayment      SupplierPayment?    @relation(fields: [supplierPaymentId], references: [id])
+  supplierPayment      SupplierPayment?    @relation(fields: [tenantId, supplierPaymentId], references: [tenantId, id])
   // AR equivalent of supplierPaymentId above: one entry per customer
   // Receipt (Dr Caja / Cr Deudores por Ventas). See
   // AccountingService.postReceiptJournalEntry.
   receiptId            String?             @unique
-  receipt              Receipt?            @relation(fields: [receiptId], references: [id])
+  receipt              Receipt?            @relation(fields: [tenantId, receiptId], references: [tenantId, id])
   description          String
   date                 DateTime            @default(now())
   createdById          String
@@ -1352,6 +1357,15 @@ model JournalEntry {
 
   lines JournalEntryLine[]
 
+  @@unique([tenantId, id])
+  @@unique([tenantId, invoiceId])
+  @@unique([tenantId, creditNoteId])
+  @@unique([tenantId, goodsReceiptId])
+  @@unique([tenantId, supplierReturnId])
+  @@unique([tenantId, purchaseInvoiceId])
+  @@unique([tenantId, purchaseCreditNoteId])
+  @@unique([tenantId, supplierPaymentId])
+  @@unique([tenantId, receiptId])
   @@index([tenantId])
   @@map("journal_entries")
 }
@@ -1364,9 +1378,9 @@ model JournalEntryLine {
   id             String               @id @default(uuid())
   tenantId       String
   journalEntryId String
-  journalEntry   JournalEntry         @relation(fields: [journalEntryId], references: [id])
+  journalEntry   JournalEntry         @relation(fields: [tenantId, journalEntryId], references: [tenantId, id])
   accountId      String
-  account        AccountingAccount    @relation(fields: [accountId], references: [id])
+  account        AccountingAccount    @relation(fields: [tenantId, accountId], references: [tenantId, id])
   direction      JournalLineDirection
   amount         Decimal              @db.Decimal(14, 2)
 
@@ -1491,7 +1505,7 @@ model SupplierPaymentWithholding {
   id                String          @id @default(uuid())
   tenantId          String
   supplierPaymentId String
-  supplierPayment   SupplierPayment @relation(fields: [supplierPaymentId], references: [id])
+  supplierPayment   SupplierPayment @relation(fields: [tenantId, supplierPaymentId], references: [tenantId, id])
 
   // Null si se tipeó a mano sin elegir un régimen del catálogo - igual que
   // PurchaseInvoiceTaxLine no exige un TaxDefinition detrás.
@@ -1829,6 +1843,7 @@ model GoodsReceipt {
   // returns is to-many: never blocks a re-attempt.
   invoiceLinks PurchaseInvoiceReceipt[]
 
+  @@unique([tenantId, id])
   @@index([tenantId, purchaseOrderId])
   @@map("goods_receipts")
 }
@@ -1880,6 +1895,7 @@ model SupplierReturn {
   // own comment on why this isn't @unique.
   purchaseCreditNotes PurchaseCreditNote[]
 
+  @@unique([tenantId, id])
   @@index([tenantId, goodsReceiptId])
   @@map("supplier_returns")
 }
@@ -1969,6 +1985,7 @@ model PurchaseInvoice {
   creditNotes  PurchaseCreditNote[]
   journalEntry JournalEntry?
 
+  @@unique([tenantId, id])
   @@index([tenantId, supplierId])
   @@index([tenantId, purchaseOrderId])
   @@map("purchase_invoices")
@@ -1987,7 +2004,7 @@ model PurchaseInvoiceTaxLine {
   id                String                     @id @default(uuid())
   tenantId          String
   purchaseInvoiceId String
-  purchaseInvoice   PurchaseInvoice            @relation(fields: [purchaseInvoiceId], references: [id])
+  purchaseInvoice   PurchaseInvoice            @relation(fields: [tenantId, purchaseInvoiceId], references: [tenantId, id])
   type              PurchaseInvoiceTaxLineType
   concept           String
   amount            Decimal                    @db.Decimal(14, 2)
@@ -2004,9 +2021,9 @@ model PurchaseInvoiceReceipt {
   id                String          @id @default(uuid())
   tenantId          String
   purchaseInvoiceId String
-  purchaseInvoice   PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id])
+  purchaseInvoice   PurchaseInvoice @relation(fields: [tenantId, purchaseInvoiceId], references: [tenantId, id])
   goodsReceiptId    String
-  goodsReceipt      GoodsReceipt    @relation(fields: [goodsReceiptId], references: [id])
+  goodsReceipt      GoodsReceipt    @relation(fields: [tenantId, goodsReceiptId], references: [tenantId, id])
 
   @@unique([tenantId, goodsReceiptId])
   @@index([tenantId, purchaseInvoiceId])
@@ -2033,7 +2050,7 @@ model PurchaseCreditNote {
   id                       String                   @id @default(uuid())
   tenantId                 String
   purchaseInvoiceId        String
-  purchaseInvoice          PurchaseInvoice          @relation(fields: [purchaseInvoiceId], references: [id])
+  purchaseInvoice          PurchaseInvoice          @relation(fields: [tenantId, purchaseInvoiceId], references: [tenantId, id])
   supplierId               String
   supplier                 Company                  @relation(fields: [supplierId], references: [id])
   // Snapshot at entry time, taken from the PurchaseInvoice being credited -
@@ -2053,7 +2070,7 @@ model PurchaseCreditNote {
   status                   PurchaseCreditNoteStatus @default(ISSUED)
   // Optional, not unique - see comment above the enum.
   supplierReturnId         String?
-  supplierReturn           SupplierReturn?          @relation(fields: [supplierReturnId], references: [id])
+  supplierReturn           SupplierReturn?          @relation(fields: [tenantId, supplierReturnId], references: [tenantId, id])
   // Photo or scan of the supplier's credit note - same pattern as
   // PurchaseInvoice.attachmentUrl.
   attachmentUrl            String?
@@ -2065,6 +2082,7 @@ model PurchaseCreditNote {
   taxLines     PurchaseCreditNoteTaxLine[]
   journalEntry JournalEntry?
 
+  @@unique([tenantId, id])
   @@index([tenantId, purchaseInvoiceId])
   @@index([tenantId, supplierId])
   @@index([tenantId, supplierReturnId])
@@ -2078,7 +2096,7 @@ model PurchaseCreditNoteTaxLine {
   id                   String                     @id @default(uuid())
   tenantId             String
   purchaseCreditNoteId String
-  purchaseCreditNote   PurchaseCreditNote         @relation(fields: [purchaseCreditNoteId], references: [id])
+  purchaseCreditNote   PurchaseCreditNote         @relation(fields: [tenantId, purchaseCreditNoteId], references: [tenantId, id])
   type                 PurchaseInvoiceTaxLineType
   concept              String
   amount               Decimal                    @db.Decimal(14, 2)
@@ -2098,7 +2116,7 @@ model SupplierPayment {
   id                 String            @id @default(uuid())
   tenantId           String
   purchaseInvoiceId  String
-  purchaseInvoice    PurchaseInvoice   @relation(fields: [purchaseInvoiceId], references: [id])
+  purchaseInvoice    PurchaseInvoice   @relation(fields: [tenantId, purchaseInvoiceId], references: [tenantId, id])
   amount             Decimal           @db.Decimal(14, 2)
   method             String
   financialAccountId String?
@@ -2110,6 +2128,7 @@ model SupplierPayment {
   journalEntry JournalEntry?
   withholdings SupplierPaymentWithholding[]
 
+  @@unique([tenantId, id])
   @@index([tenantId, purchaseInvoiceId])
   @@map("supplier_payments")
 }

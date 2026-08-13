@@ -262,7 +262,6 @@ export class InvoicingService {
       }
 
       lineInputs.push({
-        tenantId,
         articleVariantId: calc.articleVariantId,
         quantity: calc.quantity,
         unitPrice: calc.unitPrice,

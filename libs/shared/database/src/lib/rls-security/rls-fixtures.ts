@@ -18,6 +18,8 @@ export interface TenantFixture {
     purchaseInvoiceId: string;
     purchaseCreditNoteId: string;
     invoiceId: string;
+    accountingAccountId: string;
+    journalEntryId: string;
   };
 }
 
@@ -374,6 +376,8 @@ export async function seedTenantGraph(client: PoolClient, tenantId: string, labe
       purchaseInvoiceId,
       purchaseCreditNoteId,
       invoiceId,
+      accountingAccountId: payableAccountId,
+      journalEntryId,
     },
   };
 }

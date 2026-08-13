@@ -71,4 +71,23 @@ describe('RLS cross-tenant FK: PurchaseCreditNote -> PurchaseInvoice of another 
       ),
     ).rejects.toThrow();
   });
+
+  // Most sensitive of the 22 relations fixed alongside PurchaseCreditNote
+  // (see PROGRESS.md, "PENDIENTE URGENTE" fix): posting to another tenant's
+  // chart of accounts. journalEntryId stays in tenant A (own row, satisfies
+  // that half of the composite FK) - only accountId points at tenant B's
+  // AccountingAccount.
+  it('cannot create a JournalEntryLine in tenant A posting to an AccountingAccount owned by tenant B', async () => {
+    await expect(
+      asTenant(tenantAId, (client) =>
+        insertRow(client, 'journal_entry_lines', newId(), {
+          tenantId: tenantAId, // correct - satisfies this row's own WITH CHECK
+          journalEntryId: fixtureA.ids.journalEntryId, // belongs to tenant A
+          accountId: fixtureB.ids.accountingAccountId, // belongs to tenant B
+          direction: 'DEBIT',
+          amount: 1,
+        }),
+      ),
+    ).rejects.toThrow();
+  });
 });

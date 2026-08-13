@@ -50,6 +50,7 @@ describe('JwtAuthGuard', () => {
       email: 'a@b.com',
       role: 'OWNER',
       moduleAccess: [],
+      mustChangePassword: false,
     };
     const jwtService = {
       verifyAsync: jest.fn().mockResolvedValue(payload),
