@@ -612,3 +612,242 @@ describe('AccountingService.postReceiptJournalEntry', () => {
     expect(db.journalEntry.create).not.toHaveBeenCalled();
   });
 });
+
+describe('AccountingService.postPurchaseCreditNoteJournalEntry', () => {
+  it('books debit Proveedores / credit IVA Crédito Fiscal + Mercaderías, balanced', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postPurchaseCreditNoteJournalEntry({
+        purchaseCreditNoteId: 'pcn-1',
+        subtotal: 100,
+        taxTotal: 21,
+        total: 121,
+      }),
+    );
+
+    expect(db._created.map((a) => a.code)).toEqual(
+      expect.arrayContaining(['2.1.05', '1.1.05', '1.1.04']),
+    );
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.purchaseCreditNoteId).toBe('pcn-1');
+    expect(createArgs.data.lines.createMany.data).toEqual([
+      { accountId: 'acc-2.1.05', direction: 'DEBIT', amount: 121 },
+      { accountId: 'acc-1.1.05', direction: 'CREDIT', amount: 21 },
+      { accountId: 'acc-1.1.04', direction: 'CREDIT', amount: 100 },
+    ]);
+  });
+
+  it('omits the IVA Crédito Fiscal line entirely when taxTotal is zero', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postPurchaseCreditNoteJournalEntry({
+        purchaseCreditNoteId: 'pcn-2',
+        subtotal: 100,
+        taxTotal: 0,
+        total: 100,
+      }),
+    );
+
+    expect(db._created.some((a) => a.code === '1.1.05')).toBe(false);
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.lines.createMany.data).toEqual([
+      { accountId: 'acc-2.1.05', direction: 'DEBIT', amount: 100 },
+      { accountId: 'acc-1.1.04', direction: 'CREDIT', amount: 100 },
+    ]);
+  });
+
+  it('omits the Mercaderías line when subtotal is zero (a pure-tax credit note)', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postPurchaseCreditNoteJournalEntry({
+        purchaseCreditNoteId: 'pcn-3',
+        subtotal: 0,
+        taxTotal: 21,
+        total: 21,
+      }),
+    );
+
+    expect(db._created.some((a) => a.code === '1.1.04')).toBe(false);
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.lines.createMany.data).toEqual([
+      { accountId: 'acc-2.1.05', direction: 'DEBIT', amount: 21 },
+      { accountId: 'acc-1.1.05', direction: 'CREDIT', amount: 21 },
+    ]);
+  });
+
+  it('skips posting entirely for a zero-total credit note', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    const result = await runInTenant(db, () =>
+      service.postPurchaseCreditNoteJournalEntry({
+        purchaseCreditNoteId: 'pcn-4',
+        subtotal: 0,
+        taxTotal: 0,
+        total: 0,
+      }),
+    );
+
+    expect(result).toBeUndefined();
+    expect(db.journalEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('stays balanced when subtotal/taxTotal carry fractional cents (rounding edge case)', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    // 33.33 credited at 21% IVA -> taxTotal 6.9993, not a clean 2-decimal
+    // number. AccountingService trusts whatever subtotal/taxTotal/total the
+    // composition root computed (PurchaseCreditNotesService) rather than
+    // re-deriving them - this proves the balance check and the emitted
+    // line amounts survive a non-2-decimal input intact.
+    await runInTenant(db, () =>
+      service.postPurchaseCreditNoteJournalEntry({
+        purchaseCreditNoteId: 'pcn-5',
+        subtotal: '33.33',
+        taxTotal: '6.9993',
+        total: '40.3293',
+      }),
+    );
+
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    const lines = createArgs.data.lines.createMany.data as { direction: string; amount: number }[];
+    const debit = lines.filter((l) => l.direction === 'DEBIT').reduce((s, l) => s + l.amount, 0);
+    const credit = lines.filter((l) => l.direction === 'CREDIT').reduce((s, l) => s + l.amount, 0);
+    expect(debit).toBeCloseTo(credit, 8);
+    expect(debit).toBeCloseTo(40.3293, 8);
+  });
+});
+
+describe('AccountingService.reverseSupplierReturnAgainstPayable', () => {
+  it('books debit Proveedores / credit Mercaderías for a return against an already-invoiced receipt', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.reverseSupplierReturnAgainstPayable({ supplierReturnId: 'return-2', amount: 250 }),
+    );
+
+    expect(db._created.map((a) => a.code)).toEqual(expect.arrayContaining(['2.1.05', '1.1.04']));
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    expect(createArgs.data.supplierReturnId).toBe('return-2');
+    expect(createArgs.data.lines.createMany.data).toEqual([
+      { accountId: 'acc-2.1.05', direction: 'DEBIT', amount: 250 },
+      { accountId: 'acc-1.1.04', direction: 'CREDIT', amount: 250 },
+    ]);
+  });
+
+  it('skips posting entirely for a zero amount', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    const result = await runInTenant(db, () =>
+      service.reverseSupplierReturnAgainstPayable({ supplierReturnId: 'return-3', amount: 0 }),
+    );
+
+    expect(result).toBeUndefined();
+    expect(db.journalEntry.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('AccountingService rounding edge cases (fractional cents)', () => {
+  it('postInvoiceJournalEntry stays balanced with a non-2-decimal taxTotal', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postInvoiceJournalEntry({
+        invoiceId: 'inv-round-1',
+        subtotal: '33.33',
+        taxTotal: '6.9993',
+        total: '40.3293',
+      }),
+    );
+
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    const lines = createArgs.data.lines.createMany.data as { direction: string; amount: number }[];
+    const debit = lines.filter((l) => l.direction === 'DEBIT').reduce((s, l) => s + l.amount, 0);
+    const credit = lines.filter((l) => l.direction === 'CREDIT').reduce((s, l) => s + l.amount, 0);
+    expect(debit).toBeCloseTo(credit, 8);
+    expect(debit).toBeCloseTo(40.3293, 8);
+  });
+
+  it('postPurchaseInvoiceJournalEntry stays balanced when GRNI/expense/IVA/percepciones all carry fractional cents', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postPurchaseInvoiceJournalEntry({
+        purchaseInvoiceId: 'pinv-round-1',
+        grniClearedAmount: '12.345',
+        nonGrniAmount: '7.655',
+        ivaCredito: '4.2',
+        percepciones: [{ concept: 'IIBB', amount: '0.005' }],
+        total: '24.205',
+      }),
+    );
+
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    const lines = createArgs.data.lines.createMany.data as { direction: string; amount: number }[];
+    const debit = lines.filter((l) => l.direction === 'DEBIT').reduce((s, l) => s + l.amount, 0);
+    const credit = lines.filter((l) => l.direction === 'CREDIT').reduce((s, l) => s + l.amount, 0);
+    expect(debit).toBeCloseTo(credit, 8);
+    expect(credit).toBeCloseTo(24.205, 8);
+  });
+
+  it('postSupplierPaymentJournalEntry stays balanced when cash + several withheld amounts carry fractional cents', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postSupplierPaymentJournalEntry({
+        supplierPaymentId: 'pay-round-1',
+        amount: '99.99',
+        withholdings: [
+          { taxType: 'GROSS_INCOME', amount: '3.0033' },
+          { taxType: 'GROSS_INCOME', amount: '1.4967' },
+        ],
+      }),
+    );
+
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    const lines = createArgs.data.lines.createMany.data as { direction: string; amount: number }[];
+    const debit = lines.filter((l) => l.direction === 'DEBIT').reduce((s, l) => s + l.amount, 0);
+    const credit = lines.filter((l) => l.direction === 'CREDIT').reduce((s, l) => s + l.amount, 0);
+    // 99.99 cash + (3.0033 + 1.4967 = 4.5) withheld = 104.49 cancelled.
+    expect(debit).toBeCloseTo(104.49, 8);
+    expect(debit).toBeCloseTo(credit, 8);
+    // The two GROSS_INCOME lines aggregate into a single 2.1.08 credit -
+    // confirms the sum doesn't drift when combining two fractional-cent
+    // amounts that individually don't round cleanly.
+    const withheldLine = lines.find((l) => l.accountId === 'acc-2.1.08');
+    expect(withheldLine?.amount).toBeCloseTo(4.5, 8);
+  });
+
+  it('postPurchaseCreditNoteJournalEntry stays balanced with a non-2-decimal taxTotal', async () => {
+    const db = dbWithAccounts();
+    const service = new AccountingService();
+
+    await runInTenant(db, () =>
+      service.postPurchaseCreditNoteJournalEntry({
+        purchaseCreditNoteId: 'pcn-round-1',
+        subtotal: '16.66',
+        taxTotal: '3.4986',
+        total: '20.1586',
+      }),
+    );
+
+    const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
+    const lines = createArgs.data.lines.createMany.data as { direction: string; amount: number }[];
+    const debit = lines.filter((l) => l.direction === 'DEBIT').reduce((s, l) => s + l.amount, 0);
+    const credit = lines.filter((l) => l.direction === 'CREDIT').reduce((s, l) => s + l.amount, 0);
+    expect(debit).toBeCloseTo(credit, 8);
+    expect(debit).toBeCloseTo(20.1586, 8);
+  });
+});

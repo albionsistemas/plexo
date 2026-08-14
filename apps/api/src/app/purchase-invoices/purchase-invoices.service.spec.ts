@@ -42,6 +42,52 @@ describe('PurchaseInvoicesService.createInvoice', () => {
     const journalArg = (accountingService.postPurchaseInvoiceJournalEntry as jest.Mock).mock.calls[0][0];
     expect(journalArg.date).toEqual(new Date('2026-07-15'));
   });
+
+  it('wires grniClearedAmount/nonGrniAmount through as-is and aggregates taxLines by type into ivaCredito/percepciones', async () => {
+    // This is the one place these numbers get assembled before reaching
+    // AccountingService - a filter/reduce bug here (wrong type, wrong sum)
+    // would post a wrong-but-still-balanced entry, since
+    // postPurchaseInvoiceJournalEntry's own balance check can't tell a
+    // misrouted amount from a correct one.
+    const invoice = {
+      id: 'pinv-2',
+      total: new Prisma.Decimal(22161.5),
+      supplierInvoiceDate: new Date('2026-07-15'),
+      taxLines: [
+        { type: 'IVA_CREDITO', amount: new Prisma.Decimal(3811.5), concept: 'IVA 21%' },
+        { type: 'PERCEPCION', amount: new Prisma.Decimal(200), concept: 'Percepción IIBB' },
+        { type: 'PERCEPCION', amount: new Prisma.Decimal(150), concept: 'Percepción IVA' },
+      ],
+    };
+    const purchaseInvoiceService = {
+      create: jest.fn().mockResolvedValue({
+        invoice,
+        grniClearedAmount: new Prisma.Decimal(18150),
+        nonGrniAmount: new Prisma.Decimal(0),
+      }),
+    } as unknown as PurchaseInvoiceService;
+    const accountingService = {
+      postPurchaseInvoiceJournalEntry: jest.fn().mockResolvedValue({}),
+    } as unknown as AccountingService;
+    const service = new PurchaseInvoicesService(purchaseInvoiceService, accountingService);
+
+    await service.createInvoice({ purchaseOrderId: 'po-2' } as never);
+
+    const journalArg = (accountingService.postPurchaseInvoiceJournalEntry as jest.Mock).mock.calls[0][0];
+    expect(journalArg.purchaseInvoiceId).toBe('pinv-2');
+    expect(journalArg.grniClearedAmount.toNumber()).toBe(18150);
+    expect(journalArg.nonGrniAmount.toNumber()).toBe(0);
+    expect(journalArg.total).toBe(invoice.total);
+    // ivaCredito: only the IVA_CREDITO line, summed (there's just one here,
+    // but the reduce must still land on that one line's exact amount).
+    expect(journalArg.ivaCredito.toNumber()).toBe(3811.5);
+    // percepciones: both PERCEPCION lines, neither dropped nor merged -
+    // each keeps its own concept/amount for AccountingService to sum.
+    expect(journalArg.percepciones).toEqual([
+      { concept: 'Percepción IIBB', amount: invoice.taxLines[1].amount },
+      { concept: 'Percepción IVA', amount: invoice.taxLines[2].amount },
+    ]);
+  });
 });
 
 describe('PurchaseInvoicesService.recordPayment', () => {
@@ -64,5 +110,39 @@ describe('PurchaseInvoicesService.recordPayment', () => {
 
     const journalArg = (accountingService.postSupplierPaymentJournalEntry as jest.Mock).mock.calls[0][0];
     expect(journalArg.date).toEqual(new Date('2026-07-20'));
+  });
+
+  it('passes amount and every withholding line (taxType + amount) through to AccountingService untouched', async () => {
+    const payment = {
+      id: 'pay-2',
+      amount: new Prisma.Decimal(700),
+      paidAt: new Date('2026-07-20'),
+      withholdings: [
+        { taxType: 'INCOME_TAX', amount: new Prisma.Decimal(100), regimeId: 'r1' },
+        { taxType: 'GROSS_INCOME', amount: new Prisma.Decimal(50), regimeId: 'r2' },
+        { taxType: 'GROSS_INCOME', amount: new Prisma.Decimal(25), regimeId: 'r3' },
+      ],
+    };
+    const purchaseInvoiceService = {
+      recordPayment: jest.fn().mockResolvedValue(payment),
+    } as unknown as PurchaseInvoiceService;
+    const accountingService = {
+      postSupplierPaymentJournalEntry: jest.fn().mockResolvedValue({}),
+    } as unknown as AccountingService;
+    const service = new PurchaseInvoicesService(purchaseInvoiceService, accountingService);
+
+    await service.recordPayment('pinv-2', { amount: 700, method: 'Transferencia' } as never);
+
+    const journalArg = (accountingService.postSupplierPaymentJournalEntry as jest.Mock).mock.calls[0][0];
+    expect(journalArg.supplierPaymentId).toBe('pay-2');
+    expect(journalArg.amount).toBe(payment.amount);
+    // Composition root only maps {taxType, amount} - it does NOT
+    // pre-aggregate by taxType (AccountingService does that itself), so the
+    // two GROSS_INCOME lines must arrive here still separate.
+    expect(journalArg.withholdings).toEqual([
+      { taxType: 'INCOME_TAX', amount: payment.withholdings[0].amount },
+      { taxType: 'GROSS_INCOME', amount: payment.withholdings[1].amount },
+      { taxType: 'GROSS_INCOME', amount: payment.withholdings[2].amount },
+    ]);
   });
 });

@@ -528,6 +528,195 @@ describe('InvoicingService.createInvoice', () => {
     expect(caeRequest.taxLines[0].netAmount.toNumber()).toBe(100);
   });
 
+  it('computes IVA per line independently for each real AR alícuota (0%, 10.5%, 21%, 27%)', async () => {
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter(), makeSubscriptionService());
+
+    const dto = {
+      customerId: 'customer-1',
+      documentLetter: 'B' as const,
+      pointOfSale: '0001',
+      currencyId: 'currency-1',
+      lines: [
+        { articleVariantId: 'variant-0', quantity: 1 },
+        { articleVariantId: 'variant-10-5', quantity: 1 },
+        { articleVariantId: 'variant-21', quantity: 1 },
+        { articleVariantId: 'variant-27', quantity: 1 },
+      ],
+    };
+
+    const rateFor = (rate: number) => ({
+      calculationType: 'PERCENTAGE' as const,
+      rate: new Prisma.Decimal(rate),
+      code: `IVA_${rate}`,
+    });
+    const variants: Record<string, unknown> = {
+      'variant-0': { id: 'variant-0', unitPrice: new Prisma.Decimal(100), article: { taxDefinition: rateFor(0) } },
+      'variant-10-5': { id: 'variant-10-5', unitPrice: new Prisma.Decimal(100), article: { taxDefinition: rateFor(10.5) } },
+      'variant-21': { id: 'variant-21', unitPrice: new Prisma.Decimal(100), article: { taxDefinition: rateFor(21) } },
+      'variant-27': { id: 'variant-27', unitPrice: new Prisma.Decimal(100), article: { taxDefinition: rateFor(27) } },
+    };
+
+    const createdInvoice = {
+      id: 'invoice-rates',
+      tenantId: 'tenant-1',
+      number: '00000001',
+      customerName: 'Acme',
+      customerTaxId: '20-1-1',
+      documentLetter: 'B',
+      pointOfSale: '0001',
+      status: 'ISSUED',
+      issueDate: new Date('2026-01-01'),
+      exchangeRate: new Prisma.Decimal(1),
+      subtotal: new Prisma.Decimal(400),
+      taxTotal: new Prisma.Decimal(58.5),
+      total: new Prisma.Decimal(458.5),
+      lines: [],
+    };
+    const db = {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'customer-1', active: true, name: 'Acme', taxId: '20-1-1', email: null,
+          roles: [{ role: 'CUSTOMER' }],
+        }),
+      },
+      currency: { findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', code: 'ARS', isBase: true }) },
+      articleVariant: {
+        findUnique: jest.fn((args: { where: { id: string } }) => Promise.resolve(variants[args.where.id])),
+      },
+      invoice: {
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn().mockResolvedValue(createdInvoice),
+        update: jest.fn().mockResolvedValue(createdInvoice),
+      },
+    };
+
+    await runInTenant(db, () => service.createInvoice(dto));
+
+    const createArgs = (db.invoice.create as jest.Mock).mock.calls[0][0];
+    const lines = createArgs.data.lines.createMany.data;
+    const byVariant = (id: string) =>
+      lines.find((l: { articleVariantId: string }) => l.articleVariantId === id);
+
+    // netAmount is 100 on every line (no discount) - only taxRate/lineTotal
+    // vary, so each line's own tax is isolated from the others.
+    expect(byVariant('variant-0').taxRate.toNumber()).toBe(0);
+    expect(byVariant('variant-0').lineTotal.toNumber()).toBeCloseTo(100, 6);
+
+    expect(byVariant('variant-10-5').taxRate.toNumber()).toBe(10.5);
+    expect(byVariant('variant-10-5').lineTotal.toNumber()).toBeCloseTo(110.5, 6);
+
+    expect(byVariant('variant-21').taxRate.toNumber()).toBe(21);
+    expect(byVariant('variant-21').lineTotal.toNumber()).toBeCloseTo(121, 6);
+
+    expect(byVariant('variant-27').taxRate.toNumber()).toBe(27);
+    expect(byVariant('variant-27').lineTotal.toNumber()).toBeCloseTo(127, 6);
+
+    // taxTotal on the header is the running sum of each line's own tax
+    // (0 + 10.5 + 21 + 27 = 58.5), not re-derived from a blended rate.
+    expect(createArgs.data.subtotal.toNumber()).toBeCloseTo(400, 6);
+    expect(createArgs.data.taxTotal.toNumber()).toBeCloseTo(58.5, 6);
+    expect(createArgs.data.total.toNumber()).toBeCloseTo(458.5, 6);
+  });
+
+  it('rounding edge case: per-line IVA on non-round prices still sums to the header at 2 decimals', async () => {
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter(), makeSubscriptionService());
+
+    // 33.33 + 33.33 + 33.34 = 100.00 exactly, but each line's own IVA at
+    // 21% (6.9993 / 6.9993 / 7.0014) is NOT a clean 2-decimal amount -
+    // exactly the "fracción de centavo por línea" case that hides rounding
+    // bugs: taxTotal must still be the exact sum of the three (21.0000,
+    // clean only because the netAmounts happen to sum to a round number),
+    // and each line's own tax must survive un-rounded in memory even though
+    // InvoiceLine.taxRate/netAmount/lineTotal are `@db.Decimal(14,2)`
+    // columns that WILL round it on write.
+    const dto = {
+      customerId: 'customer-1',
+      documentLetter: 'B' as const,
+      pointOfSale: '0001',
+      currencyId: 'currency-1',
+      lines: [
+        { articleVariantId: 'variant-a', quantity: 1 },
+        { articleVariantId: 'variant-b', quantity: 1 },
+        { articleVariantId: 'variant-c', quantity: 1 },
+      ],
+    };
+
+    const taxDefinition = { calculationType: 'PERCENTAGE' as const, rate: new Prisma.Decimal(21), code: 'IVA_21' };
+    const variants: Record<string, unknown> = {
+      'variant-a': { id: 'variant-a', unitPrice: new Prisma.Decimal('33.33'), article: { taxDefinition } },
+      'variant-b': { id: 'variant-b', unitPrice: new Prisma.Decimal('33.33'), article: { taxDefinition } },
+      'variant-c': { id: 'variant-c', unitPrice: new Prisma.Decimal('33.34'), article: { taxDefinition } },
+    };
+
+    const createdInvoice = {
+      id: 'invoice-round',
+      tenantId: 'tenant-1',
+      number: '00000001',
+      customerName: 'Acme',
+      customerTaxId: '20-1-1',
+      documentLetter: 'B',
+      pointOfSale: '0001',
+      status: 'ISSUED',
+      issueDate: new Date('2026-01-01'),
+      exchangeRate: new Prisma.Decimal(1),
+      subtotal: new Prisma.Decimal(100),
+      taxTotal: new Prisma.Decimal(21),
+      total: new Prisma.Decimal(121),
+      lines: [],
+    };
+    const db = {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'customer-1', active: true, name: 'Acme', taxId: '20-1-1', email: null,
+          roles: [{ role: 'CUSTOMER' }],
+        }),
+      },
+      currency: { findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', code: 'ARS', isBase: true }) },
+      articleVariant: {
+        findUnique: jest.fn((args: { where: { id: string } }) => Promise.resolve(variants[args.where.id])),
+      },
+      invoice: {
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn().mockResolvedValue(createdInvoice),
+        update: jest.fn().mockResolvedValue(createdInvoice),
+      },
+    };
+
+    await runInTenant(db, () => service.createInvoice(dto));
+
+    const createArgs = (db.invoice.create as jest.Mock).mock.calls[0][0];
+    const lines: { netAmount: Prisma.Decimal; lineTotal: Prisma.Decimal }[] =
+      createArgs.data.lines.createMany.data;
+    const headerSubtotal: Prisma.Decimal = createArgs.data.subtotal;
+    const headerTaxTotal: Prisma.Decimal = createArgs.data.taxTotal;
+    const headerTotal: Prisma.Decimal = createArgs.data.total;
+
+    // Exact per-line tax, unrounded (this is what actually gets summed into
+    // taxTotal - proves the fraction of a cent isn't silently dropped).
+    const taxAmounts = lines.map((l) => l.lineTotal.sub(l.netAmount));
+    expect(taxAmounts[0].toNumber()).toBeCloseTo(6.9993, 6);
+    expect(taxAmounts[1].toNumber()).toBeCloseTo(6.9993, 6);
+    expect(taxAmounts[2].toNumber()).toBeCloseTo(7.0014, 6);
+
+    // Simulates what Postgres actually does at INSERT time: every one of
+    // these fields is a `@db.Decimal(14,2)` column (see schema.prisma), so
+    // each value gets independently rounded to 2 decimals on write. If the
+    // per-line calculation ever let a fraction of a cent get lost or
+    // double-counted, summing the (post-DB-rounding) lines would land away
+    // from the (post-DB-rounding) header - invisible to a check that only
+    // compares full-precision in-memory Decimals, since taxTotal here is
+    // literally the running sum of the same Decimal values (see
+    // createInvoice), so it always matches itself by construction.
+    const roundedNetSum = lines.reduce((s, l) => s.add(l.netAmount.toDP(2)), new Prisma.Decimal(0));
+    const roundedTaxSum = taxAmounts.reduce((s, t) => s.add(t.toDP(2)), new Prisma.Decimal(0));
+
+    expect(roundedNetSum.toDP(2).toNumber()).toBe(headerSubtotal.toDP(2).toNumber());
+    expect(roundedTaxSum.toDP(2).toNumber()).toBe(headerTaxTotal.toDP(2).toNumber());
+    // total is exactly subtotal + taxTotal by construction - worth pinning
+    // down explicitly for this specific non-clean input too.
+    expect(headerTotal.toNumber()).toBeCloseTo(headerSubtotal.add(headerTaxTotal).toNumber(), 10);
+  });
+
   it('rejects a FORMULA tax definition rather than silently mis-taxing', async () => {
     const db = {
       company: {
