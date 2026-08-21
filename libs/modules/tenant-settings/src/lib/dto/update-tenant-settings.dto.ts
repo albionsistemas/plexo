@@ -4,6 +4,7 @@ import {
   IsEmail,
   IsEnum,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Matches,
@@ -79,4 +80,12 @@ export class UpdateTenantSettingsDto {
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsEnum(TenantTaxCondition)
   ownTaxCondition?: TenantTaxCondition | null;
+
+  /** null vuelve a "sin sugerencia" para los artículos que no tengan su
+   * propio Article.markupPercent; omitir el campo deja el valor guardado
+   * sin tocar - misma convención que reminderCcEmail/ownTaxCondition. */
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsNumber()
+  @Min(0)
+  defaultMarkupPercent?: number | null;
 }

@@ -9,8 +9,9 @@ import {
   ComboboxOptions,
 } from '@headlessui/react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, ShoppingBasket } from 'lucide-react';
+import { ChevronDown, Plus, ShoppingBasket } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import ArticleFormModal, { type CreatedArticleVariantRef } from './ArticleFormModal';
 
 export interface ArticlePickerOption {
   id: string; // articleVariantId
@@ -71,6 +72,7 @@ export default function ArticlePicker({
     queryFn: () => inventoryApi.listArticles(),
   });
   const [query, setQuery] = useState('');
+  const [creatingArticle, setCreatingArticle] = useState(false);
 
   const options = useMemo(() => flattenOptions(articlesQuery.data ?? []), [articlesQuery.data]);
   const selected = options.find((o) => o.id === value) ?? null;
@@ -95,73 +97,106 @@ export default function ArticlePicker({
     return [exact, ...matches];
   }, [options, query]);
 
+  function handleArticleCreated(created: CreatedArticleVariantRef) {
+    // El artículo recién creado sin stock/imagen/categoría todavía - se
+    // arma la opción a mano en vez de esperar el refetch de
+    // ['inventory-articles'] (que ArticleFormModal ya invalida, así que la
+    // próxima vez que se abra esta lista el artículo real ya aparece ahí).
+    onChange(created.variantId, {
+      id: created.variantId,
+      articleName: created.articleName,
+      variantLabel: null,
+      sku: created.sku,
+      imageUrl: null,
+      categoryName: null,
+      unitPrice: created.unitPrice,
+      totalStock: 0,
+      minimumStock: null,
+    });
+    setCreatingArticle(false);
+  }
+
   return (
-    <Combobox
-      value={value || null}
-      onChange={(id: string | null) => onChange(id ?? '', id ? (options.find((o) => o.id === id) ?? null) : null)}
-      disabled={disabled || isEmpty}
-    >
-      <div className={`relative ${className ?? ''}`}>
-        <div className="relative">
-          <ComboboxInput
-            className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 py-2 pl-3 pr-8 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500 disabled:opacity-70"
-            displayValue={() =>
-              selected
-                ? `${selected.sku} — ${selected.articleName}${selected.variantLabel ? ` (${selected.variantLabel})` : ''}`
-                : ''
-            }
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={isEmpty ? 'Sin artículos cargados' : (placeholder ?? 'Buscar artículo o SKU...')}
-          />
-          <ComboboxButton className="absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-            <ChevronDown className="h-4 w-4" />
-          </ComboboxButton>
+    <>
+      <Combobox
+        value={value || null}
+        onChange={(id: string | null) => onChange(id ?? '', id ? (options.find((o) => o.id === id) ?? null) : null)}
+        disabled={disabled || isEmpty}
+      >
+        <div className={`relative ${className ?? ''}`}>
+          <div className="relative">
+            <ComboboxInput
+              className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 py-2 pl-3 pr-16 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500 disabled:opacity-70"
+              displayValue={() =>
+                selected
+                  ? `${selected.sku} — ${selected.articleName}${selected.variantLabel ? ` (${selected.variantLabel})` : ''}`
+                  : ''
+              }
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={isEmpty ? 'Sin artículos cargados' : (placeholder ?? 'Buscar artículo o SKU...')}
+            />
+            <button
+              type="button"
+              onClick={() => setCreatingArticle(true)}
+              title="Nuevo artículo"
+              className="absolute inset-y-0 right-7 flex items-center px-1.5 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+            <ComboboxButton className="absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+              <ChevronDown className="h-4 w-4" />
+            </ComboboxButton>
+          </div>
+          <ComboboxOptions
+            anchor="bottom start"
+            className="z-[60] mt-1 max-h-72 w-[var(--input-width)] overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-1 shadow-xl focus:outline-none"
+          >
+            {filtered.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-slate-500">Sin artículos que coincidan</p>
+            ) : (
+              filtered.map((option) => {
+                const belowMinimum = option.minimumStock !== null && option.totalStock < option.minimumStock;
+                return (
+                  <ComboboxOption
+                    key={option.id}
+                    value={option.id}
+                    className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm data-[focus]:bg-slate-100 dark:data-[focus]:bg-slate-800"
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded bg-slate-200 dark:bg-slate-800">
+                      {option.imageUrl ? (
+                        <img
+                          src={resolveUploadUrl(option.imageUrl) ?? undefined}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <ShoppingBasket className="h-4 w-4 text-slate-400 dark:text-slate-600" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-slate-900 dark:text-slate-100">
+                        {option.articleName}
+                        {option.variantLabel && <span className="text-slate-500"> · {option.variantLabel}</span>}
+                      </p>
+                      <p className="truncate text-xs text-slate-500">{option.sku}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-slate-700 dark:text-slate-300">${option.unitPrice.toFixed(2)}</p>
+                      <p className={`text-xs ${belowMinimum ? 'text-red-600 dark:text-red-400' : 'text-slate-500'}`}>
+                        Stock: {option.totalStock}
+                      </p>
+                    </div>
+                  </ComboboxOption>
+                );
+              })
+            )}
+          </ComboboxOptions>
         </div>
-        <ComboboxOptions
-          anchor="bottom start"
-          className="z-[60] mt-1 max-h-72 w-[var(--input-width)] overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-1 shadow-xl focus:outline-none"
-        >
-          {filtered.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-slate-500">Sin artículos que coincidan</p>
-          ) : (
-            filtered.map((option) => {
-              const belowMinimum = option.minimumStock !== null && option.totalStock < option.minimumStock;
-              return (
-                <ComboboxOption
-                  key={option.id}
-                  value={option.id}
-                  className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm data-[focus]:bg-slate-100 dark:data-[focus]:bg-slate-800"
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded bg-slate-200 dark:bg-slate-800">
-                    {option.imageUrl ? (
-                      <img
-                        src={resolveUploadUrl(option.imageUrl) ?? undefined}
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <ShoppingBasket className="h-4 w-4 text-slate-400 dark:text-slate-600" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-slate-900 dark:text-slate-100">
-                      {option.articleName}
-                      {option.variantLabel && <span className="text-slate-500"> · {option.variantLabel}</span>}
-                    </p>
-                    <p className="truncate text-xs text-slate-500">{option.sku}</p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-slate-700 dark:text-slate-300">${option.unitPrice.toFixed(2)}</p>
-                    <p className={`text-xs ${belowMinimum ? 'text-red-600 dark:text-red-400' : 'text-slate-500'}`}>
-                      Stock: {option.totalStock}
-                    </p>
-                  </div>
-                </ComboboxOption>
-              );
-            })
-          )}
-        </ComboboxOptions>
-      </div>
-    </Combobox>
+      </Combobox>
+
+      {creatingArticle && (
+        <ArticleFormModal onClose={() => setCreatingArticle(false)} onSaved={handleArticleCreated} />
+      )}
+    </>
   );
 }

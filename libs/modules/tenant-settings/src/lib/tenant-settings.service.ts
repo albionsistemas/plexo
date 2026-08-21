@@ -36,6 +36,10 @@ export interface TenantSettingsView {
   // configure a mano en Preferencias. Alimenta resolveDocumentLetter en el
   // frontend (letra A/B/C sugerida/forzada al emitir factura).
   ownTaxCondition: TenantTaxCondition | null;
+  // Sugerencia genérica de % de remarca - ver el comentario del campo en
+  // el schema. Usado por Inventario para pre-completar el precio de venta
+  // cuando el Article en cuestión no tiene su propio markupPercent.
+  defaultMarkupPercent: number | null;
   // Tenant.taxId (the tenant's OWN CUIT - who the AFIP certificate is
   // registered under), surfaced here because Preferencias/AFIP is the only
   // screen that needs to show/edit it today - see updateTenantInfo. Not a
@@ -106,6 +110,7 @@ export class TenantSettingsService {
       afipConfigured: Boolean(row?.afipCertEncrypted && row?.afipKeyEncrypted && tenantTaxId),
       afipCertExpiresAt: row?.afipCertExpiresAt ?? null,
       ownTaxCondition: row?.ownTaxCondition ?? null,
+      defaultMarkupPercent: row?.defaultMarkupPercent?.toNumber() ?? null,
       tenantTaxId,
     };
   }
@@ -128,6 +133,7 @@ export class TenantSettingsService {
         withholdingAgentVat: dto.withholdingAgentVat,
         withholdingAgentGrossIncome: dto.withholdingAgentGrossIncome,
         ownTaxCondition: dto.ownTaxCondition ?? null,
+        defaultMarkupPercent: dto.defaultMarkupPercent ?? null,
       },
       update: {
         arReminderIntervalDays: dto.arReminderIntervalDays,
@@ -140,6 +146,7 @@ export class TenantSettingsService {
         withholdingAgentVat: dto.withholdingAgentVat,
         withholdingAgentGrossIncome: dto.withholdingAgentGrossIncome,
         ownTaxCondition: dto.ownTaxCondition,
+        defaultMarkupPercent: dto.defaultMarkupPercent,
       },
     });
     return this.toView(row, await this.getTenantTaxId());

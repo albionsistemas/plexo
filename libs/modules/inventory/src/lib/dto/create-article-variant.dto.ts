@@ -23,4 +23,15 @@ export class CreateArticleVariantDto {
   @IsNumber()
   @IsPositive()
   unitPrice!: number;
+
+  // Costo inicial opcional, sólo para sembrar el primer registro de
+  // PriceHistory de esta variante (no hay ninguna compra real todavía en
+  // el momento de crear un artículo nuevo) - alimenta la sugerencia de
+  // precio por % de remarca en el modal de creación. Nunca se actualiza
+  // por acá después: el costo real sigue viniendo únicamente de
+  // movimientos PURCHASE_IN/PRODUCTION_IN reales (ver recordMovement).
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  costPrice?: number;
 }

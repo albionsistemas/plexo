@@ -374,6 +374,11 @@ model TenantSettings {
   // que derivar con certeza, la UI cae a selección manual sin sugerencia.
   ownTaxCondition TenantTaxCondition?
 
+  // Sugerencia genérica de remarca (%) para cuando un Article no tiene la
+  // suya propia (Article.markupPercent) - null = sin sugerencia en
+  // absoluto para esos casos. Ver ese campo para el resto del criterio.
+  defaultMarkupPercent Decimal? @db.Decimal(6, 2)
+
   updatedAt DateTime @updatedAt
 
   @@map("tenant_settings")
@@ -796,6 +801,16 @@ model Article {
   // can actually use. Nullable - most articles won't have one set.
   preferredSupplierId String?
   preferredSupplier   Company?       @relation(fields: [preferredSupplierId], references: [id])
+  // Override individual del % de remarca de este artículo (compartido por
+  // todas sus variantes/SKU - decisión con el usuario, 2026-08-21: el
+  // margen no suele variar entre talles/colores del mismo producto). Nulo
+  // = usa TenantSettings.defaultMarkupPercent en su lugar; ninguno de los
+  // dos configurado = sin sugerencia de precio, el precio de venta se
+  // sigue cargando 100% a mano como hasta ahora. Sólo alimenta una
+  // SUGERENCIA editable al cargar/editar el precio - nunca recalcula solo
+  // un precio ya cargado (ver InventoryService.createArticleVariant /
+  // updateArticleVariantPrice, sin cambios de comportamiento).
+  markupPercent       Decimal?       @db.Decimal(6, 2)
   createdAt           DateTime       @default(now())
 
   variants ArticleVariant[]

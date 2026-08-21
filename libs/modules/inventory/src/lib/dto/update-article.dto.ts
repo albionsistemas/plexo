@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsUUID } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsUUID, Min } from 'class-validator';
 
 export class UpdateArticleDto {
   @IsOptional()
@@ -15,4 +15,12 @@ export class UpdateArticleDto {
   @IsOptional()
   @IsUUID()
   preferredSupplierId?: string | null;
+
+  // null vuelve a "sin override" (usa TenantSettings.defaultMarkupPercent);
+  // omitido deja el valor guardado sin tocar - misma convención que
+  // preferredSupplierId de arriba.
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  markupPercent?: number | null;
 }

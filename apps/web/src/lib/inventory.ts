@@ -42,6 +42,9 @@ export interface Article {
   imageUrl: string | null;
   preferredSupplierId: string | null;
   preferredSupplierName: string | null;
+  // Override individual del % de remarca de este artículo - null = usa
+  // TenantSettings.defaultMarkupPercent en su lugar (ver Preferencias).
+  markupPercent: number | null;
   variants: ArticleVariant[];
 }
 
@@ -50,6 +53,26 @@ export interface UpdateArticleInput {
   isPublished?: boolean;
   // null clears it, undefined/omitted leaves it untouched.
   preferredSupplierId?: string | null;
+  markupPercent?: number | null;
+}
+
+export interface CreateArticleInput {
+  name: string;
+  unitOfMeasure: string;
+  markupPercent?: number | null;
+}
+
+export interface CreateArticleVariantInput {
+  articleId: string;
+  sku: string;
+  color?: string;
+  size?: string;
+  brand?: string;
+  unitPrice: number;
+  // Sólo para sembrar el primer costo conocido de una variante recién
+  // creada (sin ninguna compra real todavía) - ver el comentario del DTO
+  // en el backend.
+  costPrice?: number;
 }
 
 /** Article images (and goods-receipt attachments, and Person avatars) are
@@ -66,6 +89,14 @@ export function resolveUploadUrl(path: string | null): string | null {
   const origin = (api.defaults.baseURL ?? '').replace(/\/api\/?$/, '');
   return `${origin}${path}`;
 }
+
+export const UNIT_OF_MEASURE_OPTIONS = [
+  { value: 'UNIT', label: 'Unidad' },
+  { value: 'KG', label: 'Kilogramo' },
+  { value: 'LTR', label: 'Litro' },
+  { value: 'MM', label: 'Milímetro' },
+  { value: 'M2', label: 'Metro cuadrado' },
+] as const;
 
 export const MOVEMENT_TYPES = [
   { value: 'PURCHASE_IN', label: 'Compra (entrada)' },
@@ -140,6 +171,22 @@ export interface SetMinimumStockInput {
   autoReplenish?: boolean;
 }
 
+// Estos dos devuelven el modelo de Prisma crudo (POST /inventory/articles,
+// POST /inventory/article-variants) - a diferencia de `Article`/
+// `ArticleVariant` de arriba, que son el shape ya mapeado de
+// listArticles() (con Decimal ya convertido a number). unitPrice acá
+// llega como string (serialización de Prisma.Decimal), no number.
+export interface CreatedArticle {
+  id: string;
+  name: string;
+}
+
+export interface CreatedArticleVariant {
+  id: string;
+  sku: string;
+  unitPrice: string;
+}
+
 export const inventoryApi = {
   listArticles: (filters?: ListArticlesFilters) =>
     api.get<Article[]>('/inventory/articles', { params: filters }).then((r) => r.data),
@@ -179,6 +226,14 @@ export const inventoryApi = {
     api.delete<Article>(`/inventory/articles/${articleId}/image`).then((r) => r.data),
   updateArticle: (id: string, dto: UpdateArticleInput) =>
     api.patch<Article>(`/inventory/articles/${id}`, dto).then((r) => r.data),
+  createArticle: (dto: CreateArticleInput) =>
+    api.post<CreatedArticle>('/inventory/articles', dto).then((r) => r.data),
+  createArticleVariant: (dto: CreateArticleVariantInput) =>
+    api.post<CreatedArticleVariant>('/inventory/article-variants', dto).then((r) => r.data),
+  updateArticleVariantPrice: (articleVariantId: string, unitPrice: number) =>
+    api
+      .patch<ArticleVariant>(`/inventory/article-variants/${articleVariantId}/price`, { unitPrice })
+      .then((r) => r.data),
   getPriceHistory: (articleVariantId: string) =>
     api
       .get<PriceHistoryEntry[]>(`/inventory/article-variants/${articleVariantId}/price-history`)

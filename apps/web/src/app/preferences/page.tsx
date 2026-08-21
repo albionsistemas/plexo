@@ -103,6 +103,7 @@ export default function PreferencesPage() {
           />
           <AfipCertificateCard settings={settings} />
           <WithholdingAgentCard settings={settings} />
+          <InventoryPricingCard settings={settings} />
         </>
       )}
       <ActivityLogCard />
@@ -602,6 +603,63 @@ function WithholdingAgentCard({ settings }: { settings: TenantSettings }) {
           />
           Somos agentes de retención de Ingresos Brutos (IIBB)
         </label>
+      </div>
+      {message && <p className="mt-3 text-xs text-green-600 dark:text-green-400">{message}</p>}
+    </div>
+  );
+}
+
+/** Sugerencia genérica de % de remarca para cuando un Article no tiene su
+ * propio override (Inventario → editar artículo) - nunca recalcula un
+ * precio ya cargado solo, sólo pre-completa el campo la próxima vez que
+ * alguien cree o edite un artículo sin su propio %. */
+function InventoryPricingCard({ settings }: { settings: TenantSettings }) {
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState(settings.defaultMarkupPercent?.toString() ?? '');
+  const [message, setMessage] = useState('');
+
+  const mutation = useMutation({
+    mutationFn: (defaultMarkupPercent: number | null) => tenantSettingsApi.update({ defaultMarkupPercent }),
+    onSuccess: () => {
+      setMessage('Guardado');
+      void queryClient.invalidateQueries({ queryKey: ['tenant-settings'] });
+    },
+  });
+
+  function handleSave() {
+    setMessage('');
+    mutation.mutate(value.trim() === '' ? null : Number(value));
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6">
+      <h2 className="mb-1 text-sm font-medium text-slate-600 dark:text-slate-400">
+        Precios de Inventario
+      </h2>
+      <p className="mb-4 text-xs text-slate-500">
+        % de remarca sugerido por defecto para artículos que no tengan uno propio configurado (Inventario
+        → editar artículo). Sólo pre-completa el precio de venta al cargar/editar - nunca lo cambia solo
+        después.
+      </p>
+      <div className="flex items-center gap-3">
+        <input
+          type="number"
+          min={0}
+          step="any"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="p. ej. 40"
+          className={`${inputClass} w-32`}
+        />
+        <span className="text-sm text-slate-500">%</span>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={mutation.isPending}
+          className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+        >
+          {mutation.isPending ? 'Guardando...' : 'Guardar'}
+        </button>
       </div>
       {message && <p className="mt-3 text-xs text-green-600 dark:text-green-400">{message}</p>}
     </div>

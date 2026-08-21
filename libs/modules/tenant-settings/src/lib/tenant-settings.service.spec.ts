@@ -60,6 +60,7 @@ describe('TenantSettingsService.getSettings', () => {
       afipConfigured: false,
       afipCertExpiresAt: null,
       ownTaxCondition: null,
+      defaultMarkupPercent: null,
       tenantTaxId: null,
     });
   });
@@ -107,6 +108,7 @@ describe('TenantSettingsService.getSettings', () => {
       afipConfigured: true,
       afipCertExpiresAt: new Date('2027-01-01'),
       ownTaxCondition: 'RESPONSABLE_INSCRIPTO',
+      defaultMarkupPercent: null,
       tenantTaxId: '20-11111111-2',
     });
   });
@@ -184,6 +186,7 @@ describe('TenantSettingsService.updateSettings', () => {
         withholdingAgentVat: undefined,
         withholdingAgentGrossIncome: undefined,
         ownTaxCondition: null,
+        defaultMarkupPercent: null,
       },
       update: {
         arReminderIntervalDays: 5,
@@ -196,6 +199,7 @@ describe('TenantSettingsService.updateSettings', () => {
         withholdingAgentVat: undefined,
         withholdingAgentGrossIncome: undefined,
         ownTaxCondition: undefined,
+        defaultMarkupPercent: undefined,
       },
     });
     expect(result.arReminderIntervalDays).toBe(5);

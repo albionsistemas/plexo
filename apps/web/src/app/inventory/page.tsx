@@ -5,6 +5,7 @@ import { getSocket } from '@/lib/socket';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, LayoutGrid, List } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import ArticleFormModal from '@/components/ArticleFormModal';
 import ArticleCatalogGrid from './ArticleCatalogGrid';
 import ArticleImageModal from './ArticleImageModal';
 import ArticlePriceHistoryModal from './ArticlePriceHistoryModal';
@@ -23,6 +24,7 @@ interface VariantRow {
   imageUrl: string | null;
   preferredSupplierId: string | null;
   preferredSupplierName: string | null;
+  markupPercent: number | null;
   variantId: string;
   sku: string;
   variantLabel: string | null;
@@ -89,6 +91,7 @@ function flattenVariants(articles: Article[]): VariantRow[] {
       imageUrl: article.imageUrl,
       preferredSupplierId: article.preferredSupplierId,
       preferredSupplierName: article.preferredSupplierName,
+      markupPercent: article.markupPercent,
       variantId: variant.id,
       sku: variant.sku,
       variantLabel: [variant.color, variant.size, variant.brand].filter(Boolean).join(' / ') || null,
@@ -117,9 +120,15 @@ export default function InventoryPage() {
   const [supplierArticle, setSupplierArticle] = useState<
     { id: string; name: string; preferredSupplierId: string | null } | null
   >(null);
-  const [historyVariant, setHistoryVariant] = useState<
-    { id: string; sku: string; articleName: string } | null
-  >(null);
+  const [historyVariant, setHistoryVariant] = useState<{
+    id: string;
+    sku: string;
+    articleId: string;
+    articleName: string;
+    unitPrice: number;
+    markupPercent: number | null;
+  } | null>(null);
+  const [creatingArticle, setCreatingArticle] = useState(false);
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
     key: 'articleName',
     direction: 'asc',
@@ -198,6 +207,12 @@ export default function InventoryPage() {
             className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800"
           >
             Importar desde Excel
+          </button>
+          <button
+            onClick={() => setCreatingArticle(true)}
+            className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800"
+          >
+            + Nuevo artículo
           </button>
           <button
             onClick={() => setModalOpen(true)}
@@ -408,7 +423,14 @@ export default function InventoryPage() {
                         <button
                           type="button"
                           onClick={() =>
-                            setHistoryVariant({ id: row.variantId, sku: row.sku, articleName: row.articleName })
+                            setHistoryVariant({
+                              id: row.variantId,
+                              sku: row.sku,
+                              articleId: row.articleId,
+                              articleName: row.articleName,
+                              unitPrice: row.unitPrice,
+                              markupPercent: row.markupPercent,
+                            })
                           }
                           title="Ver historial de precios"
                           className="hover:underline hover:decoration-dotted"
@@ -458,6 +480,8 @@ export default function InventoryPage() {
       {historyVariant && (
         <ArticlePriceHistoryModal variant={historyVariant} onClose={() => setHistoryVariant(null)} />
       )}
+
+      {creatingArticle && <ArticleFormModal onClose={() => setCreatingArticle(false)} />}
     </div>
   );
 }
