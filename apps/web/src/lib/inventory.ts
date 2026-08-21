@@ -117,10 +117,27 @@ export interface ListArticlesFilters {
   isPublished?: boolean;
 }
 
+export interface ReorderSuggestion {
+  warehouseId: string;
+  warehouseName: string;
+  articleVariantId: string;
+  sku: string;
+  articleName: string;
+  variantLabel: string | null;
+  imageUrl: string | null;
+  preferredSupplierId: string | null;
+  preferredSupplierName: string | null;
+  minimumQuantity: number;
+  currentQuantity: number;
+  suggestedQuantity: number;
+}
+
 export const inventoryApi = {
   listArticles: (filters?: ListArticlesFilters) =>
     api.get<Article[]>('/inventory/articles', { params: filters }).then((r) => r.data),
   listWarehouses: () => api.get<Warehouse[]>('/inventory/warehouses').then((r) => r.data),
+  listReorderSuggestions: () =>
+    api.get<ReorderSuggestion[]>('/inventory/reorder-suggestions').then((r) => r.data),
   listCategories: () => api.get<Category[]>('/inventory/categories').then((r) => r.data),
   recordMovement: (dto: RecordStockMovementInput) =>
     api.post('/inventory/movements', dto).then((r) => r.data),

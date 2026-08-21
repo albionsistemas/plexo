@@ -1,5 +1,6 @@
 'use client';
 
+import ArticlePicker from '@/components/ArticlePicker';
 import CompanyFormModal from '@/components/CompanyFormModal';
 import { companiesApi } from '@/lib/companies';
 import { inventoryApi } from '@/lib/inventory';
@@ -36,9 +37,6 @@ export default function QuoteFormModal({ quote, onClose }: Props) {
 
   const customers = customersQuery.data ?? [];
   const currencies = currenciesQuery.data ?? [];
-  const variantOptions = (articlesQuery.data ?? []).flatMap((article) =>
-    article.variants.map((variant) => ({ id: variant.id, label: `${variant.sku} — ${article.name}`, unitPrice: variant.unitPrice })),
-  );
 
   const [customerId, setCustomerId] = useState(quote?.customer.id ?? '');
   const [currencyId, setCurrencyId] = useState(quote?.currency.id ?? '');
@@ -53,7 +51,7 @@ export default function QuoteFormModal({ quote, onClose }: Props) {
     })) ?? [{ articleVariantId: '', quantity: 1, unitPrice: 0 }],
   );
   const [linesResolved, setLinesResolved] = useState(!isEdit);
-  if (!linesResolved && quote && variantOptions.length > 0) {
+  if (!linesResolved && quote && (articlesQuery.data?.length ?? 0) > 0) {
     const bySku = new Map((articlesQuery.data ?? []).flatMap((a) => a.variants.map((v) => [v.sku, v.id])));
     setLines((prev) =>
       prev.map((line, i) => {
@@ -95,8 +93,7 @@ export default function QuoteFormModal({ quote, onClose }: Props) {
   }
 
   function addLine() {
-    const first = variantOptions[0];
-    setLines((prev) => [...prev, { articleVariantId: first?.id ?? '', quantity: 1, unitPrice: first?.unitPrice ?? 0 }]);
+    setLines((prev) => [...prev, { articleVariantId: '', quantity: 1, unitPrice: 0 }]);
   }
 
   function removeLine(index: number) {
@@ -190,24 +187,16 @@ export default function QuoteFormModal({ quote, onClose }: Props) {
               </div>
               {lines.map((line, index) => (
                 <div key={index} className="flex items-center gap-2">
-                  <select
-                    className={`${inputClass} flex-1`}
+                  <ArticlePicker
+                    className="flex-1"
                     value={line.articleVariantId}
-                    onChange={(e) => {
-                      const variant = variantOptions.find((v) => v.id === e.target.value);
+                    onChange={(variantId, option) =>
                       updateLine(index, {
-                        articleVariantId: e.target.value,
-                        unitPrice: variant ? variant.unitPrice : line.unitPrice,
-                      });
-                    }}
-                  >
-                    <option value="">Elegí un artículo...</option>
-                    {variantOptions.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.label}
-                      </option>
-                    ))}
-                  </select>
+                        articleVariantId: variantId,
+                        unitPrice: option ? option.unitPrice : line.unitPrice,
+                      })
+                    }
+                  />
                   <input
                     type="number"
                     min={1}

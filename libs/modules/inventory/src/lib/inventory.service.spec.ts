@@ -531,10 +531,53 @@ describe('InventoryService.getConsolidatedStock', () => {
 });
 
 describe('InventoryService.listReorderSuggestions', () => {
+  function makeMinimum(overrides: {
+    warehouseId: string;
+    articleVariantId: string;
+    minimumQuantity: number;
+    sku: string;
+    articleName: string;
+    preferredSupplier?: { id: string; name: string } | null;
+  }) {
+    return {
+      warehouseId: overrides.warehouseId,
+      articleVariantId: overrides.articleVariantId,
+      minimumQuantity: new Prisma.Decimal(overrides.minimumQuantity),
+      warehouse: { name: 'Depósito Central' },
+      articleVariant: {
+        sku: overrides.sku,
+        color: null,
+        size: null,
+        brand: null,
+        article: {
+          name: overrides.articleName,
+          imageUrl: null,
+          preferredSupplierId: overrides.preferredSupplier?.id ?? null,
+          preferredSupplier: overrides.preferredSupplier
+            ? { name: overrides.preferredSupplier.name }
+            : null,
+        },
+      },
+    };
+  }
+
   it('only returns pairs where current stock is below the configured minimum', async () => {
     const findManyMinimums = jest.fn().mockResolvedValue([
-      { warehouseId: 'wh-1', articleVariantId: 'v-1', minimumQuantity: new Prisma.Decimal(10) },
-      { warehouseId: 'wh-1', articleVariantId: 'v-2', minimumQuantity: new Prisma.Decimal(5) },
+      makeMinimum({
+        warehouseId: 'wh-1',
+        articleVariantId: 'v-1',
+        minimumQuantity: 10,
+        sku: 'SKU-1',
+        articleName: 'Artículo 1',
+        preferredSupplier: { id: 'supplier-1', name: 'Proveedor 1' },
+      }),
+      makeMinimum({
+        warehouseId: 'wh-1',
+        articleVariantId: 'v-2',
+        minimumQuantity: 5,
+        sku: 'SKU-2',
+        articleName: 'Artículo 2',
+      }),
     ]);
     const findManyLedger = jest.fn().mockResolvedValue([
       { warehouseId: 'wh-1', articleVariantId: 'v-1', quantity: new Prisma.Decimal(3) },
@@ -551,7 +594,18 @@ describe('InventoryService.listReorderSuggestions', () => {
     );
 
     expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ warehouseId: 'wh-1', articleVariantId: 'v-1' });
+    expect(result[0]).toMatchObject({
+      warehouseId: 'wh-1',
+      warehouseName: 'Depósito Central',
+      articleVariantId: 'v-1',
+      sku: 'SKU-1',
+      articleName: 'Artículo 1',
+      preferredSupplierId: 'supplier-1',
+      preferredSupplierName: 'Proveedor 1',
+      minimumQuantity: 10,
+      currentQuantity: 3,
+      suggestedQuantity: 7,
+    });
   });
 
   it('returns an empty list without querying the ledger when there are no minimums configured', async () => {

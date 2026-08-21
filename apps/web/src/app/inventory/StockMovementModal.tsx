@@ -1,18 +1,12 @@
 'use client';
 
-import {
-  inventoryApi,
-  MOVEMENT_TYPES,
-  type Article,
-  type MovementType,
-  type Warehouse,
-} from '@/lib/inventory';
+import ArticlePicker from '@/components/ArticlePicker';
+import { inventoryApi, MOVEMENT_TYPES, type MovementType, type Warehouse } from '@/lib/inventory';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import { useState } from 'react';
 
 interface Props {
-  articles: Article[];
   warehouses: Warehouse[];
   onClose: () => void;
 }
@@ -31,18 +25,11 @@ const selectClass =
  * backend rejects purchaseOrderId/goodsReceiptLineId on this endpoint
  * too (InventoryController.recordMovement) - this isn't just a UI
  * change, the loophole is closed server-side. */
-export default function StockMovementModal({ articles, warehouses, onClose }: Props) {
+export default function StockMovementModal({ warehouses, onClose }: Props) {
   const queryClient = useQueryClient();
 
-  const variantOptions = articles.flatMap((article) =>
-    article.variants.map((variant) => ({
-      id: variant.id,
-      label: `${variant.sku} — ${article.name}${variant.color ? ` (${variant.color})` : ''}`,
-    })),
-  );
-
   const [form, setForm] = useState({
-    articleVariantId: variantOptions[0]?.id ?? '',
+    articleVariantId: '',
     warehouseId: warehouses[0]?.id ?? '',
     type: 'PURCHASE_IN' as MovementType,
     quantity: '',
@@ -104,19 +91,10 @@ export default function StockMovementModal({ articles, warehouses, onClose }: Pr
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <Field label="Artículo / variante">
-            <select
-              className={selectClass}
+            <ArticlePicker
               value={form.articleVariantId}
-              onChange={(e) => setForm({ ...form, articleVariantId: e.target.value })}
-              disabled={variantOptions.length === 0}
-            >
-              {variantOptions.length === 0 && <option value="">Sin artículos cargados</option>}
-              {variantOptions.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.label}
-                </option>
-              ))}
-            </select>
+              onChange={(variantId) => setForm({ ...form, articleVariantId: variantId })}
+            />
           </Field>
 
           <Field label="Depósito">
@@ -194,7 +172,7 @@ export default function StockMovementModal({ articles, warehouses, onClose }: Pr
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending || variantOptions.length === 0 || warehouses.length === 0}
+              disabled={mutation.isPending || warehouses.length === 0}
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
             >
               {mutation.isPending ? 'Guardando...' : 'Registrar'}

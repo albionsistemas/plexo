@@ -21,9 +21,17 @@ import { computeStockDelta } from './stock-movement.domain.js';
 
 export interface ReorderSuggestion {
   warehouseId: string;
+  warehouseName: string;
   articleVariantId: string;
-  minimumQuantity: Prisma.Decimal;
-  currentQuantity: Prisma.Decimal;
+  sku: string;
+  articleName: string;
+  variantLabel: string | null;
+  imageUrl: string | null;
+  preferredSupplierId: string | null;
+  preferredSupplierName: string | null;
+  minimumQuantity: number;
+  currentQuantity: number;
+  suggestedQuantity: number;
 }
 
 export interface WarehouseStockRow {
@@ -511,7 +519,23 @@ export class InventoryService {
 
   async listReorderSuggestions(): Promise<ReorderSuggestion[]> {
     const db = getTenantDb();
-    const minimums = await db.minimumStock.findMany();
+    const minimums = await db.minimumStock.findMany({
+      include: {
+        warehouse: { select: { name: true } },
+        articleVariant: {
+          include: {
+            article: {
+              select: {
+                name: true,
+                imageUrl: true,
+                preferredSupplierId: true,
+                preferredSupplier: { select: { name: true } },
+              },
+            },
+          },
+        },
+      },
+    });
     if (minimums.length === 0) {
       return [];
     }
@@ -523,20 +547,35 @@ export class InventoryService {
           articleVariantId: m.articleVariantId,
         })),
       },
+      select: { warehouseId: true, articleVariantId: true, quantity: true },
     });
     const ledgerByKey = new Map(
-      ledgerRows.map((row) => [`${row.warehouseId}:${row.articleVariantId}`, row.quantity]),
+      ledgerRows.map((row) => [`${row.warehouseId}:${row.articleVariantId}`, row.quantity.toNumber()]),
     );
 
     return minimums
-      .map((minimum) => ({
-        warehouseId: minimum.warehouseId,
-        articleVariantId: minimum.articleVariantId,
-        minimumQuantity: minimum.minimumQuantity,
-        currentQuantity:
-          ledgerByKey.get(`${minimum.warehouseId}:${minimum.articleVariantId}`) ??
-          new Prisma.Decimal(0),
-      }))
-      .filter((row) => row.currentQuantity.lt(row.minimumQuantity));
+      .map((minimum) => {
+        const minimumQuantity = minimum.minimumQuantity.toNumber();
+        const currentQuantity =
+          ledgerByKey.get(`${minimum.warehouseId}:${minimum.articleVariantId}`) ?? 0;
+        const { articleVariant } = minimum;
+        return {
+          warehouseId: minimum.warehouseId,
+          warehouseName: minimum.warehouse.name,
+          articleVariantId: minimum.articleVariantId,
+          sku: articleVariant.sku,
+          articleName: articleVariant.article.name,
+          variantLabel:
+            [articleVariant.color, articleVariant.size, articleVariant.brand].filter(Boolean).join(' / ') ||
+            null,
+          imageUrl: articleVariant.article.imageUrl,
+          preferredSupplierId: articleVariant.article.preferredSupplierId,
+          preferredSupplierName: articleVariant.article.preferredSupplier?.name ?? null,
+          minimumQuantity,
+          currentQuantity,
+          suggestedQuantity: minimumQuantity - currentQuantity,
+        };
+      })
+      .filter((row) => row.currentQuantity < row.minimumQuantity);
   }
 }

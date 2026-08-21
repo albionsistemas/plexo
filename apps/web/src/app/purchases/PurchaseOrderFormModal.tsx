@@ -1,8 +1,8 @@
 'use client';
 
+import ArticlePicker from '@/components/ArticlePicker';
 import CompanyFormModal from '@/components/CompanyFormModal';
 import { companiesApi } from '@/lib/companies';
-import { inventoryApi } from '@/lib/inventory';
 import { invoicingApi } from '@/lib/invoicing';
 import { purchaseOrdersApi, type PurchaseOrderLineInput } from '@/lib/purchases';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -32,16 +32,9 @@ export default function PurchaseOrderFormModal({ onClose }: Props) {
     queryKey: ['invoicing-currencies'],
     queryFn: invoicingApi.listCurrencies,
   });
-  const articlesQuery = useQuery({
-    queryKey: ['inventory-articles'],
-    queryFn: () => inventoryApi.listArticles(),
-  });
 
   const suppliers = suppliersQuery.data ?? [];
   const currencies = currenciesQuery.data ?? [];
-  const variantOptions = (articlesQuery.data ?? []).flatMap((article) =>
-    article.variants.map((variant) => ({ id: variant.id, label: `${variant.sku} — ${article.name}` })),
-  );
 
   const [supplierId, setSupplierId] = useState('');
   const [currencyId, setCurrencyId] = useState('');
@@ -87,7 +80,7 @@ export default function PurchaseOrderFormModal({ onClose }: Props) {
   }
 
   function addLine() {
-    setLines((prev) => [...prev, { articleVariantId: variantOptions[0]?.id ?? '', quantity: 1, unitCost: 0 }]);
+    setLines((prev) => [...prev, { articleVariantId: '', quantity: 1, unitCost: 0 }]);
   }
 
   function removeLine(index: number) {
@@ -189,18 +182,11 @@ export default function PurchaseOrderFormModal({ onClose }: Props) {
               </div>
               {lines.map((line, index) => (
                 <div key={index} className="flex items-center gap-2">
-                  <select
-                    className={`${inputClass} flex-1`}
+                  <ArticlePicker
+                    className="flex-1"
                     value={line.articleVariantId}
-                    onChange={(e) => updateLine(index, { articleVariantId: e.target.value })}
-                  >
-                    <option value="">Elegí un artículo...</option>
-                    {variantOptions.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(variantId) => updateLine(index, { articleVariantId: variantId })}
+                  />
                   <input
                     type="number"
                     min={1}

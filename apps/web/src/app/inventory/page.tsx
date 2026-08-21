@@ -3,13 +3,14 @@
 import { inventoryApi, resolveUploadUrl, type Article } from '@/lib/inventory';
 import { getSocket } from '@/lib/socket';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { LayoutGrid, List } from 'lucide-react';
+import { AlertTriangle, LayoutGrid, List } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import ArticleCatalogGrid from './ArticleCatalogGrid';
 import ArticleImageModal from './ArticleImageModal';
 import ArticlePriceHistoryModal from './ArticlePriceHistoryModal';
 import ArticleSupplierModal from './ArticleSupplierModal';
 import ImportArticlesModal from './ImportArticlesModal';
+import StockAlertsPanel from './StockAlertsPanel';
 import StockMovementModal from './StockMovementModal';
 
 interface VariantRow {
@@ -107,7 +108,7 @@ export default function InventoryPage() {
   const [categoryId, setCategoryId] = useState('');
   const [onlyServices, setOnlyServices] = useState(false);
   const [onlyPublished, setOnlyPublished] = useState(false);
-  const [view, setView] = useState<'table' | 'catalog'>('table');
+  const [view, setView] = useState<'table' | 'catalog' | 'alerts'>('table');
   const [modalOpen, setModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [imageArticle, setImageArticle] = useState<{ id: string; name: string; imageUrl: string | null } | null>(
@@ -269,11 +270,25 @@ export default function InventoryPage() {
           >
             <LayoutGrid className="h-4 w-4" />
           </button>
+          <button
+            onClick={() => setView('alerts')}
+            title="Alertas de stock"
+            aria-label="Alertas de stock"
+            className={`flex h-7 w-7 items-center justify-center rounded ${
+              view === 'alerts'
+                ? 'bg-indigo-600 text-white'
+                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
+            }`}
+          >
+            <AlertTriangle className="h-4 w-4" />
+          </button>
         </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-4">
-        {isLoading ? (
+        {view === 'alerts' ? (
+          <StockAlertsPanel />
+        ) : isLoading ? (
           <div className="flex h-40 items-center justify-center text-slate-500">
             Cargando inventario...
           </div>
@@ -429,11 +444,7 @@ export default function InventoryPage() {
       </div>
 
       {modalOpen && (
-        <StockMovementModal
-          articles={articles}
-          warehouses={warehouses}
-          onClose={() => setModalOpen(false)}
-        />
+        <StockMovementModal warehouses={warehouses} onClose={() => setModalOpen(false)} />
       )}
 
       {importModalOpen && <ImportArticlesModal onClose={() => setImportModalOpen(false)} />}

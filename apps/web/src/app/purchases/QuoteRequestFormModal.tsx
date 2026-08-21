@@ -1,5 +1,6 @@
 'use client';
 
+import ArticlePicker from '@/components/ArticlePicker';
 import CompanyFormModal from '@/components/CompanyFormModal';
 import { companiesApi } from '@/lib/companies';
 import { inventoryApi } from '@/lib/inventory';
@@ -17,12 +18,21 @@ import CatalogSelectField from './CatalogSelectField';
 interface Props {
   quoteRequest?: QuoteRequestDetail;
   onClose: () => void;
+  // Prefill para crear un pedido a partir de una alerta de stock (ver
+  // StockAlertsPanel) - sólo tiene efecto en modo creación, nunca en edición.
+  initialLine?: { articleVariantId: string; quantity: number; estimatedUnitCost?: number };
+  initialSupplierId?: string;
 }
 
 const inputClass =
   'rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500';
 
-export default function QuoteRequestFormModal({ quoteRequest, onClose }: Props) {
+export default function QuoteRequestFormModal({
+  quoteRequest,
+  onClose,
+  initialLine,
+  initialSupplierId,
+}: Props) {
   const queryClient = useQueryClient();
   const isEdit = Boolean(quoteRequest);
 
@@ -41,11 +51,8 @@ export default function QuoteRequestFormModal({ quoteRequest, onClose }: Props) 
 
   const suppliers = suppliersQuery.data ?? [];
   const currencies = currenciesQuery.data ?? [];
-  const variantOptions = (articlesQuery.data ?? []).flatMap((article) =>
-    article.variants.map((variant) => ({ id: variant.id, label: `${variant.sku} — ${article.name}` })),
-  );
 
-  const [supplierId, setSupplierId] = useState(quoteRequest?.supplier.id ?? '');
+  const [supplierId, setSupplierId] = useState(quoteRequest?.supplier.id ?? initialSupplierId ?? '');
   const [currencyId, setCurrencyId] = useState(quoteRequest?.currency.id ?? '');
   const [transportModeId, setTransportModeId] = useState(quoteRequest?.transportMode?.id ?? '');
   const [paymentTermId, setPaymentTermId] = useState(quoteRequest?.paymentTerm?.id ?? '');
@@ -56,11 +63,15 @@ export default function QuoteRequestFormModal({ quoteRequest, onClose }: Props) 
   const [notes, setNotes] = useState(quoteRequest?.notes ?? '');
   const [lines, setLines] = useState<QuoteRequestLineInput[]>(
     quoteRequest?.lines.map((l) => ({
-      articleVariantId: '', // resolved below once variantOptions is known - see effect-free fallback
+      articleVariantId: '', // resolved below once el catálogo cargó - ver fallback sin efectos
       quantity: Number(l.quantity),
       estimatedUnitCost: l.estimatedUnitCost != null ? Number(l.estimatedUnitCost) : undefined,
       notes: l.notes ?? undefined,
-    })) ?? [{ articleVariantId: '', quantity: 1 }],
+    })) ?? [
+      initialLine
+        ? { ...initialLine }
+        : { articleVariantId: '', quantity: 1 },
+    ],
   );
   // articleVariantId isn't in QuoteRequestLineDetail (only sku/article name
   // are) - resolve it once by matching sku against the variant catalog, on
@@ -73,7 +84,7 @@ export default function QuoteRequestFormModal({ quoteRequest, onClose }: Props) 
   // full line here used to silently overwrite those edits with the stale
   // original value right before submit.
   const [linesResolved, setLinesResolved] = useState(!isEdit);
-  if (!linesResolved && quoteRequest && variantOptions.length > 0) {
+  if (!linesResolved && quoteRequest && (articlesQuery.data?.length ?? 0) > 0) {
     const bySku = new Map((articlesQuery.data ?? []).flatMap((a) => a.variants.map((v) => [v.sku, v.id])));
     setLines((prev) =>
       prev.map((line, i) => {
@@ -124,7 +135,7 @@ export default function QuoteRequestFormModal({ quoteRequest, onClose }: Props) 
   }
 
   function addLine() {
-    setLines((prev) => [...prev, { articleVariantId: variantOptions[0]?.id ?? '', quantity: 1 }]);
+    setLines((prev) => [...prev, { articleVariantId: '', quantity: 1 }]);
   }
 
   function removeLine(index: number) {
@@ -241,18 +252,11 @@ export default function QuoteRequestFormModal({ quoteRequest, onClose }: Props) 
               </div>
               {lines.map((line, index) => (
                 <div key={index} className="flex items-center gap-2">
-                  <select
-                    className={`${inputClass} flex-1`}
+                  <ArticlePicker
+                    className="flex-1"
                     value={line.articleVariantId}
-                    onChange={(e) => updateLine(index, { articleVariantId: e.target.value })}
-                  >
-                    <option value="">Elegí un artículo...</option>
-                    {variantOptions.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(variantId) => updateLine(index, { articleVariantId: variantId })}
+                  />
                   <input
                     type="number"
                     min={1}

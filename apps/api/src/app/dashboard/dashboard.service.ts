@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { getTenantDb } from '@plexo/database';
+import { InventoryService } from '@plexo/inventory';
 
 export interface StockItem {
   articleVariantId: string;
@@ -56,6 +57,8 @@ export interface DashboardSnapshot {
 
 @Injectable()
 export class DashboardService {
+  constructor(private readonly inventoryService: InventoryService) {}
+
   async getSnapshot(): Promise<DashboardSnapshot> {
     const db = getTenantDb();
     const now = new Date();
@@ -64,7 +67,7 @@ export class DashboardService {
     const sevenDaysAgo = new Date(todayStart);
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
 
-    const [warehouses, recentInvoices, todayInvoices, last7Invoices, minimumStocks] =
+    const [warehouses, recentInvoices, todayInvoices, last7Invoices, reorderSuggestions] =
       await Promise.all([
         db.warehouse.findMany({
           include: {
@@ -96,12 +99,7 @@ export class DashboardService {
           where: { issueDate: { gte: sevenDaysAgo }, status: { not: 'CANCELLED' } },
           select: { issueDate: true, total: true },
         }),
-        db.minimumStock.findMany({
-          include: {
-            warehouse: { select: { name: true } },
-            articleVariant: { include: { article: { select: { name: true } } } },
-          },
-        }),
+        this.inventoryService.listReorderSuggestions(),
       ]);
 
     // Stock by warehouse
@@ -120,31 +118,17 @@ export class DashboardService {
       };
     });
 
-    // Low stock alerts
-    let lowStockAlerts: LowStockAlert[] = [];
-    if (minimumStocks.length > 0) {
-      const ledgerRows = await db.stockLedger.findMany({
-        where: {
-          OR: minimumStocks.map((m) => ({
-            warehouseId: m.warehouseId,
-            articleVariantId: m.articleVariantId,
-          })),
-        },
-        select: { warehouseId: true, articleVariantId: true, quantity: true },
-      });
-      const ledgerMap = new Map(
-        ledgerRows.map((l) => [`${l.warehouseId}:${l.articleVariantId}`, l.quantity.toNumber()]),
-      );
-      lowStockAlerts = minimumStocks
-        .map((m) => ({
-          warehouseName: m.warehouse.name,
-          sku: m.articleVariant.sku,
-          articleName: m.articleVariant.article.name,
-          currentQuantity: ledgerMap.get(`${m.warehouseId}:${m.articleVariantId}`) ?? 0,
-          minimumQuantity: m.minimumQuantity.toNumber(),
-        }))
-        .filter((a) => a.currentQuantity < a.minimumQuantity);
-    }
+    // Low stock alerts - misma comparación MinimumStock vs StockLedger que
+    // usa la pantalla de Alertas de Inventario, resuelta una sola vez en
+    // InventoryService.listReorderSuggestions() (antes reimplementada acá
+    // en paralelo e independiente, ver PROGRESS.md).
+    const lowStockAlerts: LowStockAlert[] = reorderSuggestions.map((s) => ({
+      warehouseName: s.warehouseName,
+      sku: s.sku,
+      articleName: s.articleName,
+      currentQuantity: s.currentQuantity,
+      minimumQuantity: s.minimumQuantity,
+    }));
 
     // Today summary
     const todayTotal = todayInvoices.reduce((s, inv) => s + inv.total.toNumber(), 0);
