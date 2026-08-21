@@ -76,12 +76,23 @@ export default function ArticlePicker({
   const selected = options.find((o) => o.id === value) ?? null;
   const isEmpty = !articlesQuery.isLoading && options.length === 0;
 
+  // Lector de código de barras / tipear el SKU completo + Enter: sin
+  // ningún manejo especial, si el filtro deja un único resultado Combobox
+  // ya lo activa por default y Enter lo selecciona solo (confirmado
+  // probando en Chrome). El único caso no cubierto por eso es un SKU
+  // exacto que además sea substring de otro (p. ej. "ARROZ-1KG" dentro de
+  // "ARROZ-1KG-XL") - ahí ordenamos el match exacto primero para que sea
+  // el que quede activo, en vez de dejarlo a la suerte del orden original.
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (normalized === '') return options;
-    return options.filter(
+    const matches = options.filter(
       (o) => o.articleName.toLowerCase().includes(normalized) || o.sku.toLowerCase().includes(normalized),
     );
+    const exactIndex = matches.findIndex((o) => o.sku.toLowerCase() === normalized);
+    if (exactIndex <= 0) return matches;
+    const [exact] = matches.splice(exactIndex, 1);
+    return [exact, ...matches];
   }, [options, query]);
 
   return (
