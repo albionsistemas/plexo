@@ -2,9 +2,56 @@
 
 import QuoteRequestFormModal from '@/app/purchases/QuoteRequestFormModal';
 import { inventoryApi, resolveUploadUrl, type ReorderSuggestion } from '@/lib/inventory';
-import { useQuery } from '@tanstack/react-query';
+import { invoicingApi } from '@/lib/invoicing';
+import { quoteRequestsApi } from '@/lib/purchases';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { AxiosError } from 'axios';
 import { ShoppingBasket } from 'lucide-react';
 import { useState } from 'react';
+
+interface GroupedPedidoLine {
+  articleVariantId: string;
+  sku: string;
+  articleName: string;
+  quantity: number;
+}
+
+interface GroupedPedido {
+  supplierId: string;
+  supplierName: string;
+  lines: GroupedPedidoLine[];
+}
+
+/** Junta las alertas seleccionadas por proveedor preferido, sumando
+ * cantidad si el mismo artículo aparece en más de un depósito elegido a
+ * la vez (una Pedido de Cotización no tiene noción de depósito por línea,
+ * sólo "cuánto pedirle al proveedor de este artículo"). Alertas sin
+ * proveedor preferido quedan afuera - no hay a quién agruparlas, siguen
+ * resolviéndose una por una con el botón "Pedir cotización" de su fila. */
+function buildGroups(alerts: ReorderSuggestion[], selectedKeys: Set<string>): GroupedPedido[] {
+  const bySupplier = new Map<string, GroupedPedido>();
+  for (const a of alerts) {
+    const key = `${a.warehouseId}:${a.articleVariantId}`;
+    if (!selectedKeys.has(key) || !a.preferredSupplierId) continue;
+    let group = bySupplier.get(a.preferredSupplierId);
+    if (!group) {
+      group = { supplierId: a.preferredSupplierId, supplierName: a.preferredSupplierName ?? '', lines: [] };
+      bySupplier.set(a.preferredSupplierId, group);
+    }
+    const existingLine = group.lines.find((l) => l.articleVariantId === a.articleVariantId);
+    if (existingLine) {
+      existingLine.quantity += a.suggestedQuantity;
+    } else {
+      group.lines.push({
+        articleVariantId: a.articleVariantId,
+        sku: a.sku,
+        articleName: a.articleName,
+        quantity: a.suggestedQuantity,
+      });
+    }
+  }
+  return Array.from(bySupplier.values());
+}
 
 /** Sugerencias de reposición (GET /inventory/reorder-suggestions) - antes
  * un endpoint huérfano sin ningún consumidor en el frontend (ver
@@ -19,9 +66,33 @@ export default function StockAlertsPanel() {
     queryKey: ['inventory-reorder-suggestions'],
     queryFn: inventoryApi.listReorderSuggestions,
   });
+  const currenciesQuery = useQuery({
+    queryKey: ['invoicing-currencies'],
+    queryFn: invoicingApi.listCurrencies,
+  });
   const [quoteRequestFor, setQuoteRequestFor] = useState<ReorderSuggestion | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const alerts = alertsQuery.data ?? [];
+  const selectableAlerts = alerts.filter((a) => a.preferredSupplierId);
+
+  function toggleKey(key: string) {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelectedKeys((prev) =>
+      prev.size === selectableAlerts.length
+        ? new Set()
+        : new Set(selectableAlerts.map((a) => `${a.warehouseId}:${a.articleVariantId}`)),
+    );
+  }
 
   if (alertsQuery.isLoading) {
     return (
@@ -45,54 +116,90 @@ export default function StockAlertsPanel() {
     );
   }
 
+  const groups = buildGroups(alerts, selectedKeys);
+
   return (
     <>
-      <div className="flex flex-col gap-2">
-        {alerts.map((a) => (
-          <div
-            key={`${a.warehouseId}:${a.articleVariantId}`}
-            className="flex items-center gap-3 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 p-3"
-          >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-slate-200 dark:bg-slate-800">
-              {a.imageUrl ? (
-                <img
-                  src={resolveUploadUrl(a.imageUrl) ?? undefined}
-                  alt=""
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <ShoppingBasket className="h-5 w-5 text-slate-400 dark:text-slate-600" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                {a.articleName}
-                {a.variantLabel && <span className="text-slate-500"> · {a.variantLabel}</span>}
-              </p>
-              <p className="truncate text-xs text-slate-500">
-                {a.sku} · {a.warehouseName}
-              </p>
-              {a.preferredSupplierName && (
-                <p className="truncate text-xs text-slate-500">
-                  Proveedor preferido: {a.preferredSupplierName}
-                </p>
-              )}
-            </div>
-            <div className="shrink-0 text-right text-xs text-red-700 dark:text-red-300">
-              <p>
-                {a.currentQuantity} / {a.minimumQuantity} mín
-              </p>
-              <p className="font-semibold">Pedir {a.suggestedQuantity}</p>
-            </div>
+      {selectableAlerts.length > 0 && (
+        <div className="mb-3 flex items-center gap-3 text-sm">
+          <label className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+            <input
+              type="checkbox"
+              checked={selectedKeys.size > 0 && selectedKeys.size === selectableAlerts.length}
+              onChange={toggleAll}
+              className="h-4 w-4 accent-indigo-600"
+            />
+            Seleccionar todas con proveedor ({selectableAlerts.length})
+          </label>
+          {selectedKeys.size > 0 && (
             <button
               type="button"
-              onClick={() => setQuoteRequestFor(a)}
-              className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500"
+              onClick={() => setBulkOpen(true)}
+              className="ml-auto rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500"
             >
-              Pedir cotización
+              Crear pedidos de cotización ({selectedKeys.size})
             </button>
-          </div>
-        ))}
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {alerts.map((a) => {
+          const key = `${a.warehouseId}:${a.articleVariantId}`;
+          return (
+            <div
+              key={key}
+              className="flex items-center gap-3 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 p-3"
+            >
+              <input
+                type="checkbox"
+                checked={selectedKeys.has(key)}
+                onChange={() => toggleKey(key)}
+                disabled={!a.preferredSupplierId}
+                title={a.preferredSupplierId ? undefined : 'Sin proveedor preferido - asignalo en Inventario'}
+                className="h-4 w-4 shrink-0 accent-indigo-600 disabled:opacity-30"
+              />
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-slate-200 dark:bg-slate-800">
+                {a.imageUrl ? (
+                  <img
+                    src={resolveUploadUrl(a.imageUrl) ?? undefined}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <ShoppingBasket className="h-5 w-5 text-slate-400 dark:text-slate-600" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                  {a.articleName}
+                  {a.variantLabel && <span className="text-slate-500"> · {a.variantLabel}</span>}
+                </p>
+                <p className="truncate text-xs text-slate-500">
+                  {a.sku} · {a.warehouseName}
+                </p>
+                {a.preferredSupplierName && (
+                  <p className="truncate text-xs text-slate-500">
+                    Proveedor preferido: {a.preferredSupplierName}
+                  </p>
+                )}
+              </div>
+              <div className="shrink-0 text-right text-xs text-red-700 dark:text-red-300">
+                <p>
+                  {a.currentQuantity} / {a.minimumQuantity} mín
+                </p>
+                <p className="font-semibold">Pedir {a.suggestedQuantity}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuoteRequestFor(a)}
+                className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500"
+              >
+                Pedir cotización
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       {quoteRequestFor && (
@@ -105,6 +212,116 @@ export default function StockAlertsPanel() {
           onClose={() => setQuoteRequestFor(null)}
         />
       )}
+
+      {bulkOpen && (
+        <BulkQuoteRequestModal
+          groups={groups}
+          currencyId={currenciesQuery.data?.[0]?.id ?? ''}
+          onClose={() => setBulkOpen(false)}
+          onDone={() => {
+            setBulkOpen(false);
+            setSelectedKeys(new Set());
+          }}
+        />
+      )}
     </>
+  );
+}
+
+function BulkQuoteRequestModal({
+  groups,
+  currencyId,
+  onClose,
+  onDone,
+}: {
+  groups: GroupedPedido[];
+  currencyId: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState('');
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      Promise.all(
+        groups.map((g) =>
+          quoteRequestsApi.create({
+            supplierId: g.supplierId,
+            currencyId,
+            lines: g.lines.map((l) => ({ articleVariantId: l.articleVariantId, quantity: l.quantity })),
+          }),
+        ),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['quote-requests'] });
+      onDone();
+    },
+    onError: (err: AxiosError<{ message?: string | string[] }>) => {
+      const message = err.response?.data?.message ?? 'No se pudieron crear los pedidos';
+      setError(Array.isArray(message) ? message.join(', ') : message);
+    },
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+            Crear {groups.length} pedido{groups.length !== 1 ? 's' : ''} de cotización
+          </h2>
+          <button onClick={onClose} className="text-slate-500 transition hover:text-slate-700 dark:hover:text-slate-300">
+            ✕
+          </button>
+        </div>
+
+        <p className="mb-3 text-xs text-slate-500 dark:text-slate-500">
+          Un pedido independiente por proveedor, con estas líneas. Podés ajustar moneda, notas u otros
+          datos después, editando cada pedido en Compras.
+        </p>
+
+        <div className="flex flex-col gap-3">
+          {groups.map((g) => (
+            <div key={g.supplierId} className="rounded-lg border border-slate-300 dark:border-slate-700 p-3">
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{g.supplierName}</p>
+              <ul className="mt-1 flex flex-col gap-0.5 text-xs text-slate-600 dark:text-slate-400">
+                {g.lines.map((l) => (
+                  <li key={l.articleVariantId}>
+                    {l.sku} — {l.articleName}: {l.quantity} u.
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        {!currencyId && (
+          <p className="mt-3 text-sm text-amber-600 dark:text-amber-400">
+            No hay ninguna moneda configurada todavía - no se puede crear el pedido.
+          </p>
+        )}
+        {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+
+        <div className="mt-4 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-4 py-2 text-sm text-slate-600 dark:text-slate-400 transition hover:text-slate-800 dark:hover:text-slate-200"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !currencyId}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+          >
+            {mutation.isPending
+              ? 'Creando...'
+              : `Crear ${groups.length} pedido${groups.length !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
