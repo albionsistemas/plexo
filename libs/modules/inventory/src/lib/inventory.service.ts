@@ -81,6 +81,8 @@ export interface ArticleListItem {
   preferredSupplierId: string | null;
   preferredSupplierName: string | null;
   markupPercent: number | null;
+  brochureUrl: string | null;
+  attachmentZipUrl: string | null;
   variants: ArticleVariantListItem[];
 }
 
@@ -162,6 +164,7 @@ export class InventoryService {
         isPublished: dto.isPublished,
         preferredSupplierId: dto.preferredSupplierId,
         markupPercent: dto.markupPercent,
+        description: dto.description,
       },
     });
   }
@@ -194,6 +197,8 @@ export class InventoryService {
       preferredSupplierId: article.preferredSupplierId,
       preferredSupplierName: article.preferredSupplier?.name ?? null,
       markupPercent: article.markupPercent?.toNumber() ?? null,
+      brochureUrl: article.brochureUrl,
+      attachmentZipUrl: article.attachmentZipUrl,
       variants: article.variants.map((variant) => {
         const stockByWarehouse: WarehouseStockRow[] = variant.stockLedger.map((sl) => ({
           warehouseId: sl.warehouseId,

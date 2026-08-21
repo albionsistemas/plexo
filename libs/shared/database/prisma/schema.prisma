@@ -811,6 +811,13 @@ model Article {
   // un precio ya cargado (ver InventoryService.createArticleVariant /
   // updateArticleVariantPrice, sin cambios de comportamiento).
   markupPercent       Decimal?       @db.Decimal(6, 2)
+  // Folleto (PDF) y adjunto ZIP opcionales del artículo - "dato extra", no
+  // se muestran siempre, viven en su propio modal ("Detalles") en vez del
+  // panel principal. Mismo patrón de archivo que imageUrl (disco local,
+  // nombre random-uuid, servido sin autenticación vía @fastify/static) -
+  // ver ArticleAttachmentsService.
+  brochureUrl         String?
+  attachmentZipUrl    String?
   createdAt           DateTime       @default(now())
 
   variants ArticleVariant[]

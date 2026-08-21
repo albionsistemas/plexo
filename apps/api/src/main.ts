@@ -21,7 +21,12 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
-  await app.register(multipart, { limits: { fileSize: 5_000_000 } });
+  // 20MB - antes 5MB, insuficiente para el folleto (PDF) y adjunto ZIP de
+  // artículo (hasta 10MB/20MB respectivamente, ver ArticleAttachmentsService)
+  // agregados el 2026-08-21. Este es sólo el techo global antes de que
+  // Fastify entregue el stream; cada servicio sigue validando su propio
+  // límite más chico (imágenes/remitos: 3MB).
+  await app.register(multipart, { limits: { fileSize: 20_000_000 } });
   // No extra plugin needed for "Sign in with Apple"'s POST
   // application/x-www-form-urlencoded callback (response_mode "form_post",
   // unlike Google/Microsoft's plain GET redirect) - @nestjs/platform-fastify's

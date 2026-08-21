@@ -1,4 +1,4 @@
-import { IsBoolean, IsNumber, IsOptional, IsUUID, Min } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class UpdateArticleDto {
   @IsOptional()
@@ -23,4 +23,10 @@ export class UpdateArticleDto {
   @IsNumber()
   @Min(0)
   markupPercent?: number | null;
+
+  // "Dato extra" - null lo vacía, omitido no lo toca (misma convención que
+  // preferredSupplierId/markupPercent de arriba).
+  @IsOptional()
+  @IsString()
+  description?: string | null;
 }

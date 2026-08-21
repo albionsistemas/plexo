@@ -45,6 +45,9 @@ export interface Article {
   // Override individual del % de remarca de este artículo - null = usa
   // TenantSettings.defaultMarkupPercent en su lugar (ver Preferencias).
   markupPercent: number | null;
+  // Folleto (PDF) y adjunto ZIP opcionales - "dato extra", ver ArticleDetailsModal.
+  brochureUrl: string | null;
+  attachmentZipUrl: string | null;
   variants: ArticleVariant[];
 }
 
@@ -54,6 +57,7 @@ export interface UpdateArticleInput {
   // null clears it, undefined/omitted leaves it untouched.
   preferredSupplierId?: string | null;
   markupPercent?: number | null;
+  description?: string | null;
 }
 
 export interface CreateArticleInput {
@@ -224,6 +228,24 @@ export const inventoryApi = {
   },
   removeArticleImage: (articleId: string) =>
     api.delete<Article>(`/inventory/articles/${articleId}/image`).then((r) => r.data),
+  uploadArticleBrochure: (articleId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api
+      .post<Article>(`/inventory/articles/${articleId}/brochure`, formData)
+      .then((r) => r.data);
+  },
+  removeArticleBrochure: (articleId: string) =>
+    api.delete<Article>(`/inventory/articles/${articleId}/brochure`).then((r) => r.data),
+  uploadArticleAttachmentZip: (articleId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api
+      .post<Article>(`/inventory/articles/${articleId}/attachment-zip`, formData)
+      .then((r) => r.data);
+  },
+  removeArticleAttachmentZip: (articleId: string) =>
+    api.delete<Article>(`/inventory/articles/${articleId}/attachment-zip`).then((r) => r.data),
   updateArticle: (id: string, dto: UpdateArticleInput) =>
     api.patch<Article>(`/inventory/articles/${id}`, dto).then((r) => r.data),
   createArticle: (dto: CreateArticleInput) =>

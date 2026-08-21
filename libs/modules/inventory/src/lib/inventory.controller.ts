@@ -16,6 +16,7 @@ import type { FastifyRequest } from 'fastify';
 import '@fastify/multipart';
 import { Roles } from '@plexo/auth';
 import { AuditEntity } from '@plexo/database';
+import { ArticleAttachmentsService } from './article-attachments.service.js';
 import { ArticleImageService } from './article-image.service.js';
 import { ArticleImportService } from './article-import.service.js';
 import { CreateArticleDto } from './dto/create-article.dto.js';
@@ -35,6 +36,7 @@ export class InventoryController {
     private readonly inventoryService: InventoryService,
     private readonly articleImportService: ArticleImportService,
     private readonly articleImageService: ArticleImageService,
+    private readonly articleAttachmentsService: ArticleAttachmentsService,
   ) {}
 
   @Roles(...WRITE_ROLES)
@@ -181,5 +183,43 @@ export class InventoryController {
   @Delete('articles/:id/image')
   removeArticleImage(@Param('id', ParseUUIDPipe) id: string) {
     return this.articleImageService.removeImage(id);
+  }
+
+  @AuditEntity('article', { labelFields: ['name'] })
+  @Roles(...WRITE_ROLES)
+  @Post('articles/:id/brochure')
+  async uploadArticleBrochure(@Param('id', ParseUUIDPipe) id: string, @Req() req: FastifyRequest) {
+    const data = await req.file();
+    if (!data) {
+      throw new BadRequestException('No se recibió ningún archivo');
+    }
+    const buffer = await data.toBuffer();
+    return this.articleAttachmentsService.setBrochure(id, data.mimetype, buffer);
+  }
+
+  @AuditEntity('article', { labelFields: ['name'] })
+  @Roles(...WRITE_ROLES)
+  @Delete('articles/:id/brochure')
+  removeArticleBrochure(@Param('id', ParseUUIDPipe) id: string) {
+    return this.articleAttachmentsService.removeBrochure(id);
+  }
+
+  @AuditEntity('article', { labelFields: ['name'] })
+  @Roles(...WRITE_ROLES)
+  @Post('articles/:id/attachment-zip')
+  async uploadArticleAttachmentZip(@Param('id', ParseUUIDPipe) id: string, @Req() req: FastifyRequest) {
+    const data = await req.file();
+    if (!data) {
+      throw new BadRequestException('No se recibió ningún archivo');
+    }
+    const buffer = await data.toBuffer();
+    return this.articleAttachmentsService.setAttachmentZip(id, data.mimetype, data.filename, buffer);
+  }
+
+  @AuditEntity('article', { labelFields: ['name'] })
+  @Roles(...WRITE_ROLES)
+  @Delete('articles/:id/attachment-zip')
+  removeArticleAttachmentZip(@Param('id', ParseUUIDPipe) id: string) {
+    return this.articleAttachmentsService.removeAttachmentZip(id);
   }
 }
