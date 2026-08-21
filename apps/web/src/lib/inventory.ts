@@ -130,6 +130,14 @@ export interface ReorderSuggestion {
   minimumQuantity: number;
   currentQuantity: number;
   suggestedQuantity: number;
+  autoReplenish: boolean;
+}
+
+export interface SetMinimumStockInput {
+  warehouseId: string;
+  articleVariantId: string;
+  minimumQuantity: number;
+  autoReplenish?: boolean;
 }
 
 export const inventoryApi = {
@@ -138,6 +146,7 @@ export const inventoryApi = {
   listWarehouses: () => api.get<Warehouse[]>('/inventory/warehouses').then((r) => r.data),
   listReorderSuggestions: () =>
     api.get<ReorderSuggestion[]>('/inventory/reorder-suggestions').then((r) => r.data),
+  setMinimumStock: (dto: SetMinimumStockInput) => api.post('/inventory/minimum-stock', dto).then((r) => r.data),
   listCategories: () => api.get<Category[]>('/inventory/categories').then((r) => r.data),
   recordMovement: (dto: RecordStockMovementInput) =>
     api.post('/inventory/movements', dto).then((r) => r.data),

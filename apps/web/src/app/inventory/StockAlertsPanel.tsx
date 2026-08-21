@@ -147,57 +147,13 @@ export default function StockAlertsPanel() {
         {alerts.map((a) => {
           const key = `${a.warehouseId}:${a.articleVariantId}`;
           return (
-            <div
+            <AlertRow
               key={key}
-              className="flex items-center gap-3 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 p-3"
-            >
-              <input
-                type="checkbox"
-                checked={selectedKeys.has(key)}
-                onChange={() => toggleKey(key)}
-                disabled={!a.preferredSupplierId}
-                title={a.preferredSupplierId ? undefined : 'Sin proveedor preferido - asignalo en Inventario'}
-                className="h-4 w-4 shrink-0 accent-indigo-600 disabled:opacity-30"
-              />
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-slate-200 dark:bg-slate-800">
-                {a.imageUrl ? (
-                  <img
-                    src={resolveUploadUrl(a.imageUrl) ?? undefined}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <ShoppingBasket className="h-5 w-5 text-slate-400 dark:text-slate-600" />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                  {a.articleName}
-                  {a.variantLabel && <span className="text-slate-500"> · {a.variantLabel}</span>}
-                </p>
-                <p className="truncate text-xs text-slate-500">
-                  {a.sku} · {a.warehouseName}
-                </p>
-                {a.preferredSupplierName && (
-                  <p className="truncate text-xs text-slate-500">
-                    Proveedor preferido: {a.preferredSupplierName}
-                  </p>
-                )}
-              </div>
-              <div className="shrink-0 text-right text-xs text-red-700 dark:text-red-300">
-                <p>
-                  {a.currentQuantity} / {a.minimumQuantity} mín
-                </p>
-                <p className="font-semibold">Pedir {a.suggestedQuantity}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setQuoteRequestFor(a)}
-                className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500"
-              >
-                Pedir cotización
-              </button>
-            </div>
+              alert={a}
+              selected={selectedKeys.has(key)}
+              onToggleSelect={() => toggleKey(key)}
+              onQuoteRequest={() => setQuoteRequestFor(a)}
+            />
           );
         })}
       </div>
@@ -225,6 +181,94 @@ export default function StockAlertsPanel() {
         />
       )}
     </>
+  );
+}
+
+function AlertRow({
+  alert: a,
+  selected,
+  onToggleSelect,
+  onQuoteRequest,
+}: {
+  alert: ReorderSuggestion;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onQuoteRequest: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const toggleAuto = useMutation({
+    mutationFn: () =>
+      inventoryApi.setMinimumStock({
+        warehouseId: a.warehouseId,
+        articleVariantId: a.articleVariantId,
+        minimumQuantity: a.minimumQuantity,
+        autoReplenish: !a.autoReplenish,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['inventory-reorder-suggestions'] });
+    },
+  });
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 p-3">
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={onToggleSelect}
+        disabled={!a.preferredSupplierId}
+        title={a.preferredSupplierId ? undefined : 'Sin proveedor preferido - asignalo en Inventario'}
+        className="h-4 w-4 shrink-0 accent-indigo-600 disabled:opacity-30"
+      />
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-slate-200 dark:bg-slate-800">
+        {a.imageUrl ? (
+          <img src={resolveUploadUrl(a.imageUrl) ?? undefined} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <ShoppingBasket className="h-5 w-5 text-slate-400 dark:text-slate-600" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+          {a.articleName}
+          {a.variantLabel && <span className="text-slate-500"> · {a.variantLabel}</span>}
+        </p>
+        <p className="truncate text-xs text-slate-500">
+          {a.sku} · {a.warehouseName}
+        </p>
+        {a.preferredSupplierName && (
+          <p className="truncate text-xs text-slate-500">Proveedor preferido: {a.preferredSupplierName}</p>
+        )}
+      </div>
+      <div className="shrink-0 text-right text-xs text-red-700 dark:text-red-300">
+        <p>
+          {a.currentQuantity} / {a.minimumQuantity} mín
+        </p>
+        <p className="font-semibold">Pedir {a.suggestedQuantity}</p>
+      </div>
+      <label
+        className="flex shrink-0 items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400"
+        title={
+          a.preferredSupplierId
+            ? 'Crea el pedido de cotización solo, una vez por día, sin que nadie entre a esta pantalla'
+            : 'Sin proveedor preferido - asignalo en Inventario para poder activar esto'
+        }
+      >
+        <input
+          type="checkbox"
+          checked={a.autoReplenish}
+          onChange={() => toggleAuto.mutate()}
+          disabled={!a.preferredSupplierId || toggleAuto.isPending}
+          className="h-4 w-4 accent-indigo-600 disabled:opacity-30"
+        />
+        Automático
+      </label>
+      <button
+        type="button"
+        onClick={onQuoteRequest}
+        className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500"
+      >
+        Pedir cotización
+      </button>
+    </div>
   );
 }
 

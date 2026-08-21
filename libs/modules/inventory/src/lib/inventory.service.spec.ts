@@ -538,11 +538,13 @@ describe('InventoryService.listReorderSuggestions', () => {
     sku: string;
     articleName: string;
     preferredSupplier?: { id: string; name: string } | null;
+    autoReplenish?: boolean;
   }) {
     return {
       warehouseId: overrides.warehouseId,
       articleVariantId: overrides.articleVariantId,
       minimumQuantity: new Prisma.Decimal(overrides.minimumQuantity),
+      autoReplenish: overrides.autoReplenish ?? false,
       warehouse: { name: 'Depósito Central' },
       articleVariant: {
         sku: overrides.sku,

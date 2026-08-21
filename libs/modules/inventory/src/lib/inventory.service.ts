@@ -32,6 +32,7 @@ export interface ReorderSuggestion {
   minimumQuantity: number;
   currentQuantity: number;
   suggestedQuantity: number;
+  autoReplenish: boolean;
 }
 
 export interface WarehouseStockRow {
@@ -285,8 +286,19 @@ export class InventoryService {
           articleVariantId: dto.articleVariantId,
         },
       },
-      create: { tenantId: getTenantId(), ...dto },
-      update: { minimumQuantity: dto.minimumQuantity },
+      create: {
+        tenantId: getTenantId(),
+        warehouseId: dto.warehouseId,
+        articleVariantId: dto.articleVariantId,
+        minimumQuantity: dto.minimumQuantity,
+        autoReplenish: dto.autoReplenish ?? false,
+      },
+      // autoReplenish omitido en el dto no toca el valor existente - deja
+      // ajustar sólo la cantidad mínima sin tener que repetir el flag.
+      update: {
+        minimumQuantity: dto.minimumQuantity,
+        ...(dto.autoReplenish !== undefined ? { autoReplenish: dto.autoReplenish } : {}),
+      },
     });
   }
 
@@ -574,6 +586,7 @@ export class InventoryService {
           minimumQuantity,
           currentQuantity,
           suggestedQuantity: minimumQuantity - currentQuantity,
+          autoReplenish: minimum.autoReplenish,
         };
       })
       .filter((row) => row.currentQuantity < row.minimumQuantity);
