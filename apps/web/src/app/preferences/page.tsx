@@ -3,6 +3,7 @@
 import { activityLogApi, type TenantActivityEntry } from '@/lib/activityLog';
 import CompanyListView from '@/components/CompanyListView';
 import { formatCuitInput } from '@/lib/cuit';
+import { inventoryApi, type AutoReplenishmentResult } from '@/lib/inventory';
 import {
   afipCertificateApi,
   emailDomainApi,
@@ -104,6 +105,7 @@ export default function PreferencesPage() {
           <AfipCertificateCard settings={settings} />
           <WithholdingAgentCard settings={settings} />
           <InventoryPricingCard settings={settings} />
+          <ReplenishmentCard />
         </>
       )}
       <ActivityLogCard />
@@ -662,6 +664,61 @@ function InventoryPricingCard({ settings }: { settings: TenantSettings }) {
         </button>
       </div>
       {message && <p className="mt-3 text-xs text-green-600 dark:text-green-400">{message}</p>}
+    </div>
+  );
+}
+
+/** Dispara a mano el mismo barrido que corre solo todos los días a las
+ * 2am (InventoryReplenishmentSchedulerService) para las variantes con
+ * "Automático" tildado en Inventario → Alertas de stock - útil para no
+ * esperar hasta la próxima corrida después de activar el flag en alguna. */
+function ReplenishmentCard() {
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  const mutation = useMutation({
+    mutationFn: inventoryApi.runReplenishmentNow,
+    onSuccess: (result: AutoReplenishmentResult) => {
+      setError('');
+      setMessage(
+        result.created === 0 && result.skippedAlreadyToday === 0
+          ? 'Sin novedades: ningún artículo con reposición automática activada está bajo su mínimo ahora mismo'
+          : `${result.created} pedido(s) de cotización creado(s)` +
+              (result.skippedAlreadyToday > 0
+                ? `, ${result.skippedAlreadyToday} proveedor(es) ya tenían uno generado hoy`
+                : ''),
+      );
+    },
+    onError: (err: AxiosError<{ message?: string | string[] }>) => {
+      setMessage('');
+      setError(errorMessage(err, 'No se pudo ejecutar la reposición automática'));
+    },
+  });
+
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6">
+      <h2 className="mb-1 text-sm font-medium text-slate-600 dark:text-slate-400">
+        Reposición automática de stock
+      </h2>
+      <p className="mb-4 text-xs text-slate-500">
+        Corre sola todos los días a la madrugada y genera un Pedido de Cotización por proveedor para
+        las variantes marcadas &quot;Automático&quot; en Inventario → Alertas de stock. Usá este botón
+        para ejecutarla ahora mismo en vez de esperar a la próxima corrida.
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          setMessage('');
+          setError('');
+          mutation.mutate();
+        }}
+        disabled={mutation.isPending}
+        className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-50"
+      >
+        {mutation.isPending ? 'Ejecutando...' : 'Ejecutar reposición ahora'}
+      </button>
+      {error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {message && <p className="mt-3 text-xs text-slate-500 dark:text-slate-500">{message}</p>}
     </div>
   );
 }

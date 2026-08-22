@@ -191,6 +191,11 @@ export interface CreatedArticleVariant {
   unitPrice: string;
 }
 
+export interface AutoReplenishmentResult {
+  created: number;
+  skippedAlreadyToday: number;
+}
+
 export const inventoryApi = {
   listArticles: (filters?: ListArticlesFilters) =>
     api.get<Article[]>('/inventory/articles', { params: filters }).then((r) => r.data),
@@ -260,4 +265,6 @@ export const inventoryApi = {
     api
       .get<PriceHistoryEntry[]>(`/inventory/article-variants/${articleVariantId}/price-history`)
       .then((r) => r.data),
+  runReplenishmentNow: () =>
+    api.post<AutoReplenishmentResult>('/inventory/replenishment/run-now').then((r) => r.data),
 };

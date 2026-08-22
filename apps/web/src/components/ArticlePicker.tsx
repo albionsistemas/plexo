@@ -174,17 +174,22 @@ export default function ArticlePicker({
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-slate-900 dark:text-slate-100">
-                        {option.articleName}
-                        {option.variantLabel && <span className="text-slate-500"> · {option.variantLabel}</span>}
+                      <p className="flex items-center gap-1.5 truncate text-slate-900 dark:text-slate-100">
+                        <span className="truncate">
+                          {option.articleName}
+                          {option.variantLabel && <span className="text-slate-500"> · {option.variantLabel}</span>}
+                        </span>
+                        {belowMinimum && (
+                          <span className="shrink-0 rounded-full bg-red-100 dark:bg-red-950/50 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:text-red-400">
+                            Bajo mínimo
+                          </span>
+                        )}
                       </p>
                       <p className="truncate text-xs text-slate-500">{option.sku}</p>
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="text-slate-700 dark:text-slate-300">${option.unitPrice.toFixed(2)}</p>
-                      <p className={`text-xs ${belowMinimum ? 'text-red-600 dark:text-red-400' : 'text-slate-500'}`}>
-                        Stock: {option.totalStock}
-                      </p>
+                      <p className="text-xs text-slate-500">Stock: {option.totalStock}</p>
                     </div>
                   </ComboboxOption>
                 );
