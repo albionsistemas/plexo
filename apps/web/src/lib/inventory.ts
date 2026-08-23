@@ -63,7 +63,10 @@ export interface UpdateArticleInput {
 export interface CreateArticleInput {
   name: string;
   unitOfMeasure: string;
-  markupPercent?: number | null;
+  description?: string;
+  categoryId?: string;
+  isService?: boolean;
+  isPublished?: boolean;
 }
 
 export interface CreateArticleVariantInput {
