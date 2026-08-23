@@ -1,6 +1,7 @@
 'use client';
 
 import { invoicingApi } from '@/lib/invoicing';
+import { buildVariantLabel } from '@/lib/inventory';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
@@ -115,6 +116,9 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
                         <td className="p-2">
                           <p className="text-slate-800 dark:text-slate-200">
                             {line.articleVariant.article.name}
+                            {buildVariantLabel(line.articleVariant) && (
+                              <span className="text-slate-500"> · {buildVariantLabel(line.articleVariant)}</span>
+                            )}
                           </p>
                           <p className="font-mono text-[10px] text-slate-500">
                             {line.articleVariant.sku}

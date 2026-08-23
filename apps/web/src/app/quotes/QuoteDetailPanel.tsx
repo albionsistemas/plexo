@@ -8,6 +8,7 @@ import {
   type PdfStyle,
   type QuoteDetail,
 } from '@/lib/quotes';
+import { buildVariantLabel } from '@/lib/inventory';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import { useEffect, useState } from 'react';
@@ -131,7 +132,12 @@ export default function QuoteDetailPanel({ quoteId, onClose, onEdit }: Props) {
                     {data.lines.map((line) => (
                       <tr key={line.id} className="border-b border-slate-200/50 dark:border-slate-800/50">
                         <td className="p-2">
-                          <p className="text-slate-800 dark:text-slate-200">{line.articleVariant.article.name}</p>
+                          <p className="text-slate-800 dark:text-slate-200">
+                            {line.articleVariant.article.name}
+                            {buildVariantLabel(line.articleVariant) && (
+                              <span className="text-slate-500"> · {buildVariantLabel(line.articleVariant)}</span>
+                            )}
+                          </p>
                           <p className="font-mono text-[10px] text-slate-500">{line.articleVariant.sku}</p>
                         </td>
                         <td className="p-2 text-right text-slate-700 dark:text-slate-300">{line.quantity}</td>

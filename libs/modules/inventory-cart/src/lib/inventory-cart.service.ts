@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { getTenantDb, getTenantId, getUserId, Prisma } from '@plexo/database';
+import { buildVariantLabel } from '@plexo/types';
 import type { AddCartItemDto } from './dto/add-cart-item.dto.js';
 import type { UpdateCartItemDto } from './dto/update-cart-item.dto.js';
 
@@ -14,6 +15,7 @@ export interface CartLineDetail {
   articleVariantId: string;
   articleId: string;
   articleName: string;
+  variantLabel: string | null;
   sku: string;
   imageUrl: string | null;
   categoryName: string | null;
@@ -136,6 +138,7 @@ function toLineDetail(row: CartItemRow): CartLineDetail {
     articleVariantId: row.articleVariantId,
     articleId: row.articleVariant.articleId,
     articleName: row.articleVariant.article.name,
+    variantLabel: buildVariantLabel(row.articleVariant),
     sku: row.articleVariant.sku,
     imageUrl: row.articleVariant.article.imageUrl,
     categoryName: row.articleVariant.article.category?.name ?? null,

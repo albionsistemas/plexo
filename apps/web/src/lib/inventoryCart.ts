@@ -11,6 +11,7 @@ export interface CartLine {
   articleVariantId: string;
   articleId: string;
   articleName: string;
+  variantLabel: string | null;
   sku: string;
   imageUrl: string | null;
   categoryName: string | null;

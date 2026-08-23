@@ -1,5 +1,6 @@
 'use client';
 
+import { buildVariantLabel } from '@/lib/inventory';
 import { quoteRequestsApi, type PurchaseOrderDetail } from '@/lib/purchases';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
@@ -98,6 +99,9 @@ export default function QuoteRequestComparisonPanel({ rfqGroupId, onClose, onWin
                     <tr key={row.articleVariantId} className="border-b border-slate-200/50 dark:border-slate-800/50">
                       <td className="p-3 text-slate-800 dark:text-slate-200">
                         {row.articleVariant.sku} — {row.articleVariant.article.name}
+                        {buildVariantLabel(row.articleVariant) && (
+                          <span className="text-slate-500"> · {buildVariantLabel(row.articleVariant)}</span>
+                        )}
                       </td>
                       {row.quotes.map((q) => {
                         const cost = q.unitCost != null ? Number(q.unitCost) : null;

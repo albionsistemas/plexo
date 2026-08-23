@@ -34,11 +34,20 @@ export interface SupplierRef {
   fiscalAddress: string | null;
 }
 
+interface ArticleVariantRef {
+  sku: string;
+  color: string | null;
+  size: string | null;
+  brand: string | null;
+  attributes: Record<string, string> | null;
+  article: { name: string };
+}
+
 interface LineDetail {
   id: string;
   quantity: string;
   notes: string | null;
-  articleVariant: { sku: string; article: { name: string } };
+  articleVariant: ArticleVariantRef;
 }
 
 export interface QuoteRequestLineDetail extends LineDetail {
@@ -164,7 +173,7 @@ export interface QuoteRequestComparisonQuote {
 
 export interface QuoteRequestComparisonRow {
   articleVariantId: string;
-  articleVariant: { sku: string; article: { name: string } };
+  articleVariant: ArticleVariantRef;
   quotes: QuoteRequestComparisonQuote[];
 }
 

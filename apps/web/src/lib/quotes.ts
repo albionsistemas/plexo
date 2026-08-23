@@ -29,7 +29,14 @@ export interface QuoteLineDetail {
   quantity: string;
   unitPrice: string;
   notes: string | null;
-  articleVariant: { sku: string; article: { name: string; imageUrl: string | null } };
+  articleVariant: {
+    sku: string;
+    color: string | null;
+    size: string | null;
+    brand: string | null;
+    attributes: Record<string, string> | null;
+    article: { name: string; imageUrl: string | null };
+  };
 }
 
 export interface CustomerRef {

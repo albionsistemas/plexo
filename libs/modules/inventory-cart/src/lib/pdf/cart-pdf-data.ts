@@ -6,6 +6,7 @@
  * template instead of the 5-style system Quotes/Purchases use. */
 export interface CartPdfLine {
   articleName: string;
+  variantLabel: string | null;
   sku: string;
   categoryName: string | null;
   quantity: string;

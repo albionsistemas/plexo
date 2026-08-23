@@ -6,6 +6,7 @@
  * applied to email senders). */
 export interface QuotePdfLine {
   articleName: string;
+  variantLabel: string | null;
   sku: string;
   quantity: string;
   unitPrice: string;

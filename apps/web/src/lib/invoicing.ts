@@ -39,7 +39,14 @@ export interface Invoice {
 }
 
 export interface InvoiceLineDetail extends InvoiceLine {
-  articleVariant: { sku: string; article: { name: string } };
+  articleVariant: {
+    sku: string;
+    color: string | null;
+    size: string | null;
+    brand: string | null;
+    attributes: Record<string, string> | null;
+    article: { name: string };
+  };
 }
 
 export interface InvoiceReceipt {

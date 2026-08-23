@@ -10,6 +10,7 @@ import {
   type MinimumStock,
   type Warehouse,
 } from '@plexo/database';
+import { buildVariantLabel } from '@plexo/types';
 import type { CreateArticleDto } from './dto/create-article.dto.js';
 import type { UpdateArticleDto } from './dto/update-article.dto.js';
 import type { CreateArticleVariantDto } from './dto/create-article-variant.dto.js';
@@ -607,9 +608,7 @@ export class InventoryService {
           articleVariantId: minimum.articleVariantId,
           sku: articleVariant.sku,
           articleName: articleVariant.article.name,
-          variantLabel:
-            [articleVariant.color, articleVariant.size, articleVariant.brand].filter(Boolean).join(' / ') ||
-            null,
+          variantLabel: buildVariantLabel(articleVariant),
           imageUrl: articleVariant.article.imageUrl,
           preferredSupplierId: articleVariant.article.preferredSupplierId,
           preferredSupplierName: articleVariant.article.preferredSupplier?.name ?? null,

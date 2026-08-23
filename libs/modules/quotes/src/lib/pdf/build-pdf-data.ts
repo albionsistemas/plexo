@@ -1,9 +1,17 @@
+import { buildVariantLabel } from '@plexo/types';
 import type { QuotePdfData, QuotePdfLine } from './pdf-data.js';
 
 interface PdfSourceLine {
   quantity: { toString(): string };
   unitPrice: { toString(): string };
-  articleVariant: { sku: string; article: { name: string } };
+  articleVariant: {
+    sku: string;
+    color?: string | null;
+    size?: string | null;
+    brand?: string | null;
+    attributes?: unknown;
+    article: { name: string };
+  };
 }
 
 interface PdfSourceQuote {
@@ -28,6 +36,7 @@ export function buildQuotePdfData(
     const unitPrice = Number(line.unitPrice.toString());
     return {
       articleName: line.articleVariant.article.name,
+      variantLabel: buildVariantLabel(line.articleVariant),
       sku: line.articleVariant.sku,
       quantity: formatNumber(quantity),
       unitPrice: formatNumber(unitPrice),

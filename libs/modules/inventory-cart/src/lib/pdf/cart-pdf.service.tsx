@@ -22,6 +22,7 @@ export class CartPdfService {
       requestedByName: user?.name ?? user?.email ?? '-',
       lines: lines.map((line) => ({
         articleName: line.articleName,
+        variantLabel: line.variantLabel,
         sku: line.sku,
         categoryName: line.categoryName,
         quantity: line.quantity.toString(),

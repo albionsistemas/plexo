@@ -79,7 +79,10 @@ export function ModernoTemplate({ data }: { data: QuotePdfData }) {
           </View>
           {data.lines.map((line, i) => (
             <View style={styles.tableRow} key={i}>
-              <Text style={styles.colArticle}>{line.articleName}</Text>
+              <Text style={styles.colArticle}>
+                {line.articleName}
+                {line.variantLabel ? ` · ${line.variantLabel}` : ''}
+              </Text>
               <Text style={styles.colSku}>{line.sku}</Text>
               <Text style={styles.colQty}>{line.quantity}</Text>
               <Text style={styles.colPrice}>{line.unitPrice}</Text>

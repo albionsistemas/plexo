@@ -47,7 +47,10 @@ export function LetrasGrandesTemplate({ data }: { data: PurchaseDocumentPdfData 
 
         {data.lines.map((line, i) => (
           <View style={styles.lineBlock} key={i}>
-            <Text style={styles.lineArticle}>{line.articleName}</Text>
+            <Text style={styles.lineArticle}>
+              {line.articleName}
+              {line.variantLabel ? ` · ${line.variantLabel}` : ''}
+            </Text>
             <Text style={styles.lineDetails}>
               SKU {line.sku} · Cantidad {line.quantity} · Costo unit. {line.unitCost} · Subtotal {line.lineTotal}
             </Text>

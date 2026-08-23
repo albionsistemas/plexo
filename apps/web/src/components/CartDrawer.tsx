@@ -98,6 +98,9 @@ export default function CartDrawer({ open, onClose, lines }: Props) {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
                         {line.articleName}
+                        {line.variantLabel && (
+                          <span className="text-slate-500 dark:text-slate-400"> · {line.variantLabel}</span>
+                        )}
                       </p>
                       <p className="truncate text-xs text-slate-500 dark:text-slate-400">
                         {line.sku}

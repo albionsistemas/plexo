@@ -13,6 +13,7 @@ interface GroupedPedidoLine {
   articleVariantId: string;
   sku: string;
   articleName: string;
+  variantLabel: string | null;
   quantity: number;
 }
 
@@ -46,6 +47,7 @@ function buildGroups(alerts: ReorderSuggestion[], selectedKeys: Set<string>): Gr
         articleVariantId: a.articleVariantId,
         sku: a.sku,
         articleName: a.articleName,
+        variantLabel: a.variantLabel,
         quantity: a.suggestedQuantity,
       });
     }
@@ -331,7 +333,8 @@ function BulkQuoteRequestModal({
               <ul className="mt-1 flex flex-col gap-0.5 text-xs text-slate-600 dark:text-slate-400">
                 {g.lines.map((l) => (
                   <li key={l.articleVariantId}>
-                    {l.sku} — {l.articleName}: {l.quantity} u.
+                    {l.sku} — {l.articleName}
+                    {l.variantLabel ? ` (${l.variantLabel})` : ''}: {l.quantity} u.
                   </li>
                 ))}
               </ul>

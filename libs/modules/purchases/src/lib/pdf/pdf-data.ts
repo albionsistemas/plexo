@@ -3,6 +3,7 @@
  * templates themselves don't know or care which kind of document it is. */
 export interface PurchaseDocumentPdfLine {
   articleName: string;
+  variantLabel: string | null;
   sku: string;
   quantity: string;
   unitCost: string;

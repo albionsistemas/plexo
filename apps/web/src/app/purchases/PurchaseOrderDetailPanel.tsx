@@ -1,6 +1,6 @@
 'use client';
 
-import { resolveUploadUrl } from '@/lib/inventory';
+import { buildVariantLabel, resolveUploadUrl } from '@/lib/inventory';
 import { PDF_STYLES, purchaseOrdersApi, purchasePreferencesApi, type PdfStyle } from '@/lib/purchases';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -124,7 +124,12 @@ export default function PurchaseOrderDetailPanel({ purchaseOrderId, onClose }: P
                     {data.lines.map((line) => (
                       <tr key={line.id} className="border-b border-slate-200/50 dark:border-slate-800/50">
                         <td className="p-2">
-                          <p className="text-slate-800 dark:text-slate-200">{line.articleVariant.article.name}</p>
+                          <p className="text-slate-800 dark:text-slate-200">
+                            {line.articleVariant.article.name}
+                            {buildVariantLabel(line.articleVariant) && (
+                              <span className="text-slate-500"> · {buildVariantLabel(line.articleVariant)}</span>
+                            )}
+                          </p>
                           <p className="font-mono text-[10px] text-slate-500">{line.articleVariant.sku}</p>
                         </td>
                         <td className="p-2 text-right text-slate-700 dark:text-slate-300">{line.quantity}</td>
