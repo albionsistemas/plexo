@@ -19,11 +19,10 @@ export interface VatBookEntry {
   netTaxed: number;
   netExempt: number;
   netUntaxed: number;
-  // Ventas: desglosado por alícuota real de cada línea. Compras: el
-  // modelo no guarda alícuota por línea (ver PurchaseInvoiceTaxLine, sólo
-  // IVA_CREDITO/PERCEPCION con concepto libre) - todo el IVA crédito cae
-  // en vatOther, vat21/vat10_5/vat27 quedan en 0. El frontend elige qué
-  // columnas mostrar según la pestaña.
+  // Ventas: desglosado por alícuota real de cada línea. Compras: idem
+  // desde que PurchaseInvoiceTaxLine tiene taxRate (ver VatBookService.
+  // getPurchasesBook) - sólo las filas sin taxRate (comprobantes viejos,
+  // o Percepciones) caen en vatOther.
   vat21: number;
   vat10_5: number;
   vat27: number;
