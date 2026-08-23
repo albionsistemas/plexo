@@ -47,6 +47,7 @@ export interface ArticleVariantListItem {
   color: string | null;
   size: string | null;
   brand: string | null;
+  attributes: Record<string, string> | null;
   unitPrice: number;
   totalStock: number;
   // Sum of MinimumStock.minimumQuantity across warehouses for this variant
@@ -83,6 +84,7 @@ export interface ArticleListItem {
   markupPercent: number | null;
   brochureUrl: string | null;
   attachmentZipUrl: string | null;
+  hasVariants: boolean;
   variants: ArticleVariantListItem[];
 }
 
@@ -131,6 +133,7 @@ export class InventoryService {
         taxDefinitionId: dto.taxDefinitionId,
         isService: dto.isService,
         isPublished: dto.isPublished,
+        hasVariants: dto.hasVariants,
       },
     });
   }
@@ -199,6 +202,7 @@ export class InventoryService {
       markupPercent: article.markupPercent?.toNumber() ?? null,
       brochureUrl: article.brochureUrl,
       attachmentZipUrl: article.attachmentZipUrl,
+      hasVariants: article.hasVariants,
       variants: article.variants.map((variant) => {
         const stockByWarehouse: WarehouseStockRow[] = variant.stockLedger.map((sl) => ({
           warehouseId: sl.warehouseId,
@@ -211,6 +215,7 @@ export class InventoryService {
           color: variant.color,
           size: variant.size,
           brand: variant.brand,
+          attributes: (variant.attributes as Record<string, string> | null) ?? null,
           unitPrice: variant.unitPrice.toNumber(),
           totalStock: stockByWarehouse.reduce((sum, row) => sum + row.quantity, 0),
           minimumStock:
@@ -224,8 +229,23 @@ export class InventoryService {
   }
 
   async createArticleVariant(dto: CreateArticleVariantDto) {
+    if (dto.attributes && Object.values(dto.attributes).some((v) => typeof v !== 'string' || v.trim() === '')) {
+      throw new BadRequestException('attributes debe ser un objeto de texto a texto, sin valores vacíos');
+    }
+
     const db = getTenantDb();
     const tenantId = getTenantId();
+
+    // SKU es único por tenant (no por artículo, ver @@unique en el schema)
+    // - chequeado acá para un 400 legible en el caso común (típicamente el
+    // creador de atributos/matriz de ArticleFormModal, con SKU sugerido
+    // editable que puede pisar uno ya existente de otro artículo) en vez
+    // de un P2002 crudo/500. El @@unique sigue siendo el backstop real
+    // contra una carrera concurrente genuina.
+    const existing = await db.articleVariant.findFirst({ where: { sku: dto.sku }, select: { id: true } });
+    if (existing) {
+      throw new BadRequestException(`Ya existe una variante con el SKU "${dto.sku}"`);
+    }
 
     const variant = await db.articleVariant.create({
       data: {
@@ -235,6 +255,7 @@ export class InventoryService {
         color: dto.color,
         size: dto.size,
         brand: dto.brand,
+        attributes: dto.attributes ?? undefined,
         unitPrice: dto.unitPrice,
       },
     });

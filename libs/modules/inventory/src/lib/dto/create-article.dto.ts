@@ -28,4 +28,8 @@ export class CreateArticleDto {
   @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  hasVariants?: boolean;
 }

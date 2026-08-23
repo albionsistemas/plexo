@@ -818,6 +818,13 @@ model Article {
   // ver ArticleAttachmentsService.
   brochureUrl         String?
   attachmentZipUrl    String?
+  // Marca informativa: "este artículo se vende en más de una variante real
+  // (talle/color/etc.), no un SKU único disfrazado de artículo". No cambia
+  // ninguna validación de backend por sí sola - un Article con
+  // hasVariants=false sigue pudiendo tener más de un ArticleVariant (nunca
+  // se fuerza a uno solo), sólo es lo que ArticleFormModal usa para decidir
+  // si mostrar el creador de atributos/matriz o la alta simple de un SKU.
+  hasVariants         Boolean        @default(false)
   createdAt           DateTime       @default(now())
 
   variants ArticleVariant[]
@@ -839,6 +846,14 @@ model ArticleVariant {
   color     String?
   size      String?
   brand     String?
+  // Pares clave/valor arbitrarios ("Color": "Rojo", "Talle": "M") para
+  // variantes generadas desde el creador de atributos de ArticleFormModal -
+  // más flexible que los 3 campos fijos de arriba (color/size/brand), que
+  // quedan como estaban por compatibilidad con datos/imports viejos. Sin
+  // validación de shape en la base (JSON libre) - InventoryService valida
+  // que sea un objeto de string a string antes de guardar, no una lista de
+  // atributos predefinida por tenant.
+  attributes Json?
   unitPrice Decimal  @db.Decimal(14, 2)
   createdAt DateTime @default(now())
 

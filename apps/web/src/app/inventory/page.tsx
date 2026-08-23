@@ -1,6 +1,6 @@
 'use client';
 
-import { inventoryApi, resolveUploadUrl, type Article } from '@/lib/inventory';
+import { buildVariantLabel, inventoryApi, resolveUploadUrl, type Article } from '@/lib/inventory';
 import { getSocket } from '@/lib/socket';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Info, LayoutGrid, List } from 'lucide-react';
@@ -101,7 +101,7 @@ function flattenVariants(articles: Article[]): VariantRow[] {
       attachmentZipUrl: article.attachmentZipUrl,
       variantId: variant.id,
       sku: variant.sku,
-      variantLabel: [variant.color, variant.size, variant.brand].filter(Boolean).join(' / ') || null,
+      variantLabel: buildVariantLabel(variant),
       unitPrice: variant.unitPrice,
       totalStock: variant.totalStock,
       minimumStock: variant.minimumStock,
@@ -187,12 +187,14 @@ export default function InventoryPage() {
   const categories = categoriesQuery.data ?? [];
 
   const rows = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+    const searchWords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const filtered = flattenVariants(articles).filter((row) => {
-      const matchesSearch =
-        normalizedSearch === '' ||
-        row.articleName.toLowerCase().includes(normalizedSearch) ||
-        row.sku.toLowerCase().includes(normalizedSearch);
+      // Por palabra, no por frase completa - "Remera Rojo" tiene que
+      // encontrar "Remera" en el nombre y "Rojo" en la variante, aunque no
+      // aparezcan pegados en ningún campo (ver mismo criterio en
+      // ArticlePicker.tsx).
+      const haystack = `${row.articleName} ${row.sku} ${row.variantLabel ?? ''}`.toLowerCase();
+      const matchesSearch = searchWords.every((w) => haystack.includes(w));
       const matchesCategory = categoryId === '' || row.categoryId === categoryId;
       const matchesService = !onlyServices || row.isService;
       const matchesPublished = !onlyPublished || row.isPublished;

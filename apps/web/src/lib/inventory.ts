@@ -24,10 +24,37 @@ export interface ArticleVariant {
   color: string | null;
   size: string | null;
   brand: string | null;
+  // Pares clave/valor libres ("Color": "Rojo", "Talle": "M") del creador de
+  // atributos/matriz de ArticleFormModal - alternativa a color/size/brand
+  // de arriba, que quedan por compatibilidad con datos/imports viejos.
+  attributes: Record<string, string> | null;
   unitPrice: number;
   totalStock: number;
   minimumStock: number | null;
   stockByWarehouse: WarehouseStockRow[];
+}
+
+/** Único lugar que arma la etiqueta visible de una variante ("Rojo / M") -
+ * usado por ArticlePicker y por la tabla de Inventario, para no duplicar
+ * el criterio "attributes gana, color/size/brand como fallback" en los
+ * dos lados. `attributes` no tiene un orden garantizado entre variantes
+ * (es un objeto JS) - se ordena por clave para que "Talle: M, Color: Rojo"
+ * y "Color: Rojo, Talle: M" no aparezcan como etiquetas distintas entre
+ * dos variantes del mismo artículo. */
+export function buildVariantLabel(variant: {
+  color: string | null;
+  size: string | null;
+  brand: string | null;
+  attributes: Record<string, string> | null;
+}): string | null {
+  if (variant.attributes && Object.keys(variant.attributes).length > 0) {
+    return Object.keys(variant.attributes)
+      .sort()
+      .map((key) => variant.attributes?.[key])
+      .filter(Boolean)
+      .join(' / ');
+  }
+  return [variant.color, variant.size, variant.brand].filter(Boolean).join(' / ') || null;
 }
 
 export interface Article {
@@ -48,6 +75,9 @@ export interface Article {
   // Folleto (PDF) y adjunto ZIP opcionales - "dato extra", ver ArticleDetailsModal.
   brochureUrl: string | null;
   attachmentZipUrl: string | null;
+  // Informativo - ver el comentario del campo en schema.prisma. No impide
+  // que un artículo con hasVariants=false tenga más de un ArticleVariant.
+  hasVariants: boolean;
   variants: ArticleVariant[];
 }
 
@@ -67,6 +97,7 @@ export interface CreateArticleInput {
   categoryId?: string;
   isService?: boolean;
   isPublished?: boolean;
+  hasVariants?: boolean;
 }
 
 export interface CreateArticleVariantInput {
@@ -75,6 +106,7 @@ export interface CreateArticleVariantInput {
   color?: string;
   size?: string;
   brand?: string;
+  attributes?: Record<string, string>;
   unitPrice: number;
   // Sólo para sembrar el primer costo conocido de una variante recién
   // creada (sin ninguna compra real todavía) - ver el comentario del DTO

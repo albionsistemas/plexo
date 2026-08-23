@@ -1,6 +1,6 @@
 'use client';
 
-import { inventoryApi, resolveUploadUrl, type Article } from '@/lib/inventory';
+import { buildVariantLabel, inventoryApi, resolveUploadUrl, type Article } from '@/lib/inventory';
 import {
   Combobox,
   ComboboxButton,
@@ -30,7 +30,7 @@ function flattenOptions(articles: Article[]): ArticlePickerOption[] {
     article.variants.map((variant) => ({
       id: variant.id,
       articleName: article.name,
-      variantLabel: [variant.color, variant.size, variant.brand].filter(Boolean).join(' / ') || null,
+      variantLabel: buildVariantLabel(variant),
       sku: variant.sku,
       imageUrl: article.imageUrl,
       categoryName: article.categoryName,
@@ -85,12 +85,22 @@ export default function ArticlePicker({
   // exacto que además sea substring de otro (p. ej. "ARROZ-1KG" dentro de
   // "ARROZ-1KG-XL") - ahí ordenamos el match exacto primero para que sea
   // el que quede activo, en vez de dejarlo a la suerte del orden original.
+  //
+  // También matchea por variantLabel ("Rojo", "M") - no sólo nombre/SKU -
+  // para poder buscar "Remera Rojo" y encontrar la variante correcta de un
+  // artículo con variantes (ver ArticleFormModal, creador de atributos).
+  // Por palabra, no por frase completa: "Remera Rojo" no aparece tal cual
+  // en ningún campo (el nombre es "Remera Basica", la variante "Rojo / S"
+  // en campos separados) - cada palabra de la búsqueda tiene que aparecer
+  // en algún lado de nombre+SKU+variante, no las dos juntas y seguidas.
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (normalized === '') return options;
-    const matches = options.filter(
-      (o) => o.articleName.toLowerCase().includes(normalized) || o.sku.toLowerCase().includes(normalized),
-    );
+    const words = normalized.split(/\s+/).filter(Boolean);
+    const matches = options.filter((o) => {
+      const haystack = `${o.articleName} ${o.sku} ${o.variantLabel ?? ''}`.toLowerCase();
+      return words.every((w) => haystack.includes(w));
+    });
     const exactIndex = matches.findIndex((o) => o.sku.toLowerCase() === normalized);
     if (exactIndex <= 0) return matches;
     const [exact] = matches.splice(exactIndex, 1);

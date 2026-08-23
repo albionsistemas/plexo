@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, IsPositive, IsString, IsUUID, MinLength } from 'class-validator';
+import { IsNumber, IsObject, IsOptional, IsPositive, IsString, IsUUID, MinLength } from 'class-validator';
 
 export class CreateArticleVariantDto {
   @IsUUID()
@@ -34,4 +34,12 @@ export class CreateArticleVariantDto {
   @IsNumber()
   @IsPositive()
   costPrice?: number;
+
+  // Pares clave/valor libres ("Color": "Rojo", "Talle": "M") para el
+  // creador de atributos/matriz de ArticleFormModal - class-validator sólo
+  // chequea "es un objeto", el shape clave/valor de tipo string se valida
+  // en InventoryService.createArticleVariant (ver ahí el porqué).
+  @IsOptional()
+  @IsObject()
+  attributes?: Record<string, string>;
 }
