@@ -207,6 +207,8 @@ export const inventoryApi = {
     api.get<ReorderSuggestion[]>('/inventory/reorder-suggestions').then((r) => r.data),
   setMinimumStock: (dto: SetMinimumStockInput) => api.post('/inventory/minimum-stock', dto).then((r) => r.data),
   listCategories: () => api.get<Category[]>('/inventory/categories').then((r) => r.data),
+  createCategory: (dto: { name: string; parentId?: string }) =>
+    api.post<Category>('/inventory/categories', dto).then((r) => r.data),
   recordMovement: (dto: RecordStockMovementInput) =>
     api.post('/inventory/movements', dto).then((r) => r.data),
   downloadImportTemplate: async () => {

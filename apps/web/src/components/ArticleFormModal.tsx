@@ -65,6 +65,8 @@ export default function ArticleFormModal({ onClose, onSaved }: Props) {
   // Datos generales
   const [name, setName] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [description, setDescription] = useState('');
   const [isService, setIsService] = useState(false);
   const [isPublished, setIsPublished] = useState(true);
@@ -121,6 +123,20 @@ export default function ArticleFormModal({ onClose, onSaved }: Props) {
 
   const stockQuantity = stockInput.trim() === '' ? 0 : Number(stockInput);
   const minimumQuantity = minimumStockInput.trim() === '' ? 0 : Number(minimumStockInput);
+
+  const createCategoryMutation = useMutation({
+    mutationFn: () => inventoryApi.createCategory({ name: newCategoryName.trim() }),
+    onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ['inventory-categories'] });
+      setCategoryId(created.id);
+      setNewCategoryName('');
+      setCreatingCategory(false);
+    },
+    onError: (err: AxiosError<{ message?: string | string[] }>) => {
+      const message = err.response?.data?.message ?? 'No se pudo crear la categoría';
+      setError(Array.isArray(message) ? message.join(', ') : message);
+    },
+  });
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -272,17 +288,58 @@ export default function ArticleFormModal({ onClose, onSaved }: Props) {
                 />
               </label>
 
-              <label className="flex flex-col gap-1">
-                <span className="text-sm text-slate-600 dark:text-slate-400">Categoría</span>
-                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={inputClass}>
-                  <option value="">— Sin categoría —</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-sm text-slate-600 dark:text-slate-400">Categoría</span>
+                  {!creatingCategory && (
+                    <button
+                      type="button"
+                      onClick={() => setCreatingCategory(true)}
+                      className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                    >
+                      + nueva categoría
+                    </button>
+                  )}
+                </div>
+                {creatingCategory ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      className={`${inputClass} flex-1`}
+                      placeholder="Nombre de la categoría"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => createCategoryMutation.mutate()}
+                      disabled={!newCategoryName.trim() || createCategoryMutation.isPending}
+                      className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                    >
+                      {createCategoryMutation.isPending ? 'Creando...' : 'Crear'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreatingCategory(false);
+                        setNewCategoryName('');
+                      }}
+                      className="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={`${inputClass} w-full`}>
+                    <option value="">— Sin categoría —</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
 
               <label className="flex flex-col gap-1">
                 <span className="text-sm text-slate-600 dark:text-slate-400">Descripción</span>
