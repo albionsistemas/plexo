@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import type { DocumentLetter } from '@/lib/documentLetter';
 import type { ArgentineJurisdiction, WithholdingTaxType } from '@/lib/taxes';
 
 export type PurchaseDocumentStatus = 'DRAFT' | 'CONVERTED' | 'SENT' | 'CANCELLED';
@@ -502,6 +503,9 @@ export interface PurchaseInvoiceTaxLineInput {
   amount: number;
   netAmount?: number;
   taxRate?: number;
+  // Sub-clasificación de una fila PERCEPCION (IVA/IIBB/Ganancias) - sólo
+  // para el export Libro de IVA Digital de Compras, ver CitiExportService.
+  taxType?: WithholdingTaxType;
 }
 
 export interface SupplierPaymentWithholdingDetail {
@@ -564,6 +568,11 @@ export interface CreatePurchaseInvoiceInput {
   goodsReceiptIds?: string[];
   taxLines?: PurchaseInvoiceTaxLineInput[];
   notes?: string;
+  // Estructurados y opcionales, sólo para el export Libro de IVA Digital
+  // (RG 4597) - no reemplazan supplierInvoiceNumber.
+  documentLetter?: DocumentLetter;
+  pointOfSale?: string;
+  number?: string;
 }
 
 export interface RecordSupplierPaymentInput {

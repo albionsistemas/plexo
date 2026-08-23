@@ -2014,6 +2014,15 @@ model PurchaseInvoice {
   // unlike QuoteRequest.number/PurchaseOrder.number, Plexo isn't the one
   // issuing this document).
   supplierInvoiceNumber String
+  // Punto de Venta/Número/letra estructurados del comprobante del
+  // proveedor - opcionales, sólo para el export Libro de IVA Digital (RG
+  // 4597, ver CitiExportService en @plexo/taxes). No reemplazan
+  // supplierInvoiceNumber (que sigue siendo el texto libre de siempre) -
+  // sin backfill, comprobantes cargados sin esto quedan afuera del
+  // export en vez de inventar un código de comprobante ARCA incorrecto.
+  documentLetter        DocumentLetter?
+  pointOfSale           String?
+  number                String?
   supplierInvoiceDate   DateTime
   // Optional on purpose, same convention as Invoice.dueDate: PurchaseOrder.
   // paymentTermId today is just a free-text label ("30 días", "Contado"),
@@ -2076,6 +2085,12 @@ model PurchaseInvoiceTaxLine {
   // InvoiceLine.taxRate del lado Ventas.
   netAmount         Decimal?                   @db.Decimal(14, 2)
   taxRate           Decimal?                   @db.Decimal(5, 2)
+  // Sub-clasificación de una fila PERCEPCION (IVA/IIBB/Ganancias) para
+  // rutearla a la columna correcta del export Libro de IVA Digital de
+  // Compras - reusa el enum de SupplierPaymentWithholding.taxType, no se
+  // crea uno nuevo. null (histórico o no elegido) cae en "otros
+  // impuestos nacionales" en el export, no se pierde ni se inventa.
+  taxType           WithholdingTaxType?
 
   @@index([tenantId])
   @@map("purchase_invoice_tax_lines")
@@ -2128,6 +2143,11 @@ model PurchaseCreditNote {
   // The supplier's own credit note number/date - free text, NOT a Plexo-
   // generated series, same convention as PurchaseInvoice.supplierInvoiceNumber.
   supplierCreditNoteNumber String
+  // Ver el mismo comentario en PurchaseInvoice - aditivo, sólo para el
+  // export Libro de IVA Digital.
+  documentLetter           DocumentLetter?
+  pointOfSale              String?
+  number                   String?
   supplierCreditNoteDate   DateTime
   reason                   String
   currencyId               String
@@ -2171,6 +2191,7 @@ model PurchaseCreditNoteTaxLine {
   // Same fields, same nullability criterion as PurchaseInvoiceTaxLine.
   netAmount            Decimal?                   @db.Decimal(14, 2)
   taxRate              Decimal?                   @db.Decimal(5, 2)
+  taxType              WithholdingTaxType?
 
   @@index([tenantId])
   @@map("purchase_credit_note_tax_lines")

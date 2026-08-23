@@ -233,4 +233,27 @@ export const vatBookApi = {
   },
   openSalesPdf: (params: { from: string; to: string }) => openPdfBlob('/taxes/vat-book/sales/pdf', params),
   openPurchasesPdf: (params: { from: string; to: string }) => openPdfBlob('/taxes/vat-book/purchases/pdf', params),
+
+  // --- Libro de IVA Digital (RG 4597 / ARCA) ---
+  downloadVentasCbteCiti: async (params: { from: string; to: string }) => {
+    const res = await api.get('/taxes/vat-book/sales/citi/cbte', { params, responseType: 'blob' });
+    downloadBlob(new Blob([res.data]), 'LIBRO_IVA_DIGITAL_VENTAS_CBTE.txt');
+  },
+  downloadVentasAlicuotasCiti: async (params: { from: string; to: string }) => {
+    const res = await api.get('/taxes/vat-book/sales/citi/alicuotas', { params, responseType: 'blob' });
+    downloadBlob(new Blob([res.data]), 'LIBRO_IVA_DIGITAL_VENTAS_ALICUOTAS.txt');
+  },
+  // Compras devuelve la cantidad de comprobantes excluidos (sin Tipo de
+  // comprobante/Punto de Venta/Número cargados) en el header
+  // X-Skipped-Count, para que la UI avise en vez de fallar en silencio.
+  downloadComprasCbteCiti: async (params: { from: string; to: string }): Promise<number> => {
+    const res = await api.get('/taxes/vat-book/purchases/citi/cbte', { params, responseType: 'blob' });
+    downloadBlob(new Blob([res.data]), 'LIBRO_IVA_DIGITAL_COMPRAS_CBTE.txt');
+    return Number(res.headers['x-skipped-count'] ?? 0);
+  },
+  downloadComprasAlicuotasCiti: async (params: { from: string; to: string }): Promise<number> => {
+    const res = await api.get('/taxes/vat-book/purchases/citi/alicuotas', { params, responseType: 'blob' });
+    downloadBlob(new Blob([res.data]), 'LIBRO_IVA_DIGITAL_COMPRAS_ALICUOTAS.txt');
+    return Number(res.headers['x-skipped-count'] ?? 0);
+  },
 };

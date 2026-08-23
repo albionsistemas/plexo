@@ -1,5 +1,5 @@
-import { PurchaseInvoiceTaxLineType } from '@plexo/database';
-import { IsEnum, IsNumber, IsPositive, IsString, Min, MinLength, ValidateIf } from 'class-validator';
+import { PurchaseInvoiceTaxLineType, WithholdingTaxType } from '@plexo/database';
+import { IsEnum, IsNumber, IsOptional, IsPositive, IsString, Min, MinLength, ValidateIf } from 'class-validator';
 
 /** One row of the IVA/Percepciones breakdown on the supplier's invoice -
  * free-text concept, not tied to TaxDefinition (that catalog is for our own
@@ -28,4 +28,13 @@ export class PurchaseInvoiceTaxLineDto {
   @IsNumber()
   @Min(0)
   taxRate?: number;
+
+  // Sub-clasificación de una fila PERCEPCION (IVA/IIBB/Ganancias) - sólo
+  // para el export Libro de IVA Digital de Compras (ver
+  // CitiExportService en @plexo/taxes), no afecta la contabilización.
+  // Sin esto, la percepción cae en "otros impuestos nacionales" en ese
+  // export en vez de perderse.
+  @IsOptional()
+  @IsEnum(WithholdingTaxType)
+  taxType?: WithholdingTaxType;
 }

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, StreamableFile } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res, StreamableFile } from '@nestjs/common';
 import { RequireModuleAccess } from '@plexo/auth';
 import type { WithholdingTaxType } from '@plexo/database';
 import { CreateTaxDefinitionDto } from './dto/create-tax-definition.dto.js';
@@ -7,12 +7,20 @@ import { ReviseTaxDefinitionDto } from './dto/revise-tax-definition.dto.js';
 import { ReviseWithholdingRegimeDto } from './dto/revise-withholding-regime.dto.js';
 import { VatBookQueryDto } from './dto/vat-book-query.dto.js';
 import { TaxesService } from './taxes.service.js';
+import { CitiExportService } from './vat-book/citi/citi-export.service.js';
 import { VatBookExcelService } from './vat-book/vat-book-excel.service.js';
 import { VatBookPdfService } from './vat-book/pdf/vat-book-pdf.service.js';
 import { VatBookService } from './vat-book/vat-book.service.js';
 import { WithholdingRegimeService } from './withholding-regime.service.js';
 
 const MODULE = 'taxes';
+
+/** Sólo el método que necesitamos del reply de Fastify - evitar importar
+ * el paquete `fastify` acá sólo por el tipo (esta lib no depende de un
+ * framework HTTP en ningún otro lado). */
+interface HeaderSettableReply {
+  header(name: string, value: string): void;
+}
 
 @Controller('taxes')
 export class TaxesController {
@@ -22,6 +30,7 @@ export class TaxesController {
     private readonly vatBookService: VatBookService,
     private readonly vatBookExcelService: VatBookExcelService,
     private readonly vatBookPdfService: VatBookPdfService,
+    private readonly citiExportService: CitiExportService,
   ) {}
 
   @RequireModuleAccess(MODULE, 'write')
@@ -134,5 +143,53 @@ export class TaxesController {
     const result = await this.vatBookService.getPurchasesBook(query.from, query.to);
     const { buffer, filename } = await this.vatBookPdfService.generate(result);
     return new StreamableFile(buffer, { type: 'application/pdf', disposition: `attachment; filename="${filename}"` });
+  }
+
+  // --- Libro de IVA Digital (RG 4597 / ARCA) - archivos de ancho fijo ---
+  // Encoding ANSI/ISO-8859-1 (Windows-1252) por especificación de ARCA,
+  // no UTF-8 - ver CitiExportService.
+
+  @RequireModuleAccess(MODULE, 'read')
+  @Get('vat-book/sales/citi/cbte')
+  async downloadVentasCbte(@Query() query: VatBookQueryDto) {
+    const { content } = await this.citiExportService.getVentasCbte(query.from, query.to);
+    return new StreamableFile(Buffer.from(content, 'latin1'), {
+      type: 'text/plain',
+      disposition: 'attachment; filename="LIBRO_IVA_DIGITAL_VENTAS_CBTE.txt"',
+    });
+  }
+
+  @RequireModuleAccess(MODULE, 'read')
+  @Get('vat-book/sales/citi/alicuotas')
+  async downloadVentasAlicuotas(@Query() query: VatBookQueryDto) {
+    const { content } = await this.citiExportService.getVentasAlicuotas(query.from, query.to);
+    return new StreamableFile(Buffer.from(content, 'latin1'), {
+      type: 'text/plain',
+      disposition: 'attachment; filename="LIBRO_IVA_DIGITAL_VENTAS_ALICUOTAS.txt"',
+    });
+  }
+
+  @RequireModuleAccess(MODULE, 'read')
+  @Get('vat-book/purchases/citi/cbte')
+  async downloadComprasCbte(@Query() query: VatBookQueryDto, @Res({ passthrough: true }) res: HeaderSettableReply) {
+    const { content, skippedCount } = await this.citiExportService.getComprasCbte(query.from, query.to);
+    res.header('X-Skipped-Count', String(skippedCount));
+    res.header('Access-Control-Expose-Headers', 'X-Skipped-Count');
+    return new StreamableFile(Buffer.from(content, 'latin1'), {
+      type: 'text/plain',
+      disposition: 'attachment; filename="LIBRO_IVA_DIGITAL_COMPRAS_CBTE.txt"',
+    });
+  }
+
+  @RequireModuleAccess(MODULE, 'read')
+  @Get('vat-book/purchases/citi/alicuotas')
+  async downloadComprasAlicuotas(@Query() query: VatBookQueryDto, @Res({ passthrough: true }) res: HeaderSettableReply) {
+    const { content, skippedCount } = await this.citiExportService.getComprasAlicuotas(query.from, query.to);
+    res.header('X-Skipped-Count', String(skippedCount));
+    res.header('Access-Control-Expose-Headers', 'X-Skipped-Count');
+    return new StreamableFile(Buffer.from(content, 'latin1'), {
+      type: 'text/plain',
+      disposition: 'attachment; filename="LIBRO_IVA_DIGITAL_COMPRAS_ALICUOTAS.txt"',
+    });
   }
 }

@@ -9,7 +9,7 @@ import { sumTotals, type VatBookEntry, type VatBookResult } from './vat-book.typ
  * `defaultRange` de reports-sales (scope:reports-sales no es
  * scope:shared) - se duplica a propósito, mismo criterio que
  * QuoteSendChannel/PurchaseSendChannel en el schema. */
-function defaultRange(from?: string, to?: string): { from: Date; to: Date } {
+export function defaultRange(from?: string, to?: string): { from: Date; to: Date } {
   const rangeTo = to ? new Date(to) : new Date();
   rangeTo.setUTCHours(23, 59, 59, 999);
   const rangeFrom = from ? new Date(from) : new Date(Date.UTC(rangeTo.getUTCFullYear(), rangeTo.getUTCMonth(), 1));

@@ -1,7 +1,9 @@
+import { DocumentLetter } from '@plexo/database';
 import { Type } from 'class-transformer';
 import {
   IsArray,
   IsDateString,
+  IsEnum,
   IsNumber,
   IsOptional,
   IsPositive,
@@ -31,6 +33,22 @@ export class CreatePurchaseInvoiceDto {
 
   @IsDateString()
   supplierInvoiceDate!: string;
+
+  // Estructurados y opcionales, sólo para el export Libro de IVA Digital
+  // (RG 4597, ver CitiExportService en @plexo/taxes) - no reemplazan
+  // supplierInvoiceNumber. Sin esto, el comprobante queda afuera de ese
+  // export en vez de adivinar un código de comprobante ARCA.
+  @IsOptional()
+  @IsEnum(DocumentLetter)
+  documentLetter?: DocumentLetter;
+
+  @IsOptional()
+  @IsString()
+  pointOfSale?: string;
+
+  @IsOptional()
+  @IsString()
+  number?: string;
 
   // Optional - see PurchaseInvoice.dueDate. Only invoices with one set show
   // up bucketed in the Cuentas a Pagar aging report.

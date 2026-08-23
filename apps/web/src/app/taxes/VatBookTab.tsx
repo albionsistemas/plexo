@@ -30,6 +30,7 @@ export default function VatBookTab() {
   const [kind, setKind] = useState<BookKind>('sales');
   const [{ from, to }, setRange] = useState(currentMonthRange());
   const [page, setPage] = useState(1);
+  const [citiSkippedCount, setCitiSkippedCount] = useState<number | null>(null);
 
   const query = useQuery({
     queryKey: ['vat-book', kind, from, to],
@@ -50,6 +51,7 @@ export default function VatBookTab() {
   function switchKind(next: BookKind) {
     setKind(next);
     setPage(1);
+    setCitiSkippedCount(null);
   }
 
   async function handleExportExcel() {
@@ -60,6 +62,24 @@ export default function VatBookTab() {
   async function handlePrintPdf() {
     if (kind === 'sales') await vatBookApi.openSalesPdf({ from, to });
     else await vatBookApi.openPurchasesPdf({ from, to });
+  }
+
+  async function handleDownloadCitiCbte() {
+    if (kind === 'sales') {
+      await vatBookApi.downloadVentasCbteCiti({ from, to });
+      setCitiSkippedCount(null);
+    } else {
+      setCitiSkippedCount(await vatBookApi.downloadComprasCbteCiti({ from, to }));
+    }
+  }
+
+  async function handleDownloadCitiAlicuotas() {
+    if (kind === 'sales') {
+      await vatBookApi.downloadVentasAlicuotasCiti({ from, to });
+      setCitiSkippedCount(null);
+    } else {
+      setCitiSkippedCount(await vatBookApi.downloadComprasAlicuotasCiti({ from, to }));
+    }
   }
 
   return (
@@ -115,13 +135,39 @@ export default function VatBookTab() {
           >
             Imprimir / Exportar PDF
           </button>
+          <span className="mx-1 self-center text-slate-300 dark:text-slate-700">|</span>
+          <span className="self-center text-xs text-slate-500">Libro de IVA Digital (RG 4597):</span>
+          <button
+            type="button"
+            onClick={handleDownloadCitiCbte}
+            disabled={entries.length === 0}
+            className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-50"
+          >
+            Cabecera (.txt)
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadCitiAlicuotas}
+            disabled={entries.length === 0}
+            className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-50"
+          >
+            Alícuotas (.txt)
+          </button>
         </div>
       </div>
 
-      {kind === 'purchases' && (
+      {kind === 'purchases' && citiSkippedCount === null && (
         <p className="text-xs text-slate-500">
           Los comprobantes de compra cargados sin desglose de alícuota (o de antes de esta función) caen en la
           columna "IVA Otras".
+        </p>
+      )}
+
+      {kind === 'purchases' && citiSkippedCount !== null && citiSkippedCount > 0 && (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          {citiSkippedCount} comprobante{citiSkippedCount === 1 ? '' : 's'} de compra sin Tipo de
+          comprobante/Punto de Venta/Número cargados quedó{citiSkippedCount === 1 ? '' : 'aron'} afuera del
+          archivo (ver "Para el Libro de IVA Digital" al cargar la factura).
         </p>
       )}
 

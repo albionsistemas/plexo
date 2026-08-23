@@ -1,11 +1,13 @@
 'use client';
 
+import type { DocumentLetter } from '@/lib/documentLetter';
 import {
   purchaseInvoicesApi,
   purchaseOrdersApi,
   type PurchaseInvoiceTaxLineInput,
   type PurchaseInvoiceTaxLineType,
 } from '@/lib/purchases';
+import { WITHHOLDING_TAX_TYPE_LABELS, type WithholdingTaxType } from '@/lib/taxes';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import { useState } from 'react';
@@ -25,6 +27,8 @@ const TAX_LINE_TYPE_LABELS: Record<PurchaseInvoiceTaxLineType, string> = {
   IVA_CREDITO: 'IVA Crédito',
   PERCEPCION: 'Percepción',
 };
+
+const DOCUMENT_LETTERS: DocumentLetter[] = ['A', 'B', 'C', 'M'];
 
 // Alícuotas de IVA vigentes en Argentina - "Otra" cubre cualquier caso
 // fuera de este set (p. ej. combustibles, regímenes especiales).
@@ -68,6 +72,12 @@ export default function NewPurchaseInvoiceModal({ onClose }: Props) {
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
   const [supplierInvoiceDate, setSupplierInvoiceDate] = useState(todayIso());
   const [dueDate, setDueDate] = useState('');
+  // Estructurados y opcionales, sólo para el export Libro de IVA Digital
+  // (RG 4597, ver CitiExportService) - sin esto el comprobante queda
+  // afuera de ese export.
+  const [documentLetter, setDocumentLetter] = useState<DocumentLetter | ''>('');
+  const [pointOfSale, setPointOfSale] = useState('');
+  const [docNumber, setDocNumber] = useState('');
   const [subtotal, setSubtotal] = useState<number>(0);
   const [selectedReceiptIds, setSelectedReceiptIds] = useState<string[]>([]);
   const [taxLines, setTaxLines] = useState<PurchaseInvoiceTaxLineInput[]>([]);
@@ -109,9 +119,12 @@ export default function NewPurchaseInvoiceModal({ onClose }: Props) {
           .map((t) =>
             t.type === 'IVA_CREDITO'
               ? t
-              : { type: t.type, concept: t.concept, amount: t.amount },
+              : { type: t.type, concept: t.concept, amount: t.amount, taxType: t.taxType },
           ),
         notes: notes || undefined,
+        documentLetter: documentLetter || undefined,
+        pointOfSale: pointOfSale.trim() || undefined,
+        number: docNumber.trim() || undefined,
       });
       if (file) {
         await purchaseInvoicesApi.uploadAttachment(invoice.id, file);
@@ -252,6 +265,47 @@ export default function NewPurchaseInvoiceModal({ onClose }: Props) {
             </Field>
           </div>
 
+          <div className="flex flex-col gap-2 rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <p className="text-xs text-slate-500">
+              Para el Libro de IVA Digital (opcional) - Tipo/Punto de Venta/Número tal como figuran en el
+              comprobante del proveedor. Sin esto, el comprobante queda afuera del export CITI de Compras.
+            </p>
+            <div className="grid grid-cols-3 gap-4">
+              <Field label="Tipo">
+                <select
+                  className={inputClass}
+                  value={documentLetter}
+                  onChange={(e) => setDocumentLetter(e.target.value as DocumentLetter | '')}
+                >
+                  <option value="">Sin especificar</option>
+                  {DOCUMENT_LETTERS.map((letter) => (
+                    <option key={letter} value={letter}>
+                      Factura {letter}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Punto de venta">
+                <input
+                  type="text"
+                  placeholder="p. ej. 0001"
+                  className={inputClass}
+                  value={pointOfSale}
+                  onChange={(e) => setPointOfSale(e.target.value)}
+                />
+              </Field>
+              <Field label="Número">
+                <input
+                  type="text"
+                  placeholder="p. ej. 00012345"
+                  className={inputClass}
+                  value={docNumber}
+                  onChange={(e) => setDocNumber(e.target.value)}
+                />
+              </Field>
+            </div>
+          </div>
+
           {purchaseOrderId && receipts.length > 0 && (
             <div className="flex flex-col gap-2">
               <label className="text-sm text-slate-600 dark:text-slate-400">
@@ -305,13 +359,30 @@ export default function NewPurchaseInvoiceModal({ onClose }: Props) {
                       ))}
                     </select>
                     {line.type === 'PERCEPCION' && (
-                      <input
-                        type="text"
-                        placeholder="Concepto, p. ej. Percepción IIBB CABA"
-                        className={`${inputClass} flex-1`}
-                        value={line.concept}
-                        onChange={(e) => updateTaxLine(i, { concept: e.target.value })}
-                      />
+                      <>
+                        <input
+                          type="text"
+                          placeholder="Concepto, p. ej. Percepción IIBB CABA"
+                          className={`${inputClass} flex-1`}
+                          value={line.concept}
+                          onChange={(e) => updateTaxLine(i, { concept: e.target.value })}
+                        />
+                        <select
+                          className={`${inputClass} w-32`}
+                          title="Sub-clasificación para el Libro de IVA Digital"
+                          value={line.taxType ?? ''}
+                          onChange={(e) =>
+                            updateTaxLine(i, { taxType: (e.target.value || undefined) as WithholdingTaxType | undefined })
+                          }
+                        >
+                          <option value="">Otra nacional</option>
+                          {(Object.keys(WITHHOLDING_TAX_TYPE_LABELS) as WithholdingTaxType[]).map((t) => (
+                            <option key={t} value={t}>
+                              {WITHHOLDING_TAX_TYPE_LABELS[t]}
+                            </option>
+                          ))}
+                        </select>
+                      </>
                     )}
                     <button
                       type="button"

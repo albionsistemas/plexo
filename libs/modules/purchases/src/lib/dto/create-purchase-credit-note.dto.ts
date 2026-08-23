@@ -1,7 +1,9 @@
+import { DocumentLetter } from '@plexo/database';
 import { Type } from 'class-transformer';
 import {
   IsArray,
   IsDateString,
+  IsEnum,
   IsNumber,
   IsOptional,
   IsPositive,
@@ -34,6 +36,20 @@ export class CreatePurchaseCreditNoteDto {
 
   @IsDateString()
   supplierCreditNoteDate!: string;
+
+  // Ver el mismo comentario en CreatePurchaseInvoiceDto - aditivo, sólo
+  // para el export Libro de IVA Digital.
+  @IsOptional()
+  @IsEnum(DocumentLetter)
+  documentLetter?: DocumentLetter;
+
+  @IsOptional()
+  @IsString()
+  pointOfSale?: string;
+
+  @IsOptional()
+  @IsString()
+  number?: string;
 
   @IsString()
   @MinLength(1)
