@@ -197,7 +197,12 @@ export default function PurchaseInvoiceDetailPanel({ purchaseInvoiceId, onClose 
                 <div className="flex flex-col gap-1 text-sm">
                   {data.taxLines.map((line) => (
                     <div key={line.id} className="flex justify-between text-slate-700 dark:text-slate-300">
-                      <span>{line.concept}</span>
+                      <span>
+                        {line.concept}
+                        {line.netAmount != null && (
+                          <span className="text-xs text-slate-500"> — Neto ${Number(line.netAmount).toFixed(2)}</span>
+                        )}
+                      </span>
                       <span>${Number(line.amount).toFixed(2)}</span>
                     </div>
                   ))}

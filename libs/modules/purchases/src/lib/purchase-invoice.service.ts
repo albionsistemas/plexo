@@ -162,6 +162,8 @@ export class PurchaseInvoiceService {
               type: line.type,
               concept: line.concept,
               amount: line.amount,
+              netAmount: line.netAmount,
+              taxRate: line.taxRate,
             })),
           },
         },

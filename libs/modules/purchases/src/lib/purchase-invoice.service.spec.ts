@@ -59,7 +59,7 @@ describe('PurchaseInvoiceService.create', () => {
         supplierInvoiceDate: '2026-07-29',
         subtotal: 18150,
         goodsReceiptIds: ['receipt-1'],
-        taxLines: [{ type: 'IVA_CREDITO', concept: 'IVA 21%', amount: 3811.5 }],
+        taxLines: [{ type: 'IVA_CREDITO', concept: 'IVA 21%', amount: 3811.5, netAmount: 18150, taxRate: 21 }],
       }),
     );
 
@@ -72,6 +72,11 @@ describe('PurchaseInvoiceService.create', () => {
           supplierName: 'Sidex',
           supplierTaxId: '30-12345678-9',
           createdByUserId: 'user-1',
+          taxLines: expect.objectContaining({
+            createMany: expect.objectContaining({
+              data: [{ type: 'IVA_CREDITO', concept: 'IVA 21%', amount: 3811.5, netAmount: 18150, taxRate: 21 }],
+            }),
+          }),
         }),
       }),
     );

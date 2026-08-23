@@ -2058,6 +2058,14 @@ model PurchaseInvoiceTaxLine {
   type              PurchaseInvoiceTaxLineType
   concept           String
   amount            Decimal                    @db.Decimal(14, 2)
+  // Alícuota + base imponible de esta fila - sólo se completan para
+  // type: IVA_CREDITO (una Percepción no tiene una tasa de IVA propia).
+  // Nullable a propósito: queda null en filas históricas (sin backfill,
+  // ver PROGRESS.md punto 23) y en filas PERCEPCION - VatBookService cae
+  // a "otras" cuando taxRate es null. Igual criterio que
+  // InvoiceLine.taxRate del lado Ventas.
+  netAmount         Decimal?                   @db.Decimal(14, 2)
+  taxRate           Decimal?                   @db.Decimal(5, 2)
 
   @@index([tenantId])
   @@map("purchase_invoice_tax_lines")
@@ -2150,6 +2158,9 @@ model PurchaseCreditNoteTaxLine {
   type                 PurchaseInvoiceTaxLineType
   concept              String
   amount               Decimal                    @db.Decimal(14, 2)
+  // Same fields, same nullability criterion as PurchaseInvoiceTaxLine.
+  netAmount            Decimal?                   @db.Decimal(14, 2)
+  taxRate              Decimal?                   @db.Decimal(5, 2)
 
   @@index([tenantId])
   @@map("purchase_credit_note_tax_lines")

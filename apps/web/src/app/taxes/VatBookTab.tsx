@@ -24,10 +24,6 @@ function numberLabel(entry: VatBookEntry): string {
 const thClass = 'pb-2 pr-4 text-right whitespace-nowrap';
 const tdClass = 'py-2 pr-4 text-right whitespace-nowrap tabular-nums';
 
-/** Compras no guarda alícuota por línea (ver el comentario en
- * VatBookService.getPurchasesBook, backend) - por eso esta pestaña
- * muestra una sola columna "IVA Crédito Fiscal" (vatOther) en vez de las
- * 3 columnas de alícuota + "Otras" que sí tienen sentido para Ventas. */
 const PAGE_SIZE = 50;
 
 export default function VatBookTab() {
@@ -42,7 +38,6 @@ export default function VatBookTab() {
 
   const result: VatBookResult | undefined = query.data;
   const entries = result?.entries ?? [];
-  const showRateColumns = kind === 'sales';
   // Paginado en el cliente, no en el servidor - el backend ya trae todo
   // el período en una sola respuesta (necesario de todos modos para que
   // "Totales acumulados" sume el período completo, no sólo la página
@@ -125,8 +120,8 @@ export default function VatBookTab() {
 
       {kind === 'purchases' && (
         <p className="text-xs text-slate-500">
-          Compras no discrimina IVA por alícuota (el proveedor no siempre lo detalla así, y esta app todavía no lo
-          captura por línea) - se muestra el total de IVA Crédito Fiscal de cada comprobante en una sola columna.
+          Los comprobantes de compra cargados sin desglose de alícuota (o de antes de esta función) caen en la
+          columna "IVA Otras".
         </p>
       )}
 
@@ -150,16 +145,10 @@ export default function VatBookTab() {
                   <th className={thClass}>Neto Grav.</th>
                   <th className={thClass}>Exento</th>
                   <th className={thClass}>No Grav.</th>
-                  {showRateColumns ? (
-                    <>
-                      <th className={thClass}>IVA 21%</th>
-                      <th className={thClass}>IVA 10,5%</th>
-                      <th className={thClass}>IVA 27%</th>
-                      <th className={thClass}>IVA Otras</th>
-                    </>
-                  ) : (
-                    <th className={thClass}>IVA Créd. Fiscal</th>
-                  )}
+                  <th className={thClass}>IVA 21%</th>
+                  <th className={thClass}>IVA 10,5%</th>
+                  <th className={thClass}>IVA 27%</th>
+                  <th className={thClass}>IVA Otras</th>
                   <th className={thClass}>Percepciones</th>
                   <th className={thClass}>IVA Total</th>
                   <th className={thClass}>Total</th>
@@ -183,16 +172,10 @@ export default function VatBookTab() {
                     <td className={tdClass}>{money(entry.netTaxed)}</td>
                     <td className={tdClass}>{money(entry.netExempt)}</td>
                     <td className={tdClass}>{money(entry.netUntaxed)}</td>
-                    {showRateColumns ? (
-                      <>
-                        <td className={tdClass}>{money(entry.vat21)}</td>
-                        <td className={tdClass}>{money(entry.vat10_5)}</td>
-                        <td className={tdClass}>{money(entry.vat27)}</td>
-                        <td className={tdClass}>{money(entry.vatOther)}</td>
-                      </>
-                    ) : (
-                      <td className={tdClass}>{money(entry.vatOther)}</td>
-                    )}
+                    <td className={tdClass}>{money(entry.vat21)}</td>
+                    <td className={tdClass}>{money(entry.vat10_5)}</td>
+                    <td className={tdClass}>{money(entry.vat27)}</td>
+                    <td className={tdClass}>{money(entry.vatOther)}</td>
                     <td className={tdClass}>{money(entry.perceptions)}</td>
                     <td className={tdClass}>{money(entry.vatTotal)}</td>
                     <td className={`${tdClass} font-medium text-slate-900 dark:text-slate-100`}>
@@ -210,16 +193,10 @@ export default function VatBookTab() {
                     <td className={tdClass}>{money(result.totals.netTaxed)}</td>
                     <td className={tdClass}>{money(result.totals.netExempt)}</td>
                     <td className={tdClass}>{money(result.totals.netUntaxed)}</td>
-                    {showRateColumns ? (
-                      <>
-                        <td className={tdClass}>{money(result.totals.vat21)}</td>
-                        <td className={tdClass}>{money(result.totals.vat10_5)}</td>
-                        <td className={tdClass}>{money(result.totals.vat27)}</td>
-                        <td className={tdClass}>{money(result.totals.vatOther)}</td>
-                      </>
-                    ) : (
-                      <td className={tdClass}>{money(result.totals.vatOther)}</td>
-                    )}
+                    <td className={tdClass}>{money(result.totals.vat21)}</td>
+                    <td className={tdClass}>{money(result.totals.vat10_5)}</td>
+                    <td className={tdClass}>{money(result.totals.vat27)}</td>
+                    <td className={tdClass}>{money(result.totals.vatOther)}</td>
                     <td className={tdClass}>{money(result.totals.perceptions)}</td>
                     <td className={tdClass}>{money(result.totals.vatTotal)}</td>
                     <td className={tdClass}>{money(result.totals.total)}</td>

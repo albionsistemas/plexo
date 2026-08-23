@@ -490,12 +490,18 @@ export interface PurchaseInvoiceTaxLineDetail {
   type: PurchaseInvoiceTaxLineType;
   concept: string;
   amount: string;
+  // Sólo presentes en filas IVA_CREDITO cargadas con el desglose por
+  // alícuota - null en filas PERCEPCION y en comprobantes viejos.
+  netAmount: string | null;
+  taxRate: string | null;
 }
 
 export interface PurchaseInvoiceTaxLineInput {
   type: PurchaseInvoiceTaxLineType;
   concept: string;
   amount: number;
+  netAmount?: number;
+  taxRate?: number;
 }
 
 export interface SupplierPaymentWithholdingDetail {

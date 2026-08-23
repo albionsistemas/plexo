@@ -158,13 +158,16 @@ export class VatBookService {
   }
 
   /** Libro IVA Compras: una fila por Factura de compra + una por Nota de
-   * Crédito de compra (negada). A diferencia de Ventas, el modelo no
-   * guarda alícuota por línea de compra (`PurchaseInvoiceTaxLine` sólo
-   * distingue IVA_CREDITO/PERCEPCION con concepto libre, ver el
-   * comentario del modelo en schema.prisma) - todo el IVA crédito cae en
-   * `vatOther` sin desglosar por 21/10.5/27, y no hay Neto Exento/No
-   * Gravado por línea tampoco (`netTaxed` = `subtotal` del comprobante
-   * completo). Las retenciones que el propio tenant practica a
+   * Crédito de compra (negada). `PurchaseInvoiceTaxLine` guarda
+   * `taxRate`/`netAmount` por fila de IVA Crédito desde el desglose por
+   * alícuota (ver schema.prisma) - se bucketiza con el mismo `bucketRate`
+   * que Ventas. Filas sin `taxRate` (comprobantes cargados antes de este
+   * cambio, o cualquier fila vieja sin tasa) caen en `vatOther`, nunca se
+   * pierden. `netTaxed` se deriva de la suma de `netAmount` de esas
+   * filas cuando está disponible; si ninguna fila lo tiene (comprobante
+   * viejo) cae a `subtotal` del comprobante completo, igual que antes. No
+   * hay Neto Exento/No Gravado por línea (Compras no modela eso todavía).
+   * Las retenciones que el propio tenant practica a
    * proveedores (`SupplierPaymentWithholding`) NO entran acá a propósito
    * - cuelgan de `SupplierPayment`, no de `PurchaseInvoice` (se practican
    * al pagar, no al facturar - ver decisión de arquitectura en
@@ -199,9 +202,21 @@ export class VatBookService {
     const entries: VatBookEntry[] = [];
 
     for (const invoice of invoices) {
-      const ivaCredito = invoice.taxLines
-        .filter((l) => l.type === 'IVA_CREDITO')
-        .reduce((sum, l) => sum + l.amount.toNumber(), 0);
+      const ivaCreditoLines = invoice.taxLines.filter((l) => l.type === 'IVA_CREDITO');
+      const buckets = { ...ZERO_BUCKET };
+      let netTaxed = 0;
+      let anyNetAmount = false;
+      for (const l of ivaCreditoLines) {
+        const amount = l.amount.toNumber();
+        if (l.taxRate != null) bucketRate(l.taxRate.toNumber(), amount, buckets);
+        else buckets.vatOther += amount;
+        if (l.netAmount != null) {
+          anyNetAmount = true;
+          netTaxed += l.netAmount.toNumber();
+        }
+      }
+      if (!anyNetAmount) netTaxed = invoice.subtotal.toNumber();
+      const ivaCredito = buckets.vat21 + buckets.vat10_5 + buckets.vat27 + buckets.vatOther;
       const perceptions = invoice.taxLines
         .filter((l) => l.type === 'PERCEPCION')
         .reduce((sum, l) => sum + l.amount.toNumber(), 0);
@@ -217,13 +232,10 @@ export class VatBookService {
         counterpartyDocType: counterpartyDocType(invoice.supplierTaxId),
         taxCondition: invoice.supplier.taxCondition,
         currencyCode: invoice.currency.code,
-        netTaxed: invoice.subtotal.toNumber(),
+        netTaxed,
         netExempt: 0,
         netUntaxed: 0,
-        vat21: 0,
-        vat10_5: 0,
-        vat27: 0,
-        vatOther: ivaCredito,
+        ...buckets,
         perceptions,
         vatTotal: ivaCredito,
         total: invoice.total.toNumber(),
@@ -232,9 +244,21 @@ export class VatBookService {
     }
 
     for (const creditNote of creditNotes) {
-      const ivaCredito = creditNote.taxLines
-        .filter((l) => l.type === 'IVA_CREDITO')
-        .reduce((sum, l) => sum + l.amount.toNumber(), 0);
+      const ivaCreditoLines = creditNote.taxLines.filter((l) => l.type === 'IVA_CREDITO');
+      const buckets = { ...ZERO_BUCKET };
+      let netTaxed = 0;
+      let anyNetAmount = false;
+      for (const l of ivaCreditoLines) {
+        const amount = l.amount.toNumber();
+        if (l.taxRate != null) bucketRate(l.taxRate.toNumber(), amount, buckets);
+        else buckets.vatOther += amount;
+        if (l.netAmount != null) {
+          anyNetAmount = true;
+          netTaxed += l.netAmount.toNumber();
+        }
+      }
+      if (!anyNetAmount) netTaxed = creditNote.subtotal.toNumber();
+      const ivaCredito = buckets.vat21 + buckets.vat10_5 + buckets.vat27 + buckets.vatOther;
       const perceptions = creditNote.taxLines
         .filter((l) => l.type === 'PERCEPCION')
         .reduce((sum, l) => sum + l.amount.toNumber(), 0);
@@ -250,13 +274,13 @@ export class VatBookService {
         counterpartyDocType: counterpartyDocType(creditNote.supplierTaxId),
         taxCondition: creditNote.supplier.taxCondition,
         currencyCode: creditNote.currency.code,
-        netTaxed: -creditNote.subtotal.toNumber(),
+        netTaxed: -netTaxed,
         netExempt: 0,
         netUntaxed: 0,
-        vat21: 0,
-        vat10_5: 0,
-        vat27: 0,
-        vatOther: -ivaCredito,
+        vat21: -buckets.vat21,
+        vat10_5: -buckets.vat10_5,
+        vat27: -buckets.vat27,
+        vatOther: -buckets.vatOther,
         perceptions: -perceptions,
         vatTotal: -ivaCredito,
         total: -creditNote.total.toNumber(),

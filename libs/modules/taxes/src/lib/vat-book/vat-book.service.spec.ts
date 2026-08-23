@@ -125,7 +125,7 @@ describe('VatBookService.getSalesBook', () => {
 });
 
 describe('VatBookService.getPurchasesBook', () => {
-  it('no discrimina por alícuota (el schema de compras no la guarda por línea) - todo el IVA cae en vatOther, separado de Percepciones', async () => {
+  it('una fila IVA_CREDITO sin taxRate (comprobante cargado antes del desglose por alícuota) cae en vatOther, netTaxed cae a subtotal', async () => {
     const db = {
       purchaseInvoice: {
         findMany: jest.fn().mockResolvedValue([
@@ -140,8 +140,8 @@ describe('VatBookService.getPurchasesBook', () => {
             subtotal: d(1000),
             total: d(1210 + 30),
             taxLines: [
-              { type: 'IVA_CREDITO', concept: 'IVA 21%', amount: d(210) },
-              { type: 'PERCEPCION', concept: 'Percepción IIBB CABA', amount: d(30) },
+              { type: 'IVA_CREDITO', concept: 'IVA 21%', amount: d(210), netAmount: null, taxRate: null },
+              { type: 'PERCEPCION', concept: 'Percepción IIBB CABA', amount: d(30), netAmount: null, taxRate: null },
             ],
           },
         ]),
@@ -153,6 +153,7 @@ describe('VatBookService.getPurchasesBook', () => {
     const result = await runInTenant(db, () => service.getPurchasesBook());
 
     const entry = result.entries[0];
+    expect(entry.netTaxed).toBe(1000);
     expect(entry.vat21).toBe(0);
     expect(entry.vat10_5).toBe(0);
     expect(entry.vat27).toBe(0);
@@ -162,6 +163,44 @@ describe('VatBookService.getPurchasesBook', () => {
     expect(entry.documentType).toBe('Factura de compra');
     expect(entry.documentLetter).toBeNull();
     expect(entry.pointOfSale).toBeNull();
+  });
+
+  it('discrimina múltiples alícuotas por línea (IVA por línea en Compras) y deriva netTaxed de la suma de netAmount', async () => {
+    const db = {
+      purchaseInvoice: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'pi-2',
+            supplierInvoiceDate: new Date('2026-08-12'),
+            supplierInvoiceNumber: '0001-00045679',
+            supplierName: 'Distribuidora Multi SA',
+            supplierTaxId: '30-12345678-9',
+            supplier: { taxCondition: 'Responsable Inscripto' },
+            currency: { code: 'ARS' },
+            subtotal: d(1500),
+            total: d(1815 + 105),
+            taxLines: [
+              { type: 'IVA_CREDITO', concept: 'IVA 21%', amount: d(210), netAmount: d(1000), taxRate: d(21) },
+              { type: 'IVA_CREDITO', concept: 'IVA 10,5%', amount: d(52.5), netAmount: d(500), taxRate: d(10.5) },
+              { type: 'PERCEPCION', concept: 'Percepción IIBB CABA', amount: d(30), netAmount: null, taxRate: null },
+            ],
+          },
+        ]),
+      },
+      purchaseCreditNote: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new VatBookService();
+
+    const result = await runInTenant(db, () => service.getPurchasesBook());
+
+    const entry = result.entries[0];
+    expect(entry.netTaxed).toBe(1500);
+    expect(entry.vat21).toBe(210);
+    expect(entry.vat10_5).toBe(52.5);
+    expect(entry.vat27).toBe(0);
+    expect(entry.vatOther).toBe(0);
+    expect(entry.vatTotal).toBe(262.5);
+    expect(entry.perceptions).toBe(30);
   });
 
   it('resta una Nota de Crédito de compra de los totales, incluyendo Percepciones', async () => {
@@ -180,8 +219,8 @@ describe('VatBookService.getPurchasesBook', () => {
             subtotal: d(500),
             total: d(605 + 15),
             taxLines: [
-              { type: 'IVA_CREDITO', concept: 'IVA 21%', amount: d(105) },
-              { type: 'PERCEPCION', concept: 'Percepción IIBB', amount: d(15) },
+              { type: 'IVA_CREDITO', concept: 'IVA 21%', amount: d(105), netAmount: null, taxRate: null },
+              { type: 'PERCEPCION', concept: 'Percepción IIBB', amount: d(15), netAmount: null, taxRate: null },
             ],
           },
         ]),

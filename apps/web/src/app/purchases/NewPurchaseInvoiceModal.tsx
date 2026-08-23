@@ -26,6 +26,27 @@ const TAX_LINE_TYPE_LABELS: Record<PurchaseInvoiceTaxLineType, string> = {
   PERCEPCION: 'Percepción',
 };
 
+// Alícuotas de IVA vigentes en Argentina - "Otra" cubre cualquier caso
+// fuera de este set (p. ej. combustibles, regímenes especiales).
+const STANDARD_VAT_RATES = [21, 10.5, 27, 5, 2.5, 0];
+const OTHER_RATE = 'OTRA';
+
+function formatRate(rate: number): string {
+  return rate.toString().replace('.', ',');
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function computeIvaAmount(netAmount: number, taxRate: number): number {
+  return round2((netAmount * taxRate) / 100);
+}
+
+function defaultIvaCreditoLine(): PurchaseInvoiceTaxLineInput {
+  return { type: 'IVA_CREDITO', concept: `IVA ${formatRate(21)}%`, amount: 0, netAmount: 0, taxRate: 21 };
+}
+
 /**
  * Carga de la Factura de Compra del proveedor - cabecera, no línea por
  * artículo (ese detalle ya vive en la Orden/remito, ver PurchaseInvoiceService
@@ -61,8 +82,18 @@ export default function NewPurchaseInvoiceModal({ onClose }: Props) {
   });
   const receipts = orderDetailQuery.data?.receipts ?? [];
 
+  // El Subtotal (Neto) se auto-calcula como la suma de los Netos de las
+  // filas IVA Crédito en cuanto hay al menos una cargada - mismo criterio
+  // que Tango/Xubio (el Neto por comprobante sale de sumar sus líneas de
+  // IVA, no se tipea aparte). Sin ninguna fila IVA Crédito (proveedor
+  // monotributista, etc.) sigue siendo un campo manual como antes.
+  const ivaCreditoLines = taxLines.filter((t) => t.type === 'IVA_CREDITO' && (t.netAmount ?? 0) > 0);
+  const hasIvaCreditoBreakdown = ivaCreditoLines.length > 0;
+  const computedSubtotal = ivaCreditoLines.reduce((sum, t) => sum + (t.netAmount ?? 0), 0);
+  const effectiveSubtotal = hasIvaCreditoBreakdown ? computedSubtotal : Number(subtotal) || 0;
+
   const taxTotal = taxLines.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-  const total = (Number(subtotal) || 0) + taxTotal;
+  const total = effectiveSubtotal + taxTotal;
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -71,9 +102,15 @@ export default function NewPurchaseInvoiceModal({ onClose }: Props) {
         supplierInvoiceNumber,
         supplierInvoiceDate,
         dueDate: dueDate || undefined,
-        subtotal,
+        subtotal: effectiveSubtotal,
         goodsReceiptIds: selectedReceiptIds,
-        taxLines: taxLines.filter((t) => t.concept && t.amount > 0),
+        taxLines: taxLines
+          .filter((t) => t.concept && t.amount > 0)
+          .map((t) =>
+            t.type === 'IVA_CREDITO'
+              ? t
+              : { type: t.type, concept: t.concept, amount: t.amount },
+          ),
         notes: notes || undefined,
       });
       if (file) {
@@ -102,7 +139,7 @@ export default function NewPurchaseInvoiceModal({ onClose }: Props) {
       setError('Ingresá el número de factura del proveedor');
       return;
     }
-    if (!(subtotal > 0)) {
+    if (!(effectiveSubtotal > 0)) {
       setError('El subtotal debe ser mayor a cero');
       return;
     }
@@ -111,6 +148,36 @@ export default function NewPurchaseInvoiceModal({ onClose }: Props) {
 
   function updateTaxLine(index: number, patch: Partial<PurchaseInvoiceTaxLineInput>) {
     setTaxLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)));
+  }
+
+  function updateTaxLineType(index: number, type: PurchaseInvoiceTaxLineType) {
+    setTaxLines((prev) =>
+      prev.map((line, i) => {
+        if (i !== index) return line;
+        if (type === 'IVA_CREDITO') return { ...defaultIvaCreditoLine() };
+        return { type: 'PERCEPCION', concept: '', amount: 0 };
+      }),
+    );
+  }
+
+  // Recalcula el Monto de IVA de la fila (netAmount×taxRate/100) al tocar
+  // el Neto o la Alícuota - queda editable igual después, mismo criterio
+  // que suggestAmount() para retenciones (ver PurchaseInvoiceDetailPanel).
+  function updateIvaCreditoLine(index: number, patch: { netAmount?: number; taxRate?: number }) {
+    setTaxLines((prev) =>
+      prev.map((line, i) => {
+        if (i !== index) return line;
+        const netAmount = patch.netAmount ?? line.netAmount ?? 0;
+        const taxRate = patch.taxRate ?? line.taxRate ?? 0;
+        return {
+          ...line,
+          netAmount,
+          taxRate,
+          amount: computeIvaAmount(netAmount, taxRate),
+          concept: `IVA ${formatRate(taxRate)}%`,
+        };
+      }),
+    );
   }
 
   return (
@@ -164,14 +231,24 @@ export default function NewPurchaseInvoiceModal({ onClose }: Props) {
               <input type="date" className={inputClass} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </Field>
             <Field label="Subtotal (neto de impuestos)">
-              <input
-                type="number"
-                min={0}
-                step="any"
-                className={inputClass}
-                value={subtotal}
-                onChange={(e) => setSubtotal(Number(e.target.value))}
-              />
+              {hasIvaCreditoBreakdown ? (
+                <input
+                  type="text"
+                  readOnly
+                  className={`${inputClass} cursor-not-allowed opacity-75`}
+                  value={`$${computedSubtotal.toFixed(2)} (suma de los Netos de IVA)`}
+                  title="Se calcula solo desde las filas de IVA Crédito"
+                />
+              ) : (
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  className={inputClass}
+                  value={subtotal}
+                  onChange={(e) => setSubtotal(Number(e.target.value))}
+                />
+              )}
             </Field>
           </div>
 
@@ -205,50 +282,108 @@ export default function NewPurchaseInvoiceModal({ onClose }: Props) {
               <label className="text-sm text-slate-600 dark:text-slate-400">IVA / Percepciones</label>
               <button
                 type="button"
-                onClick={() => setTaxLines((prev) => [...prev, { type: 'IVA_CREDITO', concept: '', amount: 0 }])}
+                onClick={() => setTaxLines((prev) => [...prev, defaultIvaCreditoLine()])}
                 className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
               >
                 + agregar fila
               </button>
             </div>
-            {taxLines.map((line, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <select
-                  className={`${inputClass} w-40`}
-                  value={line.type}
-                  onChange={(e) => updateTaxLine(i, { type: e.target.value as PurchaseInvoiceTaxLineType })}
-                >
-                  {(Object.keys(TAX_LINE_TYPE_LABELS) as PurchaseInvoiceTaxLineType[]).map((t) => (
-                    <option key={t} value={t}>
-                      {TAX_LINE_TYPE_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  placeholder="Concepto, p. ej. IVA 21%"
-                  className={`${inputClass} flex-1`}
-                  value={line.concept}
-                  onChange={(e) => updateTaxLine(i, { concept: e.target.value })}
-                />
-                <input
-                  type="number"
-                  min={0}
-                  step="any"
-                  placeholder="Monto"
-                  className={`${inputClass} w-28 text-right`}
-                  value={line.amount}
-                  onChange={(e) => updateTaxLine(i, { amount: Number(e.target.value) })}
-                />
-                <button
-                  type="button"
-                  onClick={() => setTaxLines((prev) => prev.filter((_, idx) => idx !== i))}
-                  className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
+            {taxLines.map((line, i) => {
+              const isStandardRate = line.taxRate !== undefined && STANDARD_VAT_RATES.includes(line.taxRate);
+              return (
+                <div key={i} className="flex flex-col gap-1 rounded-lg border border-slate-200 dark:border-slate-800 p-2">
+                  <div className="flex items-center gap-2">
+                    <select
+                      className={`${inputClass} w-40`}
+                      value={line.type}
+                      onChange={(e) => updateTaxLineType(i, e.target.value as PurchaseInvoiceTaxLineType)}
+                    >
+                      {(Object.keys(TAX_LINE_TYPE_LABELS) as PurchaseInvoiceTaxLineType[]).map((t) => (
+                        <option key={t} value={t}>
+                          {TAX_LINE_TYPE_LABELS[t]}
+                        </option>
+                      ))}
+                    </select>
+                    {line.type === 'PERCEPCION' && (
+                      <input
+                        type="text"
+                        placeholder="Concepto, p. ej. Percepción IIBB CABA"
+                        className={`${inputClass} flex-1`}
+                        value={line.concept}
+                        onChange={(e) => updateTaxLine(i, { concept: e.target.value })}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setTaxLines((prev) => prev.filter((_, idx) => idx !== i))}
+                      className="ml-auto text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {line.type === 'IVA_CREDITO' ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        placeholder="Neto"
+                        title="Neto gravado a esta alícuota"
+                        className={`${inputClass} w-28 text-right`}
+                        value={line.netAmount ?? 0}
+                        onChange={(e) => updateIvaCreditoLine(i, { netAmount: Number(e.target.value) })}
+                      />
+                      <select
+                        className={`${inputClass} w-24`}
+                        value={isStandardRate ? String(line.taxRate) : OTHER_RATE}
+                        onChange={(e) => {
+                          if (e.target.value === OTHER_RATE) return;
+                          updateIvaCreditoLine(i, { taxRate: Number(e.target.value) });
+                        }}
+                      >
+                        {STANDARD_VAT_RATES.map((r) => (
+                          <option key={r} value={r}>
+                            {formatRate(r)}%
+                          </option>
+                        ))}
+                        <option value={OTHER_RATE}>Otra</option>
+                      </select>
+                      {!isStandardRate && (
+                        <input
+                          type="number"
+                          min={0}
+                          step="any"
+                          placeholder="% alícuota"
+                          className={`${inputClass} w-20 text-right`}
+                          value={line.taxRate ?? 0}
+                          onChange={(e) => updateIvaCreditoLine(i, { taxRate: Number(e.target.value) })}
+                        />
+                      )}
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        placeholder="IVA"
+                        title="Monto de IVA - se sugiere solo, se puede ajustar"
+                        className={`${inputClass} flex-1 text-right`}
+                        value={line.amount}
+                        onChange={(e) => updateTaxLine(i, { amount: Number(e.target.value) })}
+                      />
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      placeholder="Monto"
+                      className={`${inputClass} w-28 text-right`}
+                      value={line.amount}
+                      onChange={(e) => updateTaxLine(i, { amount: Number(e.target.value) })}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <Field label="Foto o escaneo de la factura">
