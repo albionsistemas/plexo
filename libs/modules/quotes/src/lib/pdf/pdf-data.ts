@@ -11,6 +11,24 @@ export interface QuotePdfLine {
   quantity: string;
   unitPrice: string;
   lineTotal: string;
+  // null en líneas de cotizaciones creadas antes del desglose de IVA por
+  // línea (ver schema.prisma QuoteLine) - la plantilla omite la columna
+  // "Alícuota" para esas filas puntuales, no para el documento entero.
+  vatLabel: string | null;
+}
+
+/** null cuando NINGUNA línea del comprobante tiene desglose de IVA propio
+ * (cotización creada antes de esta función) - la plantilla en ese caso no
+ * muestra el resumen por alícuota y sólo el Total plano de siempre, mismo
+ * criterio de degradación que el resto de "IVA por línea" en la app. */
+export interface QuotePdfVatSummary {
+  netTaxed: string;
+  netExempt: string;
+  vat21: string;
+  vat10_5: string;
+  vat27: string;
+  vatOther: string;
+  vatTotal: string;
 }
 
 export interface QuotePdfData {
@@ -25,5 +43,6 @@ export interface QuotePdfData {
   currencyCode: string;
   lines: QuotePdfLine[];
   total: string;
+  vatSummary: QuotePdfVatSummary | null;
   notes: string | null;
 }

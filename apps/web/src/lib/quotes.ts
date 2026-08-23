@@ -21,6 +21,10 @@ export interface QuoteLineInput {
   quantity: number;
   unitPrice: number;
   notes?: string;
+  // Anula la alícuota de catálogo para esta línea - ver QuoteLineDto en el
+  // backend para el criterio completo (mismo que Facturación).
+  taxKind?: 'GRAVADO' | 'EXENTO' | 'NO_GRAVADO';
+  taxRate?: number;
 }
 
 export interface QuoteLineDetail {
@@ -29,6 +33,11 @@ export interface QuoteLineDetail {
   quantity: string;
   unitPrice: string;
   notes: string | null;
+  // null en cotizaciones creadas antes de este campo - ver schema.prisma.
+  taxRate: string | null;
+  taxKind: 'GRAVADO' | 'EXENTO' | 'NO_GRAVADO' | null;
+  netAmount: string | null;
+  lineTotal: string | null;
   articleVariant: {
     sku: string;
     color: string | null;
@@ -79,6 +88,7 @@ export interface CreateQuoteInput {
   currencyId: string;
   validUntil?: string;
   notes?: string;
+  pricesIncludeTax?: boolean;
   lines: QuoteLineInput[];
 }
 

@@ -2,6 +2,9 @@
 
 import ArticlePicker from '@/components/ArticlePicker';
 import CompanyFormModal from '@/components/CompanyFormModal';
+import ToggleSwitch from '@/components/ToggleSwitch';
+import VatLineSummary from '@/components/VatLineSummary';
+import VatRateSelect, { type VatKind } from '@/components/VatRateSelect';
 import { companiesApi } from '@/lib/companies';
 import { inventoryApi } from '@/lib/inventory';
 import { invoicingApi } from '@/lib/invoicing';
@@ -42,13 +45,16 @@ export default function QuoteFormModal({ quote, onClose }: Props) {
   const [currencyId, setCurrencyId] = useState(quote?.currency.id ?? '');
   const [validUntil, setValidUntil] = useState(quote?.validUntil ? quote.validUntil.slice(0, 10) : '');
   const [notes, setNotes] = useState(quote?.notes ?? '');
+  const [pricesIncludeTax, setPricesIncludeTax] = useState(false);
   const [lines, setLines] = useState<QuoteLineInput[]>(
     quote?.lines.map((l) => ({
       articleVariantId: '',
       quantity: Number(l.quantity),
       unitPrice: Number(l.unitPrice),
       notes: l.notes ?? undefined,
-    })) ?? [{ articleVariantId: '', quantity: 1, unitPrice: 0 }],
+      taxKind: l.taxKind ?? 'GRAVADO',
+      taxRate: l.taxRate ? Number(l.taxRate) : 0,
+    })) ?? [{ articleVariantId: '', quantity: 1, unitPrice: 0, taxKind: 'GRAVADO', taxRate: 0 }],
   );
   const [linesResolved, setLinesResolved] = useState(!isEdit);
   if (!linesResolved && quote && (articlesQuery.data?.length ?? 0) > 0) {
@@ -75,7 +81,14 @@ export default function QuoteFormModal({ quote, onClose }: Props) {
 
   const mutation = useMutation({
     mutationFn: () => {
-      const dto = { customerId, currencyId, validUntil: validUntil || undefined, notes: notes || undefined, lines };
+      const dto = {
+        customerId,
+        currencyId,
+        validUntil: validUntil || undefined,
+        notes: notes || undefined,
+        pricesIncludeTax,
+        lines,
+      };
       return quote ? quotesApi.update(quote.id, dto) : quotesApi.create(dto);
     },
     onSuccess: () => {
@@ -93,7 +106,10 @@ export default function QuoteFormModal({ quote, onClose }: Props) {
   }
 
   function addLine() {
-    setLines((prev) => [...prev, { articleVariantId: '', quantity: 1, unitPrice: 0 }]);
+    setLines((prev) => [
+      ...prev,
+      { articleVariantId: '', quantity: 1, unitPrice: 0, taxKind: 'GRAVADO', taxRate: 0 },
+    ]);
   }
 
   function removeLine(index: number) {
@@ -177,14 +193,29 @@ export default function QuoteFormModal({ quote, onClose }: Props) {
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <label className="text-sm text-slate-600 dark:text-slate-400">Líneas</label>
-                <button
-                  type="button"
-                  onClick={addLine}
-                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
-                >
-                  + agregar línea
-                </button>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                    <ToggleSwitch
+                      checked={pricesIncludeTax}
+                      onChange={setPricesIncludeTax}
+                      label="Precios con IVA incluido"
+                    />
+                    <span>Precios con IVA incluido</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addLine}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                  >
+                    + agregar línea
+                  </button>
+                </div>
               </div>
+              <p className="text-xs text-slate-500">
+                {pricesIncludeTax
+                  ? 'El precio unitario de cada línea es el precio final (con IVA) - se desglosa a neto solo.'
+                  : 'El precio unitario de cada línea es neto (sin IVA) - se le suma el IVA de su alícuota.'}
+              </p>
               {lines.map((line, index) => (
                 <div key={index} className="flex items-center gap-2">
                   <ArticlePicker
@@ -194,6 +225,8 @@ export default function QuoteFormModal({ quote, onClose }: Props) {
                       updateLine(index, {
                         articleVariantId: variantId,
                         unitPrice: option ? option.unitPrice : line.unitPrice,
+                        taxKind: option?.taxKind ?? line.taxKind,
+                        taxRate: option?.taxRate ?? line.taxRate,
                       })
                     }
                   />
@@ -216,6 +249,10 @@ export default function QuoteFormModal({ quote, onClose }: Props) {
                     onChange={(e) => updateLine(index, { unitPrice: Number(e.target.value) })}
                     title="Precio unitario"
                   />
+                  <VatRateSelect
+                    value={{ taxKind: (line.taxKind ?? 'GRAVADO') as VatKind, taxRate: line.taxRate ?? 0 }}
+                    onChange={(v) => updateLine(index, { taxKind: v.taxKind, taxRate: v.taxRate })}
+                  />
                   {lines.length > 1 && (
                     <button
                       type="button"
@@ -227,6 +264,7 @@ export default function QuoteFormModal({ quote, onClose }: Props) {
                   )}
                 </div>
               ))}
+              <VatLineSummary lines={lines} pricesIncludeTax={pricesIncludeTax} />
             </div>
 
             {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}

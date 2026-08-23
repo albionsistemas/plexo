@@ -78,6 +78,11 @@ export interface Article {
   // Informativo - ver el comentario del campo en schema.prisma. No impide
   // que un artículo con hasVariants=false tenga más de un ArticleVariant.
   hasVariants: boolean;
+  // Alícuota por defecto (Article.taxDefinition) - lo que ArticlePicker
+  // arrastra a la fila de Facturación/Cotizaciones al elegir este artículo,
+  // antes de cualquier override manual del usuario en esa línea.
+  taxRate: number | null;
+  taxKind: 'GRAVADO' | 'EXENTO' | 'NO_GRAVADO';
   variants: ArticleVariant[];
 }
 

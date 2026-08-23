@@ -56,6 +56,7 @@ export class SalesService {
         currencyId: dto.currencyId,
         globalDiscountPercent: dto.globalDiscountPercent,
         dueDate: dto.dueDate,
+        pricesIncludeTax: dto.pricesIncludeTax,
         lines: dto.lines,
       },
       resolveEmailFrom(settings),

@@ -14,11 +14,14 @@ const styles = StyleSheet.create({
   tableHeader: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
   tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#d4d4d4' },
   cell: { padding: 6, borderRightWidth: 1, borderRightColor: '#1a1a1a' },
-  colArticle: { flex: 3 },
-  colSku: { flex: 1.3 },
-  colQty: { flex: 1, textAlign: 'right' },
-  colPrice: { flex: 1.3, textAlign: 'right' },
-  colTotal: { flex: 1.3, textAlign: 'right', borderRightWidth: 0 },
+  colArticle: { flex: 2.4 },
+  colSku: { flex: 1.1 },
+  colQty: { flex: 0.8, textAlign: 'right' },
+  colPrice: { flex: 1.1, textAlign: 'right' },
+  colVat: { flex: 0.9, textAlign: 'right' },
+  colTotal: { flex: 1.1, textAlign: 'right', borderRightWidth: 0 },
+  vatSummary: { marginTop: 12, alignSelf: 'flex-end', minWidth: 220 },
+  vatSummaryRow: { flexDirection: 'row', justifyContent: 'space-between' },
   totalRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 },
   notes: { marginTop: 20 },
   signatureRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 60 },
@@ -52,6 +55,7 @@ export function TradicionalTemplate({ data }: { data: QuotePdfData }) {
             <Text style={[styles.cell, styles.colSku, styles.label]}>SKU</Text>
             <Text style={[styles.cell, styles.colQty, styles.label]}>Cantidad</Text>
             <Text style={[styles.cell, styles.colPrice, styles.label]}>Precio unit.</Text>
+            <Text style={[styles.cell, styles.colVat, styles.label]}>Alícuota</Text>
             <Text style={[styles.cell, styles.colTotal, styles.label]}>Subtotal</Text>
           </View>
           {data.lines.map((line, i) => (
@@ -63,10 +67,40 @@ export function TradicionalTemplate({ data }: { data: QuotePdfData }) {
               <Text style={[styles.cell, styles.colSku]}>{line.sku}</Text>
               <Text style={[styles.cell, styles.colQty]}>{line.quantity}</Text>
               <Text style={[styles.cell, styles.colPrice]}>{line.unitPrice}</Text>
+              <Text style={[styles.cell, styles.colVat]}>{line.vatLabel ?? '—'}</Text>
               <Text style={[styles.cell, styles.colTotal]}>{line.lineTotal}</Text>
             </View>
           ))}
         </View>
+
+        {data.vatSummary && (
+          <View style={styles.vatSummary}>
+            <View style={styles.vatSummaryRow}>
+              <Text>Neto Gravado</Text>
+              <Text>{data.vatSummary.netTaxed}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>Exento/No Gravado</Text>
+              <Text>{data.vatSummary.netExempt}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>IVA 21%</Text>
+              <Text>{data.vatSummary.vat21}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>IVA 10,5%</Text>
+              <Text>{data.vatSummary.vat10_5}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>IVA 27%</Text>
+              <Text>{data.vatSummary.vat27}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>IVA Otras</Text>
+              <Text>{data.vatSummary.vatOther}</Text>
+            </View>
+          </View>
+        )}
 
         <View style={styles.totalRow}>
           <Text style={styles.label}>Total ({data.currencyCode}): {data.total}</Text>

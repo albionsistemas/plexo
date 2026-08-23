@@ -1311,6 +1311,16 @@ model QuoteLine {
   quantity         Decimal        @db.Decimal(14, 3)
   unitPrice        Decimal        @db.Decimal(14, 2)
   notes            String?
+  // IVA por línea - nullable a propósito, sin backfill: cotizaciones
+  // creadas antes de este campo no tenían noción de IVA (Quote.total era
+  // sólo ΣunitPrice×quantity). Mismo criterio que PurchaseInvoiceTaxLine.
+  // netAmount/lineTotal ya reflejan si el precio ingresado era neto o con
+  // IVA incluido (ver QuoteService.create) - unitPrice de arriba queda
+  // siempre en términos netos una vez resuelto.
+  taxRate          Decimal?       @db.Decimal(5, 2)
+  taxKind          TaxLineKind?
+  netAmount        Decimal?       @db.Decimal(14, 2)
+  lineTotal        Decimal?       @db.Decimal(14, 2)
 
   @@index([tenantId])
   @@map("quote_lines")

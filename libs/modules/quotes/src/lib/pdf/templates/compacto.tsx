@@ -12,11 +12,13 @@ const styles = StyleSheet.create({
   table: { marginTop: 4 },
   tableHeader: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#111827', paddingBottom: 2, marginBottom: 2 },
   tableRow: { flexDirection: 'row', paddingVertical: 1 },
-  colArticle: { flex: 3 },
-  colSku: { flex: 1.2 },
-  colQty: { flex: 0.8, textAlign: 'right' },
-  colPrice: { flex: 1, textAlign: 'right' },
-  colTotal: { flex: 1, textAlign: 'right' },
+  colArticle: { flex: 2.4 },
+  colSku: { flex: 1 },
+  colQty: { flex: 0.7, textAlign: 'right' },
+  colPrice: { flex: 0.9, textAlign: 'right' },
+  colVat: { flex: 0.8, textAlign: 'right' },
+  colTotal: { flex: 0.9, textAlign: 'right' },
+  vatSummaryLine: { textAlign: 'right', marginTop: 4 },
   totalRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 4, paddingTop: 2, borderTopWidth: 1, borderTopColor: '#111827' },
   totalLabel: { fontFamily: 'Helvetica-Bold', marginRight: 6 },
   notes: { marginTop: 6 },
@@ -49,6 +51,7 @@ export function CompactoTemplate({ data }: { data: QuotePdfData }) {
             <Text style={[styles.colSku, styles.label]}>SKU</Text>
             <Text style={[styles.colQty, styles.label]}>Cant.</Text>
             <Text style={[styles.colPrice, styles.label]}>Precio</Text>
+            <Text style={[styles.colVat, styles.label]}>Alíc.</Text>
             <Text style={[styles.colTotal, styles.label]}>Subtotal</Text>
           </View>
           {data.lines.map((line, i) => (
@@ -60,10 +63,18 @@ export function CompactoTemplate({ data }: { data: QuotePdfData }) {
               <Text style={styles.colSku}>{line.sku}</Text>
               <Text style={styles.colQty}>{line.quantity}</Text>
               <Text style={styles.colPrice}>{line.unitPrice}</Text>
+              <Text style={styles.colVat}>{line.vatLabel ?? '—'}</Text>
               <Text style={styles.colTotal}>{line.lineTotal}</Text>
             </View>
           ))}
         </View>
+
+        {data.vatSummary && (
+          <Text style={styles.vatSummaryLine}>
+            Neto {data.vatSummary.netTaxed} · IVA 21% {data.vatSummary.vat21} · IVA 10,5% {data.vatSummary.vat10_5} · IVA
+            27% {data.vatSummary.vat27} · IVA Otras {data.vatSummary.vatOther}
+          </Text>
+        )}
 
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Total ({data.currencyCode})</Text>

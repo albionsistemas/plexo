@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsOptional,
   IsString,
@@ -24,6 +25,13 @@ export class CreateQuoteDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  // Ver CreateInvoiceDto.pricesIncludeTax - mismo criterio: si es true, el
+  // unitPrice de cada línea se interpreta como precio final (con IVA) y se
+  // desglosa a neto con la alícuota ya resuelta de esa línea.
+  @IsOptional()
+  @IsBoolean()
+  pricesIncludeTax?: boolean;
 
   @IsArray()
   @ArrayMinSize(1)

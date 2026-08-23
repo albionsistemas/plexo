@@ -4,6 +4,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsNumber,
@@ -42,6 +43,10 @@ export class CreateSaleDto {
   @IsOptional()
   @IsDateString()
   dueDate?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  pricesIncludeTax?: boolean;
 
   @IsArray()
   @ArrayMinSize(1)

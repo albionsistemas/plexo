@@ -16,6 +16,8 @@ const styles = StyleSheet.create({
   lineBlock: { marginBottom: 12, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#d4d4d4' },
   lineArticle: { fontSize: 15, fontFamily: 'Helvetica-Bold' },
   lineDetails: { fontSize: 13, color: '#262626', marginTop: 2 },
+  vatSummary: { marginTop: 8 },
+  vatSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', fontSize: 13 },
   totalBlock: { marginTop: 12, fontSize: 18, fontFamily: 'Helvetica-Bold' },
   notes: { marginTop: 16, fontSize: 13 },
   footer: { position: 'absolute', bottom: 20, left: 28, right: 28, fontSize: 10, color: '#404040', textAlign: 'center' },
@@ -50,10 +52,40 @@ export function LetrasGrandesTemplate({ data }: { data: QuotePdfData }) {
               {line.variantLabel ? ` · ${line.variantLabel}` : ''}
             </Text>
             <Text style={styles.lineDetails}>
-              SKU {line.sku} · Cantidad {line.quantity} · Precio unit. {line.unitPrice} · Subtotal {line.lineTotal}
+              SKU {line.sku} · Cantidad {line.quantity} · Precio unit. {line.unitPrice}
+              {line.vatLabel ? ` · IVA ${line.vatLabel}` : ''} · Subtotal {line.lineTotal}
             </Text>
           </View>
         ))}
+
+        {data.vatSummary && (
+          <View style={styles.vatSummary}>
+            <View style={styles.vatSummaryRow}>
+              <Text>Neto Gravado</Text>
+              <Text>{data.vatSummary.netTaxed}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>Exento/No Gravado</Text>
+              <Text>{data.vatSummary.netExempt}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>IVA 21%</Text>
+              <Text>{data.vatSummary.vat21}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>IVA 10,5%</Text>
+              <Text>{data.vatSummary.vat10_5}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>IVA 27%</Text>
+              <Text>{data.vatSummary.vat27}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>IVA Otras</Text>
+              <Text>{data.vatSummary.vatOther}</Text>
+            </View>
+          </View>
+        )}
 
         <Text style={styles.totalBlock}>Total ({data.currencyCode}): {data.total}</Text>
 

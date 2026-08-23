@@ -1,7 +1,10 @@
 'use client';
 
-import ArticlePicker from '@/components/ArticlePicker';
+import ArticlePicker, { type ArticlePickerOption } from '@/components/ArticlePicker';
 import CompanyFormModal from '@/components/CompanyFormModal';
+import ToggleSwitch from '@/components/ToggleSwitch';
+import VatLineSummary from '@/components/VatLineSummary';
+import VatRateSelect, { type VatKind } from '@/components/VatRateSelect';
 import { companiesApi } from '@/lib/companies';
 import { suggestDocumentLetter } from '@/lib/documentLetter';
 import { inventoryApi } from '@/lib/inventory';
@@ -57,7 +60,10 @@ export default function NewInvoiceModal({ onClose }: Props) {
   const [warehouseId, setWarehouseId] = useState('');
   const [documentLetter, setDocumentLetter] = useState<(typeof DOCUMENT_LETTERS)[number]>('B');
   const [currencyId, setCurrencyId] = useState('');
-  const [lines, setLines] = useState<CreateSaleLineInput[]>([{ articleVariantId: '', quantity: 1 }]);
+  const [pricesIncludeTax, setPricesIncludeTax] = useState(false);
+  const [lines, setLines] = useState<CreateSaleLineInput[]>([
+    { articleVariantId: '', quantity: 1, unitPrice: 0, taxKind: 'GRAVADO', taxRate: 0 },
+  ]);
   const [error, setError] = useState('');
   const [creatingCustomer, setCreatingCustomer] = useState(false);
   const [creatingBranch, setCreatingBranch] = useState(false);
@@ -97,6 +103,7 @@ export default function NewInvoiceModal({ onClose }: Props) {
         warehouseId,
         documentLetter,
         currencyId,
+        pricesIncludeTax,
         lines,
       }),
     onSuccess: () => {
@@ -114,7 +121,22 @@ export default function NewInvoiceModal({ onClose }: Props) {
   }
 
   function addLine() {
-    setLines((prev) => [...prev, { articleVariantId: '', quantity: 1 }]);
+    setLines((prev) => [
+      ...prev,
+      { articleVariantId: '', quantity: 1, unitPrice: 0, taxKind: 'GRAVADO', taxRate: 0 },
+    ]);
+  }
+
+  // Al elegir un artículo, arrastra su precio y alícuota de catálogo a la
+  // línea - el usuario los puede editar después (override), no se vuelven
+  // a pisar si vuelve a tocar la misma línea sin cambiar de artículo.
+  function selectArticle(index: number, variantId: string, option: ArticlePickerOption | null) {
+    updateLine(index, {
+      articleVariantId: variantId,
+      unitPrice: option?.unitPrice ?? 0,
+      taxKind: option?.taxKind ?? 'GRAVADO',
+      taxRate: option?.taxRate ?? 0,
+    });
   }
 
   function removeLine(index: number) {
@@ -262,28 +284,57 @@ export default function NewInvoiceModal({ onClose }: Props) {
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <label className="text-sm text-slate-600 dark:text-slate-400">Líneas</label>
-                <button
-                  type="button"
-                  onClick={addLine}
-                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
-                >
-                  + agregar línea
-                </button>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                    <ToggleSwitch
+                      checked={pricesIncludeTax}
+                      onChange={setPricesIncludeTax}
+                      label="Precios con IVA incluido"
+                    />
+                    <span>Precios con IVA incluido</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addLine}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                  >
+                    + agregar línea
+                  </button>
+                </div>
               </div>
+              <p className="text-xs text-slate-500">
+                {pricesIncludeTax
+                  ? 'El precio unitario de cada línea es el precio final (con IVA) - se desglosa a neto solo.'
+                  : 'El precio unitario de cada línea es neto (sin IVA) - se le suma el IVA de su alícuota.'}
+              </p>
               {lines.map((line, index) => (
                 <div key={index} className="flex items-center gap-2">
                   <ArticlePicker
                     className="flex-1"
                     value={line.articleVariantId}
-                    onChange={(variantId) => updateLine(index, { articleVariantId: variantId })}
+                    onChange={(variantId, option) => selectArticle(index, variantId, option)}
                   />
                   <input
                     type="number"
                     min={1}
                     step="any"
-                    className={`${inputClass} w-24`}
+                    title="Cantidad"
+                    className={`${inputClass} w-20`}
                     value={line.quantity}
                     onChange={(e) => updateLine(index, { quantity: Number(e.target.value) })}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    title="Precio unitario"
+                    className={`${inputClass} w-28 text-right`}
+                    value={line.unitPrice ?? 0}
+                    onChange={(e) => updateLine(index, { unitPrice: Number(e.target.value) })}
+                  />
+                  <VatRateSelect
+                    value={{ taxKind: (line.taxKind ?? 'GRAVADO') as VatKind, taxRate: line.taxRate ?? 0 }}
+                    onChange={(v) => updateLine(index, { taxKind: v.taxKind, taxRate: v.taxRate })}
                   />
                   {lines.length > 1 && (
                     <button
@@ -296,6 +347,7 @@ export default function NewInvoiceModal({ onClose }: Props) {
                   )}
                 </div>
               ))}
+              <VatLineSummary lines={lines} pricesIncludeTax={pricesIncludeTax} />
             </div>
 
             {!afipConfigured && (

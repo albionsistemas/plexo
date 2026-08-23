@@ -27,11 +27,14 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   tableRow: { flexDirection: 'row', padding: 6, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
-  colArticle: { flex: 3 },
-  colSku: { flex: 1.5 },
-  colQty: { flex: 1, textAlign: 'right' },
-  colPrice: { flex: 1.5, textAlign: 'right' },
-  colTotal: { flex: 1.5, textAlign: 'right' },
+  colArticle: { flex: 2.5 },
+  colSku: { flex: 1.2 },
+  colQty: { flex: 0.8, textAlign: 'right' },
+  colPrice: { flex: 1.2, textAlign: 'right' },
+  colVat: { flex: 1, textAlign: 'right' },
+  colTotal: { flex: 1.2, textAlign: 'right' },
+  vatSummary: { marginTop: 8, alignSelf: 'flex-end', minWidth: 220 },
+  vatSummaryRow: { flexDirection: 'row', justifyContent: 'space-between' },
   totalRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
   totalLabel: { fontFamily: 'Helvetica-Bold', marginRight: 8 },
   totalValue: { fontFamily: 'Helvetica-Bold', fontSize: 12, color: '#4f46e5' },
@@ -75,6 +78,7 @@ export function ModernoTemplate({ data }: { data: QuotePdfData }) {
             <Text style={styles.colSku}>SKU</Text>
             <Text style={styles.colQty}>Cantidad</Text>
             <Text style={styles.colPrice}>Precio unit.</Text>
+            <Text style={styles.colVat}>Alícuota</Text>
             <Text style={styles.colTotal}>Subtotal</Text>
           </View>
           {data.lines.map((line, i) => (
@@ -86,10 +90,40 @@ export function ModernoTemplate({ data }: { data: QuotePdfData }) {
               <Text style={styles.colSku}>{line.sku}</Text>
               <Text style={styles.colQty}>{line.quantity}</Text>
               <Text style={styles.colPrice}>{line.unitPrice}</Text>
+              <Text style={styles.colVat}>{line.vatLabel ?? '—'}</Text>
               <Text style={styles.colTotal}>{line.lineTotal}</Text>
             </View>
           ))}
         </View>
+
+        {data.vatSummary && (
+          <View style={styles.vatSummary}>
+            <View style={styles.vatSummaryRow}>
+              <Text>Neto Gravado</Text>
+              <Text>{data.vatSummary.netTaxed}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>Exento/No Gravado</Text>
+              <Text>{data.vatSummary.netExempt}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>IVA 21%</Text>
+              <Text>{data.vatSummary.vat21}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>IVA 10,5%</Text>
+              <Text>{data.vatSummary.vat10_5}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>IVA 27%</Text>
+              <Text>{data.vatSummary.vat27}</Text>
+            </View>
+            <View style={styles.vatSummaryRow}>
+              <Text>IVA Otras</Text>
+              <Text>{data.vatSummary.vatOther}</Text>
+            </View>
+          </View>
+        )}
 
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Total ({data.currencyCode})</Text>

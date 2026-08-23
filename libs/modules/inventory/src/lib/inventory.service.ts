@@ -8,6 +8,8 @@ import {
   type Article,
   type Category,
   type MinimumStock,
+  type TaxDefinition,
+  type TaxLineKind,
   type Warehouse,
 } from '@plexo/database';
 import { buildVariantLabel } from '@plexo/types';
@@ -86,6 +88,14 @@ export interface ArticleListItem {
   brochureUrl: string | null;
   attachmentZipUrl: string | null;
   hasVariants: boolean;
+  // Alícuota por defecto del artículo (Article.taxDefinition) - lo que
+  // Facturación/Cotizaciones usan como default de línea al elegir este
+  // artículo en ArticlePicker, antes de cualquier override manual. null de
+  // rate sólo puede pasar si taxKind es EXENTO/NO_GRAVADO (sin tasa) o si
+  // el artículo no tiene ningún impuesto asignado (se resuelve GRAVADO 0%
+  // downstream, mismo criterio que InvoicingService.resolveLineTax).
+  taxRate: number | null;
+  taxKind: TaxLineKind;
   variants: ArticleVariantListItem[];
 }
 
@@ -183,28 +193,33 @@ export class InventoryService {
       include: {
         category: true,
         preferredSupplier: { select: { id: true, name: true } },
+        taxDefinition: true,
         variants: { include: { stockLedger: { include: { warehouse: true } }, minimumStocks: true } },
       },
       orderBy: { name: 'asc' },
     });
 
-    return articles.map((article) => ({
-      id: article.id,
-      name: article.name,
-      description: article.description,
-      unitOfMeasure: article.unitOfMeasure,
-      categoryId: article.categoryId,
-      categoryName: article.category?.name ?? null,
-      isService: article.isService,
-      isPublished: article.isPublished,
-      imageUrl: article.imageUrl,
-      preferredSupplierId: article.preferredSupplierId,
-      preferredSupplierName: article.preferredSupplier?.name ?? null,
-      markupPercent: article.markupPercent?.toNumber() ?? null,
-      brochureUrl: article.brochureUrl,
-      attachmentZipUrl: article.attachmentZipUrl,
-      hasVariants: article.hasVariants,
-      variants: article.variants.map((variant) => {
+    return articles.map((article) => {
+      const { rate: taxRate, kind: taxKind } = resolveArticleTax(article.taxDefinition);
+      return {
+        id: article.id,
+        name: article.name,
+        description: article.description,
+        unitOfMeasure: article.unitOfMeasure,
+        categoryId: article.categoryId,
+        categoryName: article.category?.name ?? null,
+        isService: article.isService,
+        isPublished: article.isPublished,
+        imageUrl: article.imageUrl,
+        preferredSupplierId: article.preferredSupplierId,
+        preferredSupplierName: article.preferredSupplier?.name ?? null,
+        markupPercent: article.markupPercent?.toNumber() ?? null,
+        brochureUrl: article.brochureUrl,
+        attachmentZipUrl: article.attachmentZipUrl,
+        hasVariants: article.hasVariants,
+        taxRate,
+        taxKind,
+        variants: article.variants.map((variant) => {
         const stockByWarehouse: WarehouseStockRow[] = variant.stockLedger.map((sl) => ({
           warehouseId: sl.warehouseId,
           warehouseName: sl.warehouse.name,
@@ -226,7 +241,8 @@ export class InventoryService {
           stockByWarehouse,
         };
       }),
-    }));
+      };
+    });
   }
 
   async createArticleVariant(dto: CreateArticleVariantDto) {
@@ -620,4 +636,28 @@ export class InventoryService {
       })
       .filter((row) => row.currentQuantity < row.minimumQuantity);
   }
+}
+
+/** Mismo mapeo TaxCalculationType->(rate,kind) que
+ * InvoicingService.resolveLineTax/QuoteService.resolveLineTax, duplicado a
+ * propósito acá (un lib module nunca importa el Service de otro módulo) -
+ * sólo para que ArticlePicker pueda mostrar/arrastrar la alícuota por
+ * defecto sin que el frontend tenga que reimplementar esta lógica. FORMULA/
+ * FIXED_AMOUNT no lanzan acá (a diferencia de Facturación) porque esto es
+ * sólo un valor informativo de catálogo, no un cálculo de comprobante -
+ * caen en GRAVADO 0% en vez de romper el listado de artículos. */
+function resolveArticleTax(taxDefinition: TaxDefinition | null): { rate: number | null; kind: TaxLineKind } {
+  if (!taxDefinition) {
+    return { rate: 0, kind: 'GRAVADO' };
+  }
+  if (taxDefinition.calculationType === 'EXENTO') {
+    return { rate: null, kind: 'EXENTO' };
+  }
+  if (taxDefinition.calculationType === 'NO_GRAVADO') {
+    return { rate: null, kind: 'NO_GRAVADO' };
+  }
+  if (taxDefinition.calculationType === 'PERCENTAGE') {
+    return { rate: taxDefinition.rate?.toNumber() ?? 0, kind: 'GRAVADO' };
+  }
+  return { rate: 0, kind: 'GRAVADO' };
 }

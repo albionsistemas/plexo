@@ -23,6 +23,10 @@ export interface ArticlePickerOption {
   unitPrice: number;
   totalStock: number;
   minimumStock: number | null;
+  // Alícuota por defecto del artículo (Article.taxDefinition) - Facturación
+  // y Cotizaciones la usan para prefillar la fila al elegir este artículo.
+  taxRate: number | null;
+  taxKind: 'GRAVADO' | 'EXENTO' | 'NO_GRAVADO';
 }
 
 function flattenOptions(articles: Article[]): ArticlePickerOption[] {
@@ -37,6 +41,8 @@ function flattenOptions(articles: Article[]): ArticlePickerOption[] {
       unitPrice: variant.unitPrice,
       totalStock: variant.totalStock,
       minimumStock: variant.minimumStock,
+      taxRate: article.taxRate,
+      taxKind: article.taxKind,
     })),
   );
 }
@@ -122,6 +128,11 @@ export default function ArticlePicker({
       unitPrice: created.unitPrice,
       totalStock: 0,
       minimumStock: null,
+      // El alta rápida desde acá no pide impuesto todavía (ver
+      // ArticleFormModal) - mismo default que un artículo sin
+      // taxDefinition en el backend (resolveArticleTax/resolveLineTax).
+      taxRate: 0,
+      taxKind: 'GRAVADO',
     });
     setCreatingArticle(false);
   }

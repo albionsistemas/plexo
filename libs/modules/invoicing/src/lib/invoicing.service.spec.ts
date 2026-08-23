@@ -39,6 +39,23 @@ function makeSubscriptionService(): SubscriptionService {
   } as unknown as SubscriptionService;
 }
 
+/** Mínimo que createInvoice necesita de vuelta de db.invoice.create/update
+ * para no explotar en el emit de 'invoice.created' (total.toString(),
+ * issueDate.toISOString(), etc.) - los tests de override/pricesIncludeTax
+ * no verifican el resultado final, sólo lo que se manda a invoice.create. */
+function makeFinalInvoiceFixture() {
+  return {
+    id: 'invoice-1',
+    tenantId: 'tenant-1',
+    number: '00000001',
+    customerName: 'Acme',
+    status: 'ISSUED',
+    issueDate: new Date('2026-01-01'),
+    total: new Prisma.Decimal(0),
+    lines: [],
+  };
+}
+
 const baseDto = {
   customerId: 'customer-1',
   documentLetter: 'B' as const,
@@ -715,6 +732,117 @@ describe('InvoicingService.createInvoice', () => {
     // total is exactly subtotal + taxTotal by construction - worth pinning
     // down explicitly for this specific non-clean input too.
     expect(headerTotal.toNumber()).toBeCloseTo(headerSubtotal.add(headerTaxTotal).toNumber(), 10);
+  });
+
+  it('un unitPrice override en la línea reemplaza el precio de catálogo sin tocar su alícuota', async () => {
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter(), makeSubscriptionService());
+    const dto = {
+      customerId: 'customer-1',
+      documentLetter: 'B' as const,
+      pointOfSale: '0001',
+      currencyId: 'currency-1',
+      lines: [{ articleVariantId: 'variant-1', quantity: 2, unitPrice: 200 }],
+    };
+    const db = {
+      company: { findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', active: true, email: null, roles: [{ role: 'CUSTOMER' }] }) },
+      currency: { findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', isBase: true }) },
+      articleVariant: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'variant-1',
+          unitPrice: new Prisma.Decimal(100),
+          article: { taxDefinition: { calculationType: 'PERCENTAGE', rate: new Prisma.Decimal(21) } },
+        }),
+      },
+      invoice: { count: jest.fn().mockResolvedValue(0), create: jest.fn().mockResolvedValue(makeFinalInvoiceFixture()), update: jest.fn().mockResolvedValue(makeFinalInvoiceFixture()) },
+    };
+
+    await runInTenant(db, () => service.createInvoice(dto));
+
+    const line = (db.invoice.create as jest.Mock).mock.calls[0][0].data.lines.createMany.data[0];
+    // 200 (override) × 2, no 100 (catálogo) × 2 - la alícuota sigue siendo
+    // la del catálogo (21%) porque la línea no la anuló.
+    expect(line.netAmount.toNumber()).toBeCloseTo(400, 2);
+    expect(line.taxRate.toNumber()).toBe(21);
+    expect(line.lineTotal.toNumber()).toBeCloseTo(484, 2);
+  });
+
+  it('pricesIncludeTax=true desglosa el precio final a neto+IVA en una línea GRAVADA, sin afectar una línea EXENTO', async () => {
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter(), makeSubscriptionService());
+    const dto = {
+      customerId: 'customer-1',
+      documentLetter: 'B' as const,
+      pointOfSale: '0001',
+      currencyId: 'currency-1',
+      pricesIncludeTax: true,
+      lines: [
+        { articleVariantId: 'variant-gravado', quantity: 1, unitPrice: 121 },
+        { articleVariantId: 'variant-exento', quantity: 1, unitPrice: 50 },
+      ],
+    };
+    const variants: Record<string, unknown> = {
+      'variant-gravado': {
+        id: 'variant-gravado',
+        unitPrice: new Prisma.Decimal(999), // ignorado - la línea manda un override
+        article: { taxDefinition: { calculationType: 'PERCENTAGE', rate: new Prisma.Decimal(21) } },
+      },
+      'variant-exento': {
+        id: 'variant-exento',
+        unitPrice: new Prisma.Decimal(999),
+        article: { taxDefinition: { calculationType: 'EXENTO' } },
+      },
+    };
+    const db = {
+      company: { findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', active: true, email: null, roles: [{ role: 'CUSTOMER' }] }) },
+      currency: { findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', isBase: true }) },
+      articleVariant: {
+        findUnique: jest.fn((args: { where: { id: string } }) => Promise.resolve(variants[args.where.id])),
+      },
+      invoice: { count: jest.fn().mockResolvedValue(0), create: jest.fn().mockResolvedValue(makeFinalInvoiceFixture()), update: jest.fn().mockResolvedValue(makeFinalInvoiceFixture()) },
+    };
+
+    await runInTenant(db, () => service.createInvoice(dto));
+
+    const lines = (db.invoice.create as jest.Mock).mock.calls[0][0].data.lines.createMany.data;
+    const byVariant = (id: string) => lines.find((l: { articleVariantId: string }) => l.articleVariantId === id);
+
+    // 121 con IVA incluido al 21% -> neto 100, IVA 21, lineTotal 121.
+    expect(byVariant('variant-gravado').netAmount.toNumber()).toBeCloseTo(100, 2);
+    expect(byVariant('variant-gravado').lineTotal.toNumber()).toBeCloseTo(121, 2);
+    // La línea EXENTO no tiene nada que desglosar - el toggle es un no-op,
+    // el precio tipeado (50) queda tal cual como neto.
+    expect(byVariant('variant-exento').netAmount.toNumber()).toBeCloseTo(50, 2);
+    expect(byVariant('variant-exento').lineTotal.toNumber()).toBeCloseTo(50, 2);
+  });
+
+  it('override de taxKind a EXENTO fuerza tasa 0 aunque la línea mande un taxRate', async () => {
+    const service = new InvoicingService(makeEmailSender(), makeElectronicInvoicing(), makeEventEmitter(), makeSubscriptionService());
+    const dto = {
+      customerId: 'customer-1',
+      documentLetter: 'B' as const,
+      pointOfSale: '0001',
+      currencyId: 'currency-1',
+      lines: [{ articleVariantId: 'variant-1', quantity: 1, taxKind: 'EXENTO' as const, taxRate: 21 }],
+    };
+    const db = {
+      company: { findUnique: jest.fn().mockResolvedValue({ id: 'customer-1', active: true, email: null, roles: [{ role: 'CUSTOMER' }] }) },
+      currency: { findUnique: jest.fn().mockResolvedValue({ id: 'currency-1', isBase: true }) },
+      articleVariant: {
+        // Catálogo dice GRAVADO 21% - el override de la línea manda igual.
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'variant-1',
+          unitPrice: new Prisma.Decimal(100),
+          article: { taxDefinition: { calculationType: 'PERCENTAGE', rate: new Prisma.Decimal(21) } },
+        }),
+      },
+      invoice: { count: jest.fn().mockResolvedValue(0), create: jest.fn().mockResolvedValue(makeFinalInvoiceFixture()), update: jest.fn().mockResolvedValue(makeFinalInvoiceFixture()) },
+    };
+
+    await runInTenant(db, () => service.createInvoice(dto));
+
+    const line = (db.invoice.create as jest.Mock).mock.calls[0][0].data.lines.createMany.data[0];
+    expect(line.taxKind).toBe('EXENTO');
+    expect(line.taxRate.toNumber()).toBe(0);
+    expect(line.lineTotal.toNumber()).toBeCloseTo(100, 2);
   });
 
   it('rejects a FORMULA tax definition rather than silently mis-taxing', async () => {

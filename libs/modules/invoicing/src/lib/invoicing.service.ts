@@ -193,7 +193,28 @@ export class InvoicingService {
       }
 
       const quantity = new Prisma.Decimal(line.quantity);
-      const unitPrice = variant.unitPrice.mul(exchangeRate);
+      // taxRate/taxKind se resuelven ANTES del precio porque el desglose de
+      // "IVA incluido" (más abajo) necesita la alícuota de esta línea para
+      // convertir precio final -> neto. Un override de línea no cambia la
+      // clasificación fiscal del artículo en el catálogo, sólo esta factura.
+      const { rate: taxRate, kind: taxKind } =
+        line.taxKind !== undefined || line.taxRate !== undefined
+          ? this.resolveLineTaxOverride(line.taxKind, line.taxRate)
+          : this.resolveLineTax(variant.article.taxDefinition);
+      // rawUnitPrice: override de línea tal cual (ya en la moneda del
+      // comprobante, no se multiplica por exchangeRate - lo tipeó el
+      // usuario pensando en esa moneda) o precio de catálogo convertido.
+      const rawUnitPrice =
+        line.unitPrice !== undefined ? new Prisma.Decimal(line.unitPrice) : variant.unitPrice.mul(exchangeRate);
+      // Con el toggle activo, el precio tipeado es FINAL (con IVA) - se
+      // desglosa a neto acá mismo, antes de que el resto del pipeline (sin
+      // cambios) vuelva a sumarle el IVA. Una línea EXENTO/NO_GRAVADO tiene
+      // taxRate=0 (ver resolveLineTax/resolveLineTaxOverride), así que la
+      // división es un no-op y el toggle no le hace nada, correctamente.
+      const unitPrice =
+        dto.pricesIncludeTax && taxRate.gt(0)
+          ? rawUnitPrice.div(new Prisma.Decimal(1).add(taxRate.div(100)))
+          : rawUnitPrice;
       const grossAmount = unitPrice.mul(quantity);
 
       const discountType: DiscountType = line.discountType ?? 'PERCENTAGE';
@@ -215,7 +236,6 @@ export class InvoicingService {
         );
       }
       const netAmount = grossAmount.sub(discountAmount);
-      const { rate: taxRate, kind: taxKind } = this.resolveLineTax(variant.article.taxDefinition);
 
       subtotal = subtotal.add(netAmount);
       lineCalculations.push({
@@ -647,6 +667,22 @@ export class InvoicingService {
       );
     }
     return { rate: taxDefinition.rate ?? new Prisma.Decimal(0), kind: 'GRAVADO' };
+  }
+
+  /** Override de línea (CreateInvoiceLineDto.taxKind/taxRate) en vez del
+   * catálogo - mismas reglas que resolveLineTax: EXENTO/NO_GRAVADO siempre
+   * tasa 0 aunque el DTO haya mandado un taxRate (el DTO ya lo valida así,
+   * esto es el mismo criterio del lado del cálculo). Sin taxKind explícito
+   * pero con taxRate, se asume GRAVADO. */
+  private resolveLineTaxOverride(
+    taxKind: TaxLineKind | undefined,
+    taxRate: number | undefined,
+  ): { rate: Prisma.Decimal; kind: TaxLineKind } {
+    const kind = taxKind ?? 'GRAVADO';
+    if (kind === 'EXENTO' || kind === 'NO_GRAVADO') {
+      return { rate: new Prisma.Decimal(0), kind };
+    }
+    return { rate: new Prisma.Decimal(taxRate ?? 0), kind: 'GRAVADO' };
   }
 
   /** Collapses per-line (rate, netAmount, taxAmount) rows into one entry per

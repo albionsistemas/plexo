@@ -1,7 +1,8 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { getTenantDb, getTenantId, getUserId, Prisma } from '@plexo/database';
-import type { PdfStyle, QuoteSendChannel, QuoteStatus } from '@plexo/database';
+import type { PdfStyle, QuoteSendChannel, QuoteStatus, TaxDefinition, TaxLineKind } from '@plexo/database';
 import type { CreateQuoteDto } from './dto/create-quote.dto.js';
+import type { QuoteLineDto } from './dto/quote-line.dto.js';
 import type { UpdateQuoteDto } from './dto/update-quote.dto.js';
 import { QUOTE_EMAIL_SENDER, type QuoteEmailSender } from './email/quote-email-sender.port.js';
 import { buildQuotePdfData } from './pdf/build-pdf-data.js';
@@ -60,10 +61,7 @@ export class QuoteService {
 
     await this.validateReferences(dto);
     const number = await this.numbering.nextNumber();
-    const total = dto.lines.reduce(
-      (sum, line) => sum.add(new Prisma.Decimal(line.unitPrice).mul(line.quantity)),
-      new Prisma.Decimal(0),
-    );
+    const { lineInputs, total } = await this.resolveLines(dto.lines, dto.pricesIncludeTax);
 
     return db.quote.create({
       data: {
@@ -76,15 +74,7 @@ export class QuoteService {
         total,
         createdByUserId: userId,
         lines: {
-          createMany: {
-            data: dto.lines.map((line) => ({
-              tenantId,
-              articleVariantId: line.articleVariantId,
-              quantity: line.quantity,
-              unitPrice: line.unitPrice,
-              notes: line.notes,
-            })),
-          },
+          createMany: { data: lineInputs.map((line) => ({ tenantId, ...line })) },
         },
       },
       include: DETAIL_INCLUDE,
@@ -106,20 +96,11 @@ export class QuoteService {
 
     let total = existing.total;
     if (dto.lines) {
-      total = dto.lines.reduce(
-        (sum, line) => sum.add(new Prisma.Decimal(line.unitPrice).mul(line.quantity)),
-        new Prisma.Decimal(0),
-      );
+      const resolved = await this.resolveLines(dto.lines, dto.pricesIncludeTax);
+      total = resolved.total;
       await db.quoteLine.deleteMany({ where: { quoteId: id } });
       await db.quoteLine.createMany({
-        data: dto.lines.map((line) => ({
-          tenantId,
-          quoteId: id,
-          articleVariantId: line.articleVariantId,
-          quantity: line.quantity,
-          unitPrice: line.unitPrice,
-          notes: line.notes,
-        })),
+        data: resolved.lineInputs.map((line) => ({ tenantId, quoteId: id, ...line })),
       });
     }
 
@@ -134,6 +115,103 @@ export class QuoteService {
       },
       include: DETAIL_INCLUDE,
     });
+  }
+
+  /** Resuelve precio/alícuota por línea - override del DTO si vino, si no
+   * el catálogo (Article.taxDefinition, mismo criterio que
+   * InvoicingService.resolveLineTax, duplicado acá a propósito: un lib
+   * module nunca importa el Service de otro módulo, mismo idioma ya usado
+   * para QuoteSendChannel/PurchaseSendChannel). Con pricesIncludeTax, el
+   * unitPrice del DTO se interpreta como precio final y se desglosa a neto
+   * acá mismo - una línea EXENTO/NO_GRAVADO tiene taxRate=0, así que el
+   * desglose es un no-op para ellas. Sin descuento global (a diferencia de
+   * Facturación, Cotizaciones no tiene ese concepto todavía) - lineTotal
+   * es simplemente netAmount+taxAmount de esa línea sola. */
+  private async resolveLines(
+    lines: QuoteLineDto[],
+    pricesIncludeTax: boolean | undefined,
+  ): Promise<{
+    lineInputs: Omit<Prisma.QuoteLineCreateManyInput, 'tenantId' | 'quoteId'>[];
+    total: Prisma.Decimal;
+  }> {
+    const db = getTenantDb();
+    const lineInputs: Omit<Prisma.QuoteLineCreateManyInput, 'tenantId' | 'quoteId'>[] = [];
+    let total = new Prisma.Decimal(0);
+
+    for (const line of lines) {
+      const variant = await db.articleVariant.findUnique({
+        where: { id: line.articleVariantId },
+        include: { article: { include: { taxDefinition: true } } },
+      });
+      if (!variant) {
+        throw new NotFoundException(`Article variant ${line.articleVariantId} not found`);
+      }
+
+      const { rate: taxRate, kind: taxKind } =
+        line.taxKind !== undefined || line.taxRate !== undefined
+          ? this.resolveLineTaxOverride(line.taxKind, line.taxRate)
+          : this.resolveLineTax(variant.article.taxDefinition);
+
+      const rawUnitPrice = new Prisma.Decimal(line.unitPrice);
+      const unitPrice =
+        pricesIncludeTax && taxRate.gt(0)
+          ? rawUnitPrice.div(new Prisma.Decimal(1).add(taxRate.div(100)))
+          : rawUnitPrice;
+
+      const quantity = new Prisma.Decimal(line.quantity);
+      const netAmount = unitPrice.mul(quantity);
+      const taxAmount = taxKind === 'GRAVADO' ? netAmount.mul(taxRate).div(100) : new Prisma.Decimal(0);
+      const lineTotal = netAmount.add(taxAmount);
+
+      total = total.add(lineTotal);
+      lineInputs.push({
+        articleVariantId: line.articleVariantId,
+        quantity: line.quantity,
+        unitPrice,
+        notes: line.notes,
+        taxRate,
+        taxKind,
+        netAmount,
+        lineTotal,
+      });
+    }
+
+    return { lineInputs, total };
+  }
+
+  /** Ver InvoicingService.resolveLineTax - mismo mapeo
+   * TaxCalculationType->(rate,kind), duplicado a propósito (ver comentario
+   * de resolveLines). FORMULA/FIXED_AMOUNT no están soportados acá tampoco
+   * (ninguna de las dos tiene un evaluador seguro todavía). */
+  private resolveLineTax(taxDefinition: TaxDefinition | null): { rate: Prisma.Decimal; kind: TaxLineKind } {
+    if (!taxDefinition) {
+      return { rate: new Prisma.Decimal(0), kind: 'GRAVADO' };
+    }
+    if (taxDefinition.calculationType === 'EXENTO') {
+      return { rate: new Prisma.Decimal(0), kind: 'EXENTO' };
+    }
+    if (taxDefinition.calculationType === 'NO_GRAVADO') {
+      return { rate: new Prisma.Decimal(0), kind: 'NO_GRAVADO' };
+    }
+    if (taxDefinition.calculationType === 'FORMULA' || taxDefinition.calculationType === 'FIXED_AMOUNT') {
+      throw new BadRequestException(
+        `Tax definition ${taxDefinition.code} uses ${taxDefinition.calculationType}, which isn't wired up yet`,
+      );
+    }
+    return { rate: taxDefinition.rate ?? new Prisma.Decimal(0), kind: 'GRAVADO' };
+  }
+
+  /** Override de línea (QuoteLineDto.taxKind/taxRate) en vez del catálogo -
+   * ver InvoicingService.resolveLineTaxOverride, mismo criterio. */
+  private resolveLineTaxOverride(
+    taxKind: TaxLineKind | undefined,
+    taxRate: number | undefined,
+  ): { rate: Prisma.Decimal; kind: TaxLineKind } {
+    const kind = taxKind ?? 'GRAVADO';
+    if (kind === 'EXENTO' || kind === 'NO_GRAVADO') {
+      return { rate: new Prisma.Decimal(0), kind };
+    }
+    return { rate: new Prisma.Decimal(taxRate ?? 0), kind: 'GRAVADO' };
   }
 
   async cancel(id: string): Promise<QuoteDetail> {

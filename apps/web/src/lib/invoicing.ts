@@ -78,6 +78,11 @@ export interface CreateSaleLineInput {
   quantity: number;
   discountType?: 'PERCENTAGE' | 'AMOUNT';
   discountValue?: number;
+  // Anula precio/alícuota de catálogo para esta línea - ver
+  // CreateInvoiceLineDto en el backend para el criterio completo.
+  unitPrice?: number;
+  taxKind?: 'GRAVADO' | 'EXENTO' | 'NO_GRAVADO';
+  taxRate?: number;
 }
 
 export interface CreateSaleInput {
@@ -88,6 +93,7 @@ export interface CreateSaleInput {
   currencyId: string;
   globalDiscountPercent?: number;
   dueDate?: string;
+  pricesIncludeTax?: boolean;
   lines: CreateSaleLineInput[];
 }
 
