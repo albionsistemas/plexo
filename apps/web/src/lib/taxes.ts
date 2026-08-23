@@ -152,3 +152,85 @@ export const withholdingRegimesApi = {
   getHistory: (code: string) =>
     api.get<WithholdingRegime[]>(`/taxes/withholding-regimes/${code}/history`).then((r) => r.data),
 };
+
+// --- Libro IVA Ventas / Compras ---
+
+export interface VatBookEntry {
+  id: string;
+  date: string;
+  documentType: string;
+  documentLetter: string | null;
+  pointOfSale: string | null;
+  number: string;
+  counterpartyName: string;
+  counterpartyTaxId: string | null;
+  counterpartyDocType: 'CUIT' | 'CF';
+  taxCondition: string | null;
+  currencyCode: string;
+  netTaxed: number;
+  netExempt: number;
+  netUntaxed: number;
+  vat21: number;
+  vat10_5: number;
+  vat27: number;
+  vatOther: number;
+  perceptions: number;
+  vatTotal: number;
+  total: number;
+  isCreditNote: boolean;
+}
+
+export interface VatBookTotals {
+  netTaxed: number;
+  netExempt: number;
+  netUntaxed: number;
+  vat21: number;
+  vat10_5: number;
+  vat27: number;
+  vatOther: number;
+  perceptions: number;
+  vatTotal: number;
+  total: number;
+}
+
+export interface VatBookResult {
+  kind: 'sales' | 'purchases';
+  from: string;
+  to: string;
+  entries: VatBookEntry[];
+  totals: VatBookTotals;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+async function openPdfBlob(path: string, params: { from: string; to: string }) {
+  const res = await api.get(path, { params, responseType: 'blob' });
+  const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+  window.open(url, '_blank');
+}
+
+export const vatBookApi = {
+  getSales: (params: { from: string; to: string }) =>
+    api.get<VatBookResult>('/taxes/vat-book/sales', { params }).then((r) => r.data),
+  getPurchases: (params: { from: string; to: string }) =>
+    api.get<VatBookResult>('/taxes/vat-book/purchases', { params }).then((r) => r.data),
+  downloadSalesExcel: async (params: { from: string; to: string }) => {
+    const res = await api.get('/taxes/vat-book/sales/excel', { params, responseType: 'blob' });
+    downloadBlob(new Blob([res.data]), `libro-iva-ventas_${params.from}_${params.to}.xlsx`);
+  },
+  downloadPurchasesExcel: async (params: { from: string; to: string }) => {
+    const res = await api.get('/taxes/vat-book/purchases/excel', { params, responseType: 'blob' });
+    downloadBlob(new Blob([res.data]), `libro-iva-compras_${params.from}_${params.to}.xlsx`);
+  },
+  openSalesPdf: (params: { from: string; to: string }) => openPdfBlob('/taxes/vat-book/sales/pdf', params),
+  openPurchasesPdf: (params: { from: string; to: string }) => openPdfBlob('/taxes/vat-book/purchases/pdf', params),
+};

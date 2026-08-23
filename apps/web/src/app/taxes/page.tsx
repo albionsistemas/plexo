@@ -2,11 +2,13 @@
 
 import { useState } from 'react';
 import TaxDefinitionsTab from './TaxDefinitionsTab';
+import VatBookTab from './VatBookTab';
 import WithholdingRegimesTab from './WithholdingRegimesTab';
 
 const TABS = [
   { id: 'definiciones', label: 'Impuestos' },
   { id: 'retenciones', label: 'Retenciones' },
+  { id: 'libro-iva', label: 'Libro IVA' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -36,6 +38,7 @@ export default function TaxesPage() {
 
       {tab === 'definiciones' && <TaxDefinitionsTab />}
       {tab === 'retenciones' && <WithholdingRegimesTab />}
+      {tab === 'libro-iva' && <VatBookTab />}
     </div>
   );
 }
