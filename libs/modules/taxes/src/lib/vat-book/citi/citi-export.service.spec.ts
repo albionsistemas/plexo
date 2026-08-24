@@ -243,6 +243,40 @@ describe('CitiExportService.getComprasCbte', () => {
     expect(field(line, 165, 179)).toBe('000000000005000'); // otros impuestos nacionales = 50.00
     expect(field(line, 150, 164)).toBe('0'.repeat(15)); // percepción IVA en 0
   });
+
+  it('excluye (y cuenta) una factura de compra en moneda distinta de ARS - no inventa una cotización 1:1', async () => {
+    const db = {
+      purchaseInvoice: {
+        findMany: jest.fn().mockResolvedValue([makePurchaseInvoice({ currency: { code: 'USD' } })]),
+      },
+      purchaseCreditNote: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new CitiExportService();
+
+    const { content, skippedCount } = await runInTenant(db, () => service.getComprasCbte());
+
+    expect(content).toBe('');
+    expect(skippedCount).toBe(1);
+  });
+
+  it('excluye (y cuenta) una factura con una línea IVA_CREDITO sin taxRate/netAmount, para no reportar un crédito fiscal que Alícuotas no puede desglosar', async () => {
+    const db = {
+      purchaseInvoice: {
+        findMany: jest.fn().mockResolvedValue([
+          makePurchaseInvoice({
+            taxLines: [{ type: 'IVA_CREDITO', amount: d(210), netAmount: null, taxRate: null, taxType: null }],
+          }),
+        ]),
+      },
+      purchaseCreditNote: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new CitiExportService();
+
+    const { content, skippedCount } = await runInTenant(db, () => service.getComprasCbte());
+
+    expect(content).toBe('');
+    expect(skippedCount).toBe(1);
+  });
 });
 
 describe('CitiExportService.getComprasAlicuotas', () => {
@@ -275,5 +309,29 @@ describe('CitiExportService.getComprasAlicuotas', () => {
     expect(field(lines[0], 66, 69)).toBe('0005'); // 21%
     expect(field(lines[0], 51, 65)).toBe('000000000100000');
     expect(field(lines[0], 70, 84)).toBe('000000000021000');
+  });
+
+  it('excluye (y cuenta) una factura con una línea IVA_CREDITO sin taxRate/netAmount, en vez de una fila que no cerraría contra el crédito fiscal de getComprasCbte', async () => {
+    const db = {
+      purchaseInvoice: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'pinv-1',
+            documentLetter: 'A',
+            pointOfSale: '0001',
+            number: '00000045',
+            supplierTaxId: '30123456789',
+            taxLines: [{ type: 'IVA_CREDITO', amount: d(210), netAmount: null, taxRate: null }],
+          },
+        ]),
+      },
+      purchaseCreditNote: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new CitiExportService();
+
+    const { content, skippedCount } = await runInTenant(db, () => service.getComprasAlicuotas());
+
+    expect(content).toBe('');
+    expect(skippedCount).toBe(1);
   });
 });

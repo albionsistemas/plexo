@@ -108,14 +108,17 @@ export default function VatBookTab() {
           onFromChange={(value) => {
             setRange((r) => ({ ...r, from: value }));
             setPage(1);
+            setCitiSkippedCount(null);
           }}
           onToChange={(value) => {
             setRange((r) => ({ ...r, to: value }));
             setPage(1);
+            setCitiSkippedCount(null);
           }}
           onPreset={(r) => {
             setRange(r);
             setPage(1);
+            setCitiSkippedCount(null);
           }}
         />
         <div className="flex gap-2">
@@ -156,7 +159,7 @@ export default function VatBookTab() {
         </div>
       </div>
 
-      {kind === 'purchases' && citiSkippedCount === null && (
+      {kind === 'purchases' && (
         <p className="text-xs text-slate-500">
           Los comprobantes de compra cargados sin desglose de alícuota (o de antes de esta función) caen en la
           columna "IVA Otras".
@@ -165,9 +168,9 @@ export default function VatBookTab() {
 
       {kind === 'purchases' && citiSkippedCount !== null && citiSkippedCount > 0 && (
         <p className="text-xs text-amber-600 dark:text-amber-400">
-          {citiSkippedCount} comprobante{citiSkippedCount === 1 ? '' : 's'} de compra sin Tipo de
-          comprobante/Punto de Venta/Número cargados quedó{citiSkippedCount === 1 ? '' : 'aron'} afuera del
-          archivo (ver "Para el Libro de IVA Digital" al cargar la factura).
+          {citiSkippedCount} comprobante{citiSkippedCount === 1 ? '' : 's'} de compra quedó
+          {citiSkippedCount === 1 ? '' : 'aron'} afuera del archivo (falta Tipo/Punto de Venta/Número, es en
+          moneda distinta de ARS, o tiene una línea de IVA sin alícuota cargada).
         </p>
       )}
 

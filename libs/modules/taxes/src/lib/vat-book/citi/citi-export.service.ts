@@ -13,10 +13,12 @@ import {
 export interface CitiFileResult {
   /** Ya con \r\n entre líneas, listo para escribir a disco/enviar. */
   content: string;
-  /** Comprobantes que no se pudieron incluir por falta de datos
-   * estructurados (ver PurchaseInvoice.documentLetter/pointOfSale/number)
-   * - sólo aplica a Compras. 0 en Ventas (Invoice/CreditNote siempre
-   * tienen esos campos, son obligatorios desde que existen). */
+  /** Comprobantes que no se pudieron incluir - sólo aplica a Compras (0
+   * en Ventas, donde Invoice/CreditNote siempre tienen documentLetter/
+   * pointOfSale/number, son obligatorios desde que existen). Motivos:
+   * falta ese mismo desglose en Compras (opcional ahí), moneda distinta
+   * de ARS sin tipo de cambio propio, o una línea IVA_CREDITO sin
+   * taxRate/netAmount (ver hasIncompleteIvaCredito). */
   skippedCount: number;
 }
 
@@ -45,6 +47,16 @@ function groupByRate(lines: { netAmount: number; taxAmount: number; taxRate: num
     byRate.set(line.taxRate, acc);
   }
   return byRate;
+}
+
+/** true si el comprobante tiene alguna línea IVA_CREDITO sin el
+ * desglose neto/alícuota (comprobante cargado antes de que Compras
+ * tuviera IVA por línea) - ese comprobante se excluye entero de
+ * getComprasCbte y getComprasAlicuotas en vez de dejar los dos
+ * archivos inconsistentes entre sí (el crédito fiscal del CBTE no
+ * cerraría contra la suma de sus propias filas en Alícuotas). */
+function hasIncompleteIvaCredito(taxLines: { type: string; taxRate: unknown; netAmount: unknown }[]): boolean {
+  return taxLines.some((l) => l.type === 'IVA_CREDITO' && (l.taxRate == null || l.netAmount == null));
 }
 
 @Injectable()
@@ -233,8 +245,10 @@ export class CitiExportService {
 
   /** LIBRO_IVA_DIGITAL_COMPRAS_CBTE. Comprobantes sin
    * documentLetter/pointOfSale/number cargados (ver
-   * NewPurchaseInvoiceModal "Para el Libro de IVA Digital") se excluyen -
-   * no se inventa un código de comprobante ARCA. */
+   * NewPurchaseInvoiceModal "Para el Libro de IVA Digital"), en moneda
+   * distinta de ARS, o con una línea IVA_CREDITO incompleta (ver
+   * CitiFileResult.skippedCount) se excluyen - no se inventa un código de
+   * comprobante ARCA ni una cotización. */
   async getComprasCbte(from?: string, to?: string): Promise<CitiFileResult> {
     const range = defaultRange(from, to);
     const db = getTenantDb();
@@ -248,6 +262,18 @@ export class CitiExportService {
     });
     for (const invoice of invoices) {
       if (!invoice.documentLetter || !invoice.pointOfSale || !invoice.number) {
+        skippedCount += 1;
+        continue;
+      }
+      // PurchaseInvoice no registra su propio tipo de cambio - para una
+      // factura en moneda extranjera no hay cotización real que informar,
+      // así que se excluye en vez de mentir con 1:1 (ver formatExchangeRate
+      // más abajo, sólo corre para ARS de acá en más).
+      if (invoice.currency.code !== 'ARS') {
+        skippedCount += 1;
+        continue;
+      }
+      if (hasIncompleteIvaCredito(invoice.taxLines)) {
         skippedCount += 1;
         continue;
       }
@@ -287,7 +313,7 @@ export class CitiExportService {
           formatAmount(0), // percepciones municipales - no modelado
           formatAmount(0), // impuestos internos - no modelado
           resolveMonId(invoice.currency.code),
-          formatExchangeRate(1), // PurchaseInvoice no registra su propio tipo de cambio
+          formatExchangeRate(1), // siempre ARS acá - moneda extranjera se excluye arriba
           String(Math.min(rateGroups.size, 9)),
           ' ', // código de operación - Compras no distingue exento/no gravado todavía
           formatAmount(creditoFiscal),
@@ -306,6 +332,14 @@ export class CitiExportService {
     });
     for (const creditNote of creditNotes) {
       if (!creditNote.documentLetter || !creditNote.pointOfSale || !creditNote.number) {
+        skippedCount += 1;
+        continue;
+      }
+      if (creditNote.currency.code !== 'ARS') {
+        skippedCount += 1;
+        continue;
+      }
+      if (hasIncompleteIvaCredito(creditNote.taxLines)) {
         skippedCount += 1;
         continue;
       }
@@ -377,8 +411,15 @@ export class CitiExportService {
         skippedCount += 1;
         continue;
       }
+      // Ver hasIncompleteIvaCredito - un comprobante con una fila
+      // IVA_CREDITO vieja (sin taxRate/netAmount) se excluye entero, no
+      // sólo esa línea, para que este archivo cierre con getComprasCbte.
+      if (hasIncompleteIvaCredito(invoice.taxLines)) {
+        skippedCount += 1;
+        continue;
+      }
       const { docTipo, docNro } = resolveDocTipo(invoice.supplierTaxId);
-      const ivaCredito = invoice.taxLines.filter((l) => l.type === 'IVA_CREDITO' && l.taxRate != null && l.netAmount != null);
+      const ivaCredito = invoice.taxLines.filter((l) => l.type === 'IVA_CREDITO');
       const rateGroups = groupByRate(
         ivaCredito.map((l) => ({
           netAmount: Number(l.netAmount),
@@ -414,10 +455,12 @@ export class CitiExportService {
         skippedCount += 1;
         continue;
       }
+      if (hasIncompleteIvaCredito(creditNote.taxLines)) {
+        skippedCount += 1;
+        continue;
+      }
       const { docTipo, docNro } = resolveDocTipo(creditNote.supplierTaxId);
-      const ivaCredito = creditNote.taxLines.filter(
-        (l) => l.type === 'IVA_CREDITO' && l.taxRate != null && l.netAmount != null,
-      );
+      const ivaCredito = creditNote.taxLines.filter((l) => l.type === 'IVA_CREDITO');
       const rateGroups = groupByRate(
         ivaCredito.map((l) => ({
           netAmount: Number(l.netAmount),
