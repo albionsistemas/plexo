@@ -65,6 +65,12 @@ function slugPart(value: string): string {
     .replace(/[^A-Z0-9]+/g, '');
 }
 
+// Cada fila de la matriz dispara su propio POST a /inventory/article-variants
+// en paralelo (ver mutationFn, Promise.allSettled) - sin este tope, muchos
+// atributos con muchos valores generan cientos de requests simultáneos que
+// saturan el pool de conexiones de Prisma, además de una grilla inmanejable.
+const MAX_VARIANT_COMBOS = 30;
+
 /** Producto cartesiano de los valores de cada atributo usable (nombre no
  * vacío + al menos un valor cargado) - "Color: Rojo,Verde" + "Talle: S,M"
  * da las 4 combinaciones Rojo/S, Rojo/M, Verde/S, Verde/M. Atributos sin
@@ -842,11 +848,16 @@ export default function ArticleFormModal({ onClose, onSaved }: Props) {
                 <button
                   type="button"
                   onClick={handleGenerateMatrix}
-                  disabled={pendingCombos.length === 0}
+                  disabled={pendingCombos.length === 0 || pendingCombos.length > MAX_VARIANT_COMBOS}
                   className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
                 >
                   Generar combinaciones {pendingCombos.length > 0 ? `(${pendingCombos.length})` : ''}
                 </button>
+                {pendingCombos.length > MAX_VARIANT_COMBOS && (
+                  <p className="text-xs text-red-600 dark:text-red-400">
+                    Máximo {MAX_VARIANT_COMBOS} variantes por artículo - sacá algún atributo o valor.
+                  </p>
+                )}
                 {matrixRows.length > 0 && suggestedPrice !== null && (
                   <button
                     type="button"
