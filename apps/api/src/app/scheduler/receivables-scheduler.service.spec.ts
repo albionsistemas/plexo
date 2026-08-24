@@ -10,6 +10,17 @@ jest.mock('@plexo/database', () => ({
   getTenantDb: jest.fn(),
 }));
 
+// Empty factory, not requireActual (nor a bare jest.mock() call - Jest's
+// automatic mock still `require()`s the real module first to infer its
+// shape). Every ReceivablesService usage below is a plain object cast
+// `as unknown as ReceivablesService` (type-only, never the real class), so
+// nothing here needs a real export - and the real module must never load,
+// since @plexo/receivables' barrel also pulls in ReceivablesController ->
+// the statement PDF service -> @react-pdf/renderer, an ESM-only package
+// (no CJS build) that this CommonJS Jest run can't parse. Same reasoning
+// as the @plexo/database mock above, one module over.
+jest.mock('@plexo/receivables', () => ({}));
+
 const { withTenantContext, getTenantDb } = jest.requireMock('@plexo/database') as {
   withTenantContext: jest.Mock;
   getTenantDb: jest.Mock;

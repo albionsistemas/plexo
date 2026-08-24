@@ -25,12 +25,49 @@ export interface CustomerBalance {
   availableCredit: Prisma.Decimal;
 }
 
+export type StatementEntryType = 'INVOICE' | 'CREDIT_NOTE' | 'RECEIPT';
+
+export interface CustomerStatementEntry {
+  id: string;
+  date: Date;
+  type: StatementEntryType;
+  documentNumber: string;
+  dueDate: Date | null;
+  debe: Prisma.Decimal;
+  haber: Prisma.Decimal;
+  /** Saldo Acumulado - corrido sobre TODO el historial (no sólo lo
+   * visible si se filtra por fecha/pendingOnly), mismo criterio que un
+   * extracto bancario real. */
+  balance: Prisma.Decimal;
+  /** Sólo en filas INVOICE - las de CREDIT_NOTE/RECEIPT quedan
+   * completamente aplicadas al crearse, no tienen saldo propio. */
+  status: string | null;
+  pendingBalance: Prisma.Decimal | null;
+}
+
 export interface CustomerStatement {
   customerId: string;
   customerName: string;
   creditLimit: Prisma.Decimal;
+  /** Métricas de "cuánto me debe ahora" - siempre sobre el saldo abierto
+   * completo del cliente, sin importar el rango de fechas de `entries`.
+   * "Total a favor" queda deliberadamente afuera - un Recibo/NC nunca
+   * puede superar el balanceDue de la factura que cancela (ver
+   * recordReceipt/createCreditNote), así que hoy no existe ningún saldo a
+   * favor que mostrar. */
   totalOutstanding: Prisma.Decimal;
-  invoices: Invoice[];
+  totalOverdue: Prisma.Decimal;
+  totalNotYetDue: Prisma.Decimal;
+  entries: CustomerStatementEntry[];
+}
+
+export interface GetCustomerStatementOptions {
+  from?: Date;
+  to?: Date;
+  /** Sólo deja visibles las filas INVOICE con saldo pendiente > 0 (oculta
+   * NC/Recibos y facturas ya saldadas) - el saldo acumulado de cada fila
+   * visible sigue siendo el real, calculado sobre el historial completo. */
+  pendingOnly?: boolean;
 }
 
 function emptyBuckets(): AgingBuckets {
@@ -50,6 +87,19 @@ function bucketFor(daysOverdue: number): keyof AgingBuckets {
   if (daysOverdue <= 60) return 'days31to60';
   if (daysOverdue <= 90) return 'days61to90';
   return 'days90Plus';
+}
+
+const INVOICE_STATUS_LABELS: Record<Invoice['status'], string> = {
+  DRAFT: 'Borrador',
+  ISSUED: 'Impago',
+  PARTIALLY_PAID: 'Pago parcial',
+  PAID: 'Totalmente imputado',
+  OVERDUE: 'Vencida',
+  CANCELLED: 'Cancelada',
+};
+
+function invoiceDocumentNumber(invoice: { documentLetter: string; pointOfSale: string; number: string }): string {
+  return `${invoice.documentLetter} ${invoice.pointOfSale}-${invoice.number}`;
 }
 
 @Injectable()
@@ -124,28 +174,143 @@ export class ReceivablesService {
       .sort((a, b) => b.outstanding.cmp(a.outstanding));
   }
 
-  async getCustomerStatement(customerId: string): Promise<CustomerStatement> {
+  /** Mayor de Auxiliares del cliente: Facturas (Debe) + Notas de Crédito
+   * (Haber) + Recibos (Haber) mergeados en orden cronológico con Saldo
+   * Acumulado. No hay ajuste de retenciones acá (a diferencia del espejo
+   * en @plexo/payables) - Receipt.amount ya es el monto completo aplicado
+   * a balanceDue, del lado de Ventas no se modelan retenciones que el
+   * cliente practique todavía. Se excluye CANCELLED en facturas, mismo
+   * criterio que CitiExportService/VatBookService - CreditNote no tiene
+   * status propio, no hay nada que filtrar ahí. */
+  async getCustomerStatement(
+    customerId: string,
+    options: GetCustomerStatementOptions = {},
+  ): Promise<CustomerStatement> {
     const db = getTenantDb();
     const customer = await db.company.findUnique({ where: { id: customerId } });
     if (!customer) {
       throw new NotFoundException('Customer not found');
     }
 
-    const invoices = await db.invoice.findMany({
+    const openInvoices = await db.invoice.findMany({
       where: { customerId, balanceDue: { gt: 0 } },
-      orderBy: { dueDate: 'asc' },
     });
-    const totalOutstanding = invoices.reduce(
-      (sum, invoice) => sum.add(invoice.balanceDue),
-      new Prisma.Decimal(0),
-    );
+    const now = new Date();
+    let totalOutstanding = new Prisma.Decimal(0);
+    let totalOverdue = new Prisma.Decimal(0);
+    for (const invoice of openInvoices) {
+      totalOutstanding = totalOutstanding.add(invoice.balanceDue);
+      if (invoice.dueDate && invoice.dueDate < now) {
+        totalOverdue = totalOverdue.add(invoice.balanceDue);
+      }
+    }
+    const totalNotYetDue = totalOutstanding.sub(totalOverdue);
+
+    // `to` es inclusivo del día completo - mismo ajuste que
+    // PayablesService.getSupplierStatement.
+    const inclusiveTo = options.to ? new Date(options.to.getTime() + DAY_MS - 1) : undefined;
+    const dateRange =
+      options.from || options.to ? { gte: options.from, lte: inclusiveTo } : undefined;
+
+    const [invoices, creditNotes, receipts] = await Promise.all([
+      db.invoice.findMany({
+        where: {
+          customerId,
+          status: { not: 'CANCELLED' },
+          ...(dateRange ? { issueDate: dateRange } : {}),
+        },
+      }),
+      db.creditNote.findMany({
+        where: {
+          invoice: { customerId },
+          ...(dateRange ? { issueDate: dateRange } : {}),
+        },
+        include: { invoice: { select: { documentLetter: true, pointOfSale: true, number: true } } },
+      }),
+      db.receipt.findMany({
+        where: {
+          invoice: { customerId },
+          ...(dateRange ? { paidAt: dateRange } : {}),
+        },
+        include: { invoice: { select: { documentLetter: true, pointOfSale: true, number: true } } },
+      }),
+    ]);
+
+    type Draft = Omit<CustomerStatementEntry, 'balance'> & { sortPriority: number };
+
+    const drafts: Draft[] = [
+      ...invoices.map(
+        (invoice): Draft => ({
+          id: invoice.id,
+          date: invoice.issueDate,
+          type: 'INVOICE',
+          documentNumber: invoiceDocumentNumber(invoice),
+          dueDate: invoice.dueDate,
+          debe: invoice.total,
+          haber: new Prisma.Decimal(0),
+          status: INVOICE_STATUS_LABELS[invoice.status],
+          pendingBalance: invoice.balanceDue,
+          sortPriority: 0,
+        }),
+      ),
+      ...creditNotes.map(
+        (creditNote): Draft => ({
+          id: creditNote.id,
+          date: creditNote.issueDate,
+          type: 'CREDIT_NOTE',
+          documentNumber: `NC ${creditNote.documentLetter} ${creditNote.pointOfSale}-${creditNote.number} (Fact. ${invoiceDocumentNumber(creditNote.invoice)})`,
+          dueDate: null,
+          debe: new Prisma.Decimal(0),
+          haber: creditNote.total,
+          status: null,
+          pendingBalance: null,
+          sortPriority: 1,
+        }),
+      ),
+      ...receipts.map(
+        (receipt): Draft => ({
+          id: receipt.id,
+          date: receipt.paidAt,
+          type: 'RECEIPT',
+          documentNumber: `Recibo (${receipt.method}) - Fact. ${invoiceDocumentNumber(receipt.invoice)}`,
+          dueDate: null,
+          debe: new Prisma.Decimal(0),
+          haber: receipt.amount,
+          status: null,
+          pendingBalance: null,
+          sortPriority: 1,
+        }),
+      ),
+    ];
+
+    // Orden cronológico; en empate de fecha, Factura/NC antes que Recibo, y
+    // `id` como desempate final estable.
+    drafts.sort((a, b) => {
+      const dateDiff = a.date.getTime() - b.date.getTime();
+      if (dateDiff !== 0) return dateDiff;
+      if (a.sortPriority !== b.sortPriority) return a.sortPriority - b.sortPriority;
+      return a.id.localeCompare(b.id);
+    });
+
+    let runningBalance = new Prisma.Decimal(0);
+    const entries: CustomerStatementEntry[] = drafts.map((draft) => {
+      runningBalance = runningBalance.add(draft.debe).sub(draft.haber);
+      const { id, date, type, documentNumber, dueDate, debe, haber, status, pendingBalance } = draft;
+      return { id, date, type, documentNumber, dueDate, debe, haber, status, pendingBalance, balance: runningBalance };
+    });
+
+    const visibleEntries = options.pendingOnly
+      ? entries.filter((entry) => entry.type === 'INVOICE' && entry.pendingBalance?.gt(0))
+      : entries;
 
     return {
       customerId,
       customerName: customer.name,
       creditLimit: customer.creditLimit,
       totalOutstanding,
-      invoices,
+      totalOverdue,
+      totalNotYetDue,
+      entries: visibleEntries,
     };
   }
 

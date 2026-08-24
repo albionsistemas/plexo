@@ -81,6 +81,26 @@ describe('PayablesService.listSupplierBalances', () => {
 });
 
 describe('PayablesService.getSupplierStatement', () => {
+  function baseDb(overrides: {
+    openInvoices?: unknown[];
+    invoices?: unknown[];
+    creditNotes?: unknown[];
+    payments?: unknown[];
+  }) {
+    // purchaseInvoice.findMany is called twice: once for the open-balance
+    // metrics, once for the full ledger - mockResolvedValueOnce twice lets
+    // each call return a different fixture.
+    const findMany = jest.fn();
+    findMany.mockResolvedValueOnce(overrides.openInvoices ?? []);
+    findMany.mockResolvedValueOnce(overrides.invoices ?? []);
+    return {
+      company: { findUnique: jest.fn().mockResolvedValue({ id: 'supplier-1', name: 'Sidex' }) },
+      purchaseInvoice: { findMany },
+      purchaseCreditNote: { findMany: jest.fn().mockResolvedValue(overrides.creditNotes ?? []) },
+      supplierPayment: { findMany: jest.fn().mockResolvedValue(overrides.payments ?? []) },
+    };
+  }
+
   it('throws when the supplier does not exist', async () => {
     const db = { company: { findUnique: jest.fn().mockResolvedValue(null) } };
     const service = new PayablesService();
@@ -90,21 +110,130 @@ describe('PayablesService.getSupplierStatement', () => {
     );
   });
 
-  it('returns the open invoices and their total', async () => {
-    const db = {
-      company: { findUnique: jest.fn().mockResolvedValue({ id: 'supplier-1', name: 'Sidex' }) },
-      purchaseInvoice: {
-        findMany: jest.fn().mockResolvedValue([
-          { balanceDue: new Prisma.Decimal(40) },
-          { balanceDue: new Prisma.Decimal(60) },
-        ]),
-      },
-    };
+  it('splits totalOutstanding into vencido/a vencer from the open-balance snapshot', async () => {
+    const asOfDaysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
+    const db = baseDb({
+      openInvoices: [
+        { balanceDue: new Prisma.Decimal(100), dueDate: asOfDaysAgo(5) }, // vencida
+        { balanceDue: new Prisma.Decimal(40), dueDate: asOfDaysAgo(-10) }, // a vencer
+        { balanceDue: new Prisma.Decimal(10), dueDate: null }, // sin vencimiento -> a vencer
+      ],
+    });
     const service = new PayablesService();
 
     const statement = await runInTenant(db, () => service.getSupplierStatement('supplier-1'));
 
-    expect(statement.totalOutstanding.toNumber()).toBe(100);
-    expect(statement.invoices).toHaveLength(2);
+    expect(statement.totalOutstanding.toNumber()).toBe(150);
+    expect(statement.totalOverdue.toNumber()).toBe(100);
+    expect(statement.totalNotYetDue.toNumber()).toBe(50);
+  });
+
+  it('mergea Factura/NC/Pago en orden cronológico con Debe/Haber/Saldo Acumulado correctos', async () => {
+    const db = baseDb({
+      invoices: [
+        {
+          id: 'inv-1',
+          supplierInvoiceDate: new Date('2026-08-01'),
+          supplierInvoiceNumber: '0001-00000001',
+          dueDate: new Date('2026-08-31'),
+          total: new Prisma.Decimal(1000),
+          balanceDue: new Prisma.Decimal(0), // saldada por el pago + la NC de abajo
+          status: 'PAID',
+        },
+      ],
+      creditNotes: [
+        {
+          id: 'nc-1',
+          supplierCreditNoteDate: new Date('2026-08-05'),
+          supplierCreditNoteNumber: 'NC-0001',
+          total: new Prisma.Decimal(200),
+          purchaseInvoice: { supplierInvoiceNumber: '0001-00000001' },
+        },
+      ],
+      payments: [
+        {
+          id: 'pay-1',
+          paidAt: new Date('2026-08-10'),
+          method: 'Transferencia',
+          amount: new Prisma.Decimal(700),
+          withholdings: [{ amount: new Prisma.Decimal(100) }],
+          purchaseInvoice: { supplierInvoiceNumber: '0001-00000001' },
+        },
+      ],
+    });
+    const service = new PayablesService();
+
+    const statement = await runInTenant(db, () => service.getSupplierStatement('supplier-1'));
+
+    expect(statement.entries.map((e) => e.type)).toEqual(['INVOICE', 'CREDIT_NOTE', 'PAYMENT']);
+
+    const [invoiceEntry, creditNoteEntry, paymentEntry] = statement.entries;
+    expect(invoiceEntry.haber.toNumber()).toBe(1000);
+    expect(invoiceEntry.debe.toNumber()).toBe(0);
+    expect(invoiceEntry.balance.toNumber()).toBe(1000);
+    expect(invoiceEntry.status).toBe('Totalmente imputado');
+
+    expect(creditNoteEntry.debe.toNumber()).toBe(200);
+    expect(creditNoteEntry.balance.toNumber()).toBe(800);
+
+    // El pago aplica amount + retenciones (700 + 100 = 800), no sólo
+    // amount - es lo que realmente extingue balanceDue del lado real
+    // (PurchaseInvoiceService.recordPayment).
+    expect(paymentEntry.debe.toNumber()).toBe(800);
+    expect(paymentEntry.balance.toNumber()).toBe(0);
+
+    // Invariante: el saldo acumulado final cierra contra balanceDue real
+    // (0 en este caso, la factura quedó PAID).
+    expect(statement.entries.at(-1)?.balance.toNumber()).toBe(0);
+  });
+
+  it('pendingOnly deja sólo facturas con saldo pendiente, sin tocar el saldo acumulado ya calculado', async () => {
+    const db = baseDb({
+      invoices: [
+        {
+          id: 'inv-1',
+          supplierInvoiceDate: new Date('2026-08-01'),
+          supplierInvoiceNumber: 'F-1',
+          dueDate: null,
+          total: new Prisma.Decimal(1000),
+          balanceDue: new Prisma.Decimal(0),
+          status: 'PAID',
+        },
+        {
+          id: 'inv-2',
+          supplierInvoiceDate: new Date('2026-08-02'),
+          supplierInvoiceNumber: 'F-2',
+          dueDate: null,
+          total: new Prisma.Decimal(500),
+          balanceDue: new Prisma.Decimal(500),
+          status: 'ISSUED',
+        },
+      ],
+      payments: [
+        {
+          id: 'pay-1',
+          // A propósito después de inv-2 (08-02) en la fecha - el orden
+          // cronológico es inv-1, inv-2, pay-1, no el orden de creación de
+          // los fixtures.
+          paidAt: new Date('2026-08-03'),
+          method: 'Efectivo',
+          amount: new Prisma.Decimal(1000),
+          withholdings: [],
+          purchaseInvoice: { supplierInvoiceNumber: 'F-1' },
+        },
+      ],
+    });
+    const service = new PayablesService();
+
+    const statement = await runInTenant(db, () =>
+      service.getSupplierStatement('supplier-1', { pendingOnly: true }),
+    );
+
+    expect(statement.entries).toHaveLength(1);
+    expect(statement.entries[0].id).toBe('inv-2');
+    // Saldo acumulado real al momento de esa fila en el orden cronológico
+    // completo (inv-1 1000 + inv-2 500 = 1500 - pay-1 todavía no pasó, es
+    // del 08-03) - no un recálculo aislado sobre sólo las filas visibles.
+    expect(statement.entries[0].balance.toNumber()).toBe(1500);
   });
 });

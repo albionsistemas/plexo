@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import CuentaCorrienteTab from './CuentaCorrienteTab';
 import GestionTab from './GestionTab';
 import RecordatoriosTab from './RecordatoriosTab';
 import ResumenTab from './ResumenTab';
@@ -8,6 +9,7 @@ import ResumenTab from './ResumenTab';
 const TABS = [
   { id: 'resumen', label: 'Resumen' },
   { id: 'gestion', label: 'Gestión' },
+  { id: 'cuenta-corriente', label: 'Cuenta Corriente' },
   { id: 'recordatorios', label: 'Recordatorios' },
 ] as const;
 
@@ -38,6 +40,7 @@ export default function ReceivablesPage() {
 
       {tab === 'resumen' && <ResumenTab />}
       {tab === 'gestion' && <GestionTab />}
+      {tab === 'cuenta-corriente' && <CuentaCorrienteTab />}
       {tab === 'recordatorios' && <RecordatoriosTab />}
     </div>
   );

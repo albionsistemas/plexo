@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import CuentaCorrienteTab from './CuentaCorrienteTab';
 import GestionTab from './GestionTab';
 import ResumenTab from './ResumenTab';
 
 const TABS = [
   { id: 'resumen', label: 'Resumen' },
   { id: 'gestion', label: 'Gestión' },
+  { id: 'cuenta-corriente', label: 'Cuenta Corriente' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -36,6 +38,7 @@ export default function PayablesPage() {
 
       {tab === 'resumen' && <ResumenTab />}
       {tab === 'gestion' && <GestionTab />}
+      {tab === 'cuenta-corriente' && <CuentaCorrienteTab />}
     </div>
   );
 }
