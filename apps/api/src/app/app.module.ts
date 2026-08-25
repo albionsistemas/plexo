@@ -34,6 +34,7 @@ import { SalesModule } from './sales/sales.module.js';
 import { SchedulerModule } from './scheduler/scheduler.module.js';
 import { SupplierReturnsModule } from './supplier-returns/supplier-returns.module.js';
 import { SystemModule } from './system/system.module.js';
+import { TreasuryModule } from './treasury/treasury.module.js';
 import { UsersModule } from './users/users.module.js';
 
 @Module({
@@ -66,6 +67,7 @@ import { UsersModule } from './users/users.module.js';
     SupplierReturnsModule,
     PurchaseInvoicesModule,
     PurchaseCreditNotesModule,
+    TreasuryModule,
     SubscriptionModule,
     AdminModule,
     SystemModule,

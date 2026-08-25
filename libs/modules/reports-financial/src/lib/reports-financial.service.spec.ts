@@ -62,6 +62,65 @@ describe('ReportsFinancialService.recordFinancialTransaction', () => {
   });
 });
 
+describe('ReportsFinancialService.transferBetweenAccounts', () => {
+  const dto = { fromFinancialAccountId: 'acc-1', toFinancialAccountId: 'acc-2', amount: 100 };
+
+  it('rejects transferring an account to itself', async () => {
+    const service = new ReportsFinancialService();
+    await expect(
+      runInTenant({}, () => service.transferBetweenAccounts({ ...dto, toFinancialAccountId: 'acc-1' })),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('throws when the origin account does not exist', async () => {
+    const db = {
+      financialAccount: {
+        findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+          where.id === 'acc-1' ? null : { id: 'acc-2', name: 'Banco' },
+        ),
+      },
+    };
+    const service = new ReportsFinancialService();
+
+    await expect(runInTenant(db, () => service.transferBetweenAccounts(dto))).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('debits the origin and credits the destination by the same amount, each keeping its own balance in sync', async () => {
+    const accountsById: Record<string, { id: string; name: string }> = {
+      'acc-1': { id: 'acc-1', name: 'Caja Efectivo' },
+      'acc-2': { id: 'acc-2', name: 'Banco Galicia' },
+    };
+    const db = {
+      financialAccount: {
+        findUnique: jest.fn(({ where }: { where: { id: string } }) => accountsById[where.id]),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      financialTransaction: {
+        create: jest.fn(({ data }: { data: { financialAccountId: string } }) => ({
+          id: `tx-${data.financialAccountId}`,
+          ...data,
+        })),
+      },
+    };
+    const service = new ReportsFinancialService();
+
+    const result = await runInTenant(db, () => service.transferBetweenAccounts(dto));
+
+    expect(db.financialAccount.update).toHaveBeenCalledWith({
+      where: { id: 'acc-1' },
+      data: { currentBalance: { increment: -100 } },
+    });
+    expect(db.financialAccount.update).toHaveBeenCalledWith({
+      where: { id: 'acc-2' },
+      data: { currentBalance: { increment: 100 } },
+    });
+    expect(result.from.financialAccountId).toBe('acc-1');
+    expect(result.to.financialAccountId).toBe('acc-2');
+  });
+});
+
 describe('ReportsFinancialService.reconcileTransaction', () => {
   it('throws when the transaction does not exist', async () => {
     const db = { financialTransaction: { findUnique: jest.fn().mockResolvedValue(null) } };

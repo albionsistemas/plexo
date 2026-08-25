@@ -575,12 +575,24 @@ export interface CreatePurchaseInvoiceInput {
   number?: string;
 }
 
+export interface OwnCheckInput {
+  number: string;
+  bankName: string;
+  format?: 'PHYSICAL' | 'ECHEQ';
+  issueDate: string;
+  dueDate: string;
+  financialAccountId?: string;
+}
+
 export interface RecordSupplierPaymentInput {
   amount: number;
   method: string;
   financialAccountId?: string;
   paidAt?: string;
   withholdings?: SupplierPaymentWithholdingInput[];
+  // A lo sumo uno de los dos - ver TreasuryController en el backend.
+  endorseCheckId?: string;
+  ownCheck?: OwnCheckInput;
 }
 
 export const purchaseInvoicesApi = {

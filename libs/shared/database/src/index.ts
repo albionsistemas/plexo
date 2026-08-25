@@ -43,6 +43,7 @@ export type {
   TaxDefinition,
   FinancialAccount,
   FinancialTransaction,
+  Check,
   AuditLog,
   UserActivityLog,
   TransportMode,

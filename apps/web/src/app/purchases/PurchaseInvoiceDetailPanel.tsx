@@ -4,10 +4,13 @@ import { resolveUploadUrl } from '@/lib/inventory';
 import {
   describePurchaseInvoiceStatus,
   purchaseInvoicesApi,
+  type OwnCheckInput,
   type SupplierPaymentWithholdingInput,
 } from '@/lib/purchases';
+import { reportsApi } from '@/lib/reports';
 import { WITHHOLDING_TAX_TYPE_LABELS, withholdingRegimesApi, type WithholdingRegime } from '@/lib/taxes';
 import { tenantSettingsApi } from '@/lib/tenantSettings';
+import { treasuryApi } from '@/lib/treasury';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import { useEffect, useState } from 'react';
@@ -37,6 +40,16 @@ export default function PurchaseInvoiceDetailPanel({ purchaseInvoiceId, onClose 
   const [paying, setPaying] = useState(false);
   const [amount, setAmount] = useState<number>(0);
   const [method, setMethod] = useState('Transferencia');
+  const [payMode, setPayMode] = useState<'CASH' | 'ENDORSE' | 'OWN_CHECK'>('CASH');
+  const [endorseCheckId, setEndorseCheckId] = useState('');
+  const [ownCheck, setOwnCheck] = useState<OwnCheckInput>({
+    number: '',
+    bankName: '',
+    format: 'PHYSICAL',
+    issueDate: '',
+    dueDate: '',
+    financialAccountId: '',
+  });
   const [withholdingRows, setWithholdingRows] = useState<WithholdingRow[]>([]);
   const [error, setError] = useState('');
 
@@ -59,6 +72,19 @@ export default function PurchaseInvoiceDetailPanel({ purchaseInvoiceId, onClose 
     queryFn: () => withholdingRegimesApi.listActive(),
     enabled: paying,
   });
+  // Cheques de tercero en cartera (todavía no acreditados) - endosarlos
+  // cancela un pago sin que la plata haya pasado por una cuenta propia.
+  const { data: allChecks } = useQuery({
+    queryKey: ['checks', { kind: 'THIRD_PARTY' }],
+    queryFn: () => treasuryApi.listChecks({ kind: 'THIRD_PARTY' }),
+    enabled: paying && payMode === 'ENDORSE',
+  });
+  const endorsableChecks = (allChecks ?? []).filter((c) => c.status === 'PORTFOLIO' || c.status === 'DEPOSITED');
+  const { data: financialAccounts } = useQuery({
+    queryKey: ['financial-accounts'],
+    queryFn: reportsApi.listFinancialAccounts,
+    enabled: paying && payMode === 'OWN_CHECK',
+  });
   // Only regimes for a tax type the tenant actually declared itself an
   // agent for (see Preferencias) - a regime existing in the catalog isn't
   // enough on its own, same gate the backend expects the user to have
@@ -74,6 +100,20 @@ export default function PurchaseInvoiceDetailPanel({ purchaseInvoiceId, onClose 
   useEffect(() => {
     if (data) setAmount(Number(data.balanceDue));
   }, [data]);
+
+  // Endosar un cheque siempre cancela por su valor nominal completo - no
+  // tiene sentido elegir "cuánto" de un cheque ya emitido por otro.
+  useEffect(() => {
+    if (payMode !== 'ENDORSE') return;
+    const check = endorsableChecks.find((c) => c.id === endorseCheckId);
+    if (check) setAmount(Number(check.amount));
+  }, [payMode, endorseCheckId, endorsableChecks]);
+
+  useEffect(() => {
+    if (payMode === 'ENDORSE') setMethod('Cheque endosado');
+    else if (payMode === 'OWN_CHECK') setMethod('Cheque propio');
+    else setMethod('Transferencia');
+  }, [payMode]);
 
   const totalWithheld = withholdingRows.reduce((sum, row) => sum + (row.amount || 0), 0);
   const appliedAmount = amount + totalWithheld;
@@ -91,13 +131,23 @@ export default function PurchaseInvoiceDetailPanel({ purchaseInvoiceId, onClose 
           certificateNumber: row.certificateNumber || undefined,
         };
       });
-      return purchaseInvoicesApi.recordPayment(purchaseInvoiceId, { amount, method, withholdings });
+      return purchaseInvoicesApi.recordPayment(purchaseInvoiceId, {
+        amount,
+        method,
+        withholdings,
+        endorseCheckId: payMode === 'ENDORSE' ? endorseCheckId : undefined,
+        ownCheck: payMode === 'OWN_CHECK' ? ownCheck : undefined,
+      });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['purchase-invoice-detail', purchaseInvoiceId] });
       void queryClient.invalidateQueries({ queryKey: ['purchase-invoices'] });
+      void queryClient.invalidateQueries({ queryKey: ['checks'] });
       setPaying(false);
       setWithholdingRows([]);
+      setPayMode('CASH');
+      setEndorseCheckId('');
+      setOwnCheck({ number: '', bankName: '', format: 'PHYSICAL', issueDate: '', dueDate: '', financialAccountId: '' });
     },
     onError: (err: AxiosError<{ message?: string | string[] }>) => {
       const message = err.response?.data?.message ?? 'No se pudo registrar el pago';
@@ -276,29 +326,138 @@ export default function PurchaseInvoiceDetailPanel({ purchaseInvoiceId, onClose 
               {Number(data.balanceDue) > 0 &&
                 (paying ? (
                   <div className="mt-3 flex flex-col gap-3 rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+                    <label className="flex flex-col gap-1 text-xs text-slate-500">
+                      Forma de pago
+                      <select
+                        className={inputClass}
+                        value={payMode}
+                        onChange={(e) => {
+                          setPayMode(e.target.value as typeof payMode);
+                          setEndorseCheckId('');
+                        }}
+                      >
+                        <option value="CASH">Efectivo / transferencia</option>
+                        <option value="ENDORSE">Endosar cheque de cartera</option>
+                        <option value="OWN_CHECK">Emitir cheque propio</option>
+                      </select>
+                    </label>
+
                     <div className="grid grid-cols-2 gap-2">
                       <label className="flex flex-col gap-1 text-xs text-slate-500">
-                        Efectivo/banco a pagar
+                        {payMode === 'ENDORSE' ? 'Monto (según el cheque)' : 'Efectivo/banco a pagar'}
                         <input
                           type="number"
                           min={0}
                           step="any"
-                          className={inputClass}
+                          disabled={payMode === 'ENDORSE'}
+                          className={`${inputClass} disabled:opacity-60`}
                           value={amount}
                           onChange={(e) => setAmount(Number(e.target.value))}
                         />
                       </label>
-                      <label className="flex flex-col gap-1 text-xs text-slate-500">
-                        Método
-                        <input
-                          type="text"
-                          className={inputClass}
-                          placeholder="Método (efectivo, transferencia...)"
-                          value={method}
-                          onChange={(e) => setMethod(e.target.value)}
-                        />
-                      </label>
+                      {payMode === 'CASH' && (
+                        <label className="flex flex-col gap-1 text-xs text-slate-500">
+                          Método
+                          <input
+                            type="text"
+                            className={inputClass}
+                            placeholder="Método (efectivo, transferencia...)"
+                            value={method}
+                            onChange={(e) => setMethod(e.target.value)}
+                          />
+                        </label>
+                      )}
                     </div>
+
+                    {payMode === 'ENDORSE' && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs text-slate-500">Cheque a endosar</label>
+                        {endorsableChecks.length === 0 ? (
+                          <p className="text-xs text-amber-600 dark:text-amber-400">
+                            No hay cheques de tercero en cartera disponibles para endosar.
+                          </p>
+                        ) : (
+                          <select
+                            className={inputClass}
+                            value={endorseCheckId}
+                            onChange={(e) => setEndorseCheckId(e.target.value)}
+                          >
+                            <option value="">Elegir...</option>
+                            {endorsableChecks.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                Nº {c.number} — {c.bankName} — ${Number(c.amount).toFixed(2)}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    )}
+
+                    {payMode === 'OWN_CHECK' && (
+                      <div className="flex flex-col gap-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="flex flex-col gap-1 text-xs text-slate-500">
+                            Número
+                            <input
+                              className={inputClass}
+                              value={ownCheck.number}
+                              onChange={(e) => setOwnCheck((prev) => ({ ...prev, number: e.target.value }))}
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-xs text-slate-500">
+                            Banco
+                            <input
+                              className={inputClass}
+                              value={ownCheck.bankName}
+                              onChange={(e) => setOwnCheck((prev) => ({ ...prev, bankName: e.target.value }))}
+                            />
+                          </label>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="flex flex-col gap-1 text-xs text-slate-500">
+                            Fecha de emisión
+                            <input
+                              type="date"
+                              className={inputClass}
+                              value={ownCheck.issueDate}
+                              onChange={(e) => setOwnCheck((prev) => ({ ...prev, issueDate: e.target.value }))}
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-xs text-slate-500">
+                            Fecha de vencimiento
+                            <input
+                              type="date"
+                              className={inputClass}
+                              value={ownCheck.dueDate}
+                              onChange={(e) => setOwnCheck((prev) => ({ ...prev, dueDate: e.target.value }))}
+                            />
+                          </label>
+                        </div>
+                        <label className="flex flex-col gap-1 text-xs text-slate-500">
+                          Cuenta bancaria que lo respalda
+                          {(financialAccounts ?? []).length === 0 ? (
+                            <p className="text-xs text-amber-600 dark:text-amber-400">
+                              No hay cuentas financieras creadas todavía (Reportes → Financiero).
+                            </p>
+                          ) : (
+                            <select
+                              className={inputClass}
+                              value={ownCheck.financialAccountId}
+                              onChange={(e) =>
+                                setOwnCheck((prev) => ({ ...prev, financialAccountId: e.target.value }))
+                              }
+                            >
+                              <option value="">Elegir...</option>
+                              {(financialAccounts ?? []).map((a) => (
+                                <option key={a.id} value={a.id}>
+                                  {a.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </label>
+                      </div>
+                    )}
 
                     <div className="flex flex-col gap-2">
                       <div className="flex items-center justify-between">
@@ -392,6 +551,8 @@ export default function PurchaseInvoiceDetailPanel({ purchaseInvoiceId, onClose 
                         onClick={() => {
                           setPaying(false);
                           setWithholdingRows([]);
+                          setPayMode('CASH');
+                          setEndorseCheckId('');
                         }}
                         className="rounded-lg px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400"
                       >
@@ -406,7 +567,14 @@ export default function PurchaseInvoiceDetailPanel({ purchaseInvoiceId, onClose 
                         disabled={
                           paymentMutation.isPending ||
                           !(appliedAmount > 0) ||
-                          appliedAmount > Number(data.balanceDue)
+                          appliedAmount > Number(data.balanceDue) ||
+                          (payMode === 'ENDORSE' && !endorseCheckId) ||
+                          (payMode === 'OWN_CHECK' &&
+                            (!ownCheck.number.trim() ||
+                              !ownCheck.bankName.trim() ||
+                              !ownCheck.issueDate ||
+                              !ownCheck.dueDate ||
+                              !ownCheck.financialAccountId))
                         }
                         className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
                       >

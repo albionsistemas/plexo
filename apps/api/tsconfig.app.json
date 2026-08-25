@@ -43,6 +43,9 @@
       "path": "../../libs/shared/types/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/modules/treasury/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/modules/tenant-settings/tsconfig.lib.json"
     },
     {

@@ -10,9 +10,6 @@
       "path": "./apps/api"
     },
     {
-      "path": "./apps/web"
-    },
-    {
       "path": "./libs/shared/types"
     },
     {
@@ -83,6 +80,12 @@
     },
     {
       "path": "./libs/shared/auth-email"
+    },
+    {
+      "path": "./libs/modules/treasury"
+    },
+    {
+      "path": "./apps/web"
     }
   ],
   "compilerOptions": {}

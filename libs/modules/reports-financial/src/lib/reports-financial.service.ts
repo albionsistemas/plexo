@@ -8,6 +8,7 @@ import {
 } from '@plexo/database';
 import type { CreateFinancialAccountDto } from './dto/create-financial-account.dto.js';
 import type { RecordFinancialTransactionDto } from './dto/record-financial-transaction.dto.js';
+import type { TransferBetweenAccountsDto } from './dto/transfer-between-accounts.dto.js';
 
 export interface ReconciliationSummary {
   financialAccountId: string;
@@ -73,6 +74,47 @@ export class ReportsFinancialService {
     });
 
     return transaction;
+  }
+
+  /** Transferencia interna entre dos cuentas propias (ej. Caja Efectivo ->
+   * Banco Galicia) - dos FinancialTransaction balanceadas (débito en
+   * origen, crédito en destino, mismo monto), cada una manteniendo su
+   * propio currentBalance en sync vía recordFinancialTransaction (mismo
+   * ledger de siempre, no un mecanismo aparte). No es un asiento contable
+   * de partida doble (AccountingService no participa) - mover plata entre
+   * dos cuentas propias no cambia el Plan de Cuentas del tenant, sólo qué
+   * FinancialAccount la tiene. */
+  async transferBetweenAccounts(
+    dto: TransferBetweenAccountsDto,
+  ): Promise<{ from: FinancialTransaction; to: FinancialTransaction }> {
+    if (dto.fromFinancialAccountId === dto.toFinancialAccountId) {
+      throw new BadRequestException('La cuenta de origen y destino no pueden ser la misma');
+    }
+    const [fromAccount, toAccount] = await Promise.all([
+      getTenantDb().financialAccount.findUnique({ where: { id: dto.fromFinancialAccountId } }),
+      getTenantDb().financialAccount.findUnique({ where: { id: dto.toFinancialAccountId } }),
+    ]);
+    if (!fromAccount) {
+      throw new NotFoundException('Origin financial account not found');
+    }
+    if (!toAccount) {
+      throw new NotFoundException('Destination financial account not found');
+    }
+
+    const from = await this.recordFinancialTransaction({
+      financialAccountId: dto.fromFinancialAccountId,
+      amount: -dto.amount,
+      occurredAt: dto.occurredAt,
+      externalRef: `Transferencia a ${toAccount.name}${dto.note ? ` - ${dto.note}` : ''}`,
+    });
+    const to = await this.recordFinancialTransaction({
+      financialAccountId: dto.toFinancialAccountId,
+      amount: dto.amount,
+      occurredAt: dto.occurredAt,
+      externalRef: `Transferencia desde ${fromAccount.name}${dto.note ? ` - ${dto.note}` : ''}`,
+    });
+
+    return { from, to };
   }
 
   async reconcileTransaction(id: string): Promise<FinancialTransaction> {

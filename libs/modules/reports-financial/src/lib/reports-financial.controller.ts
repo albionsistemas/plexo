@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestj
 import { RequireModuleAccess } from '@plexo/auth';
 import { CreateFinancialAccountDto } from './dto/create-financial-account.dto.js';
 import { RecordFinancialTransactionDto } from './dto/record-financial-transaction.dto.js';
+import { TransferBetweenAccountsDto } from './dto/transfer-between-accounts.dto.js';
 import { ReportsFinancialService } from './reports-financial.service.js';
 
 const MODULE = 'reports-financial';
@@ -26,6 +27,12 @@ export class ReportsFinancialController {
   @Post('transactions')
   recordFinancialTransaction(@Body() dto: RecordFinancialTransactionDto) {
     return this.reportsFinancialService.recordFinancialTransaction(dto);
+  }
+
+  @RequireModuleAccess(MODULE, 'write')
+  @Post('transfers')
+  transferBetweenAccounts(@Body() dto: TransferBetweenAccountsDto) {
+    return this.reportsFinancialService.transferBetweenAccounts(dto);
   }
 
   @RequireModuleAccess(MODULE, 'write')

@@ -449,6 +449,7 @@ model User {
   createdPurchaseInvoices    PurchaseInvoice[]
   createdPurchaseCreditNotes PurchaseCreditNote[]
   recordedSupplierPayments   SupplierPayment[]
+  createdChecks              Check[]
   cartItems                  InventoryCartItem[]
   createdQuotes              Quote[]
   emailVerificationCode      EmailVerificationCode?
@@ -665,6 +666,10 @@ model Company {
   // importing InventoryService, per the module-boundary rule (queries
   // the articles table directly via getTenantDb()).
   preferredForArticles Article[]
+  // Cheques donde esta Company es quien libró el cheque de tercero
+  // (cliente) o a quien se le endosó/pagó (proveedor) - ver model Check.
+  checksAsCustomer     Check[]              @relation("CheckCustomer")
+  checksAsSupplier     Check[]              @relation("CheckSupplier")
 
   @@index([tenantId])
   @@map("companies")
@@ -838,14 +843,14 @@ model Article {
 // this keeps stock/price/movement logic uniform instead of special-casing
 // "articles without variants" throughout the codebase.
 model ArticleVariant {
-  id        String   @id @default(uuid())
-  tenantId  String
-  articleId String
-  article   Article  @relation(fields: [articleId], references: [id])
-  sku       String
-  color     String?
-  size      String?
-  brand     String?
+  id         String   @id @default(uuid())
+  tenantId   String
+  articleId  String
+  article    Article  @relation(fields: [articleId], references: [id])
+  sku        String
+  color      String?
+  size       String?
+  brand      String?
   // Pares clave/valor arbitrarios ("Color": "Rojo", "Talle": "M") para
   // variantes generadas desde el creador de atributos de ArticleFormModal -
   // más flexible que los 3 campos fijos de arriba (color/size/brand), que
@@ -854,8 +859,8 @@ model ArticleVariant {
   // que sea un objeto de string a string antes de guardar, no una lista de
   // atributos predefinida por tenant.
   attributes Json?
-  unitPrice Decimal  @db.Decimal(14, 2)
-  createdAt DateTime @default(now())
+  unitPrice  Decimal  @db.Decimal(14, 2)
+  createdAt  DateTime @default(now())
 
   priceHistory       PriceHistory[]
   stockLedger        StockLedger[]
@@ -1338,6 +1343,9 @@ model Receipt {
   paidAt             DateTime          @default(now())
 
   journalEntry JournalEntry?
+  // El cheque de tercero que este Recibo trajo a cartera, si se cobró con
+  // cheque - ver model Check.
+  check        Check?
 
   @@unique([tenantId, id])
   @@map("receipts")
@@ -1400,6 +1408,13 @@ model JournalEntry {
   // AccountingService.postReceiptJournalEntry.
   receiptId            String?             @unique
   receipt              Receipt?            @relation(fields: [tenantId, receiptId], references: [tenantId, id])
+  // Asiento reversor de un cheque rechazado (Dr Deudores por Ventas / Cr
+  // Caja [+ Cr gasto recuperado]) - ver AccountingService.
+  // postCheckRejectionJournalEntry. Un cheque sólo tiene asiento propio
+  // en el rechazo; su cobro/pago original ya quedó cubierto por el
+  // receiptId/supplierPaymentId del Recibo/Pago que lo trajo o lo usó.
+  checkId              String?             @unique
+  check                Check?              @relation(fields: [tenantId, checkId], references: [tenantId, id])
   description          String
   date                 DateTime            @default(now())
   createdById          String
@@ -1419,6 +1434,7 @@ model JournalEntry {
   @@unique([tenantId, purchaseCreditNoteId])
   @@unique([tenantId, supplierPaymentId])
   @@unique([tenantId, receiptId])
+  @@unique([tenantId, checkId])
   @@index([tenantId])
   @@map("journal_entries")
 }
@@ -1589,6 +1605,8 @@ model FinancialAccount {
   receipts         Receipt[]
   transactions     FinancialTransaction[]
   supplierPayments SupplierPayment[]
+  // Cheques depositados/emitidos contra esta cuenta - ver model Check.
+  checks           Check[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -1607,6 +1625,107 @@ model FinancialTransaction {
 
   @@index([tenantId])
   @@map("financial_transactions")
+}
+
+// --- Tesorería / Cartera de Cheques (@plexo/treasury) ---
+
+enum CheckKind {
+  THIRD_PARTY
+  OWN
+}
+
+enum CheckFormat {
+  PHYSICAL
+  ECHEQ
+}
+
+// Un solo enum para los dos ciclos de vida (no uno condicional por kind -
+// Prisma no soporta enums parametrizados): PORTFOLIO/DEPOSITED/ENDORSED/
+// CLEARED/REJECTED son sólo válidos para THIRD_PARTY, ISSUED/CLEARED/
+// VOIDED sólo para OWN. CheckService.ts es quien valida qué transición es
+// legal para cada kind - ver el comentario en model Check.
+enum CheckStatus {
+  PORTFOLIO
+  DEPOSITED
+  ENDORSED
+  CLEARED
+  REJECTED
+  ISSUED
+  VOIDED
+}
+
+/**
+ * Cheque de tercero (recibido de un cliente, vía Receipt) o propio (emitido
+ * para pagarle a un proveedor, vía SupplierPayment). Sigue el mismo
+ * criterio de FK que el resto de los documentos fiscales/financieros de
+ * este schema: compuesta (tenantId, xId) hacia Receipt/SupplierPayment/
+ * JournalEntry (documentos), simple hacia FinancialAccount/Company
+ * (catálogos) - mismo precedente que Receipt.financialAccountId/
+ * SupplierPayment.financialAccountId ya usan.
+ * receiptId/supplierPaymentId son @unique (1 cheque como mucho por
+ * Recibo/Pago, no una lista) porque ambos documentos ya modelan "un solo
+ * monto/método por fila" (Receipt.amount, SupplierPayment.amount) - pagar
+ * con 2 cheques a la vez son 2 Receipt/SupplierPayment separados, cada uno
+ * con su propio Check.
+ */
+model Check {
+  id       String      @id @default(uuid())
+  tenantId String
+  kind     CheckKind
+  format   CheckFormat @default(PHYSICAL)
+
+  number     String
+  bankName   String
+  // CUIT de quien firmó el cheque - el cliente para THIRD_PARTY, null para
+  // OWN (es el propio tenant, ya identificado por el tenant mismo).
+  drawerCuit String?
+
+  amount    Decimal  @db.Decimal(14, 2)
+  issueDate DateTime
+  dueDate   DateTime
+
+  status CheckStatus
+
+  // Snapshot (mismo criterio que PurchaseInvoice.supplierName) - evita un
+  // join Check->Receipt->Invoice->Company (o el equivalente de Compras)
+  // sólo para mostrar/filtrar por cliente o proveedor en la grilla de
+  // Cartera de Cheques.
+  customerId String?
+  customer   Company? @relation("CheckCustomer", fields: [customerId], references: [id])
+  supplierId String?
+  supplier   Company? @relation("CheckSupplier", fields: [supplierId], references: [id])
+
+  // Tercero: el Recibo que lo trajo a cartera (status inicial PORTFOLIO).
+  receiptId          String?
+  receipt            Receipt?          @relation(fields: [tenantId, receiptId], references: [tenantId, id])
+  // Tercero endosado a un proveedor, o el Pago que se canceló emitiendo
+  // este cheque propio - el "destino" del cheque.
+  supplierPaymentId  String?
+  supplierPayment    SupplierPayment?  @relation(fields: [tenantId, supplierPaymentId], references: [tenantId, id])
+  // Depositado (tercero) o emitido contra (propio) esta cuenta propia -
+  // null mientras un tercero sigue físicamente en cartera sin depositar.
+  financialAccountId String?
+  financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id])
+
+  rejectionReason    String?
+  rejectionFeeAmount Decimal?  @db.Decimal(14, 2)
+  rejectedAt         DateTime?
+
+  createdByUserId String
+  createdBy       User     @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  // Sólo se postea en el rechazo (ver AccountingService.
+  // postCheckRejectionJournalEntry) - el cobro/pago original ya tiene su
+  // propio asiento vía JournalEntry.receiptId/supplierPaymentId.
+  journalEntry JournalEntry?
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, receiptId])
+  @@unique([tenantId, supplierPaymentId])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("checks")
 }
 
 // --- Compras (@plexo/purchases) ---
@@ -2219,6 +2338,9 @@ model SupplierPayment {
 
   journalEntry JournalEntry?
   withholdings SupplierPaymentWithholding[]
+  // El cheque (de tercero endosado, o propio emitido) que canceló este
+  // pago, si no fue en efectivo/transferencia - ver model Check.
+  check        Check?
 
   @@unique([tenantId, id])
   @@index([tenantId, purchaseInvoiceId])

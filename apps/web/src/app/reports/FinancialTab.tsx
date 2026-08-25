@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import NewFinancialAccountModal from './NewFinancialAccountModal';
 import NewFinancialTransactionModal from './NewFinancialTransactionModal';
+import TransferBetweenAccountsModal from './TransferBetweenAccountsModal';
 
 const PROVIDER_LABELS: Record<FinancialAccountProvider, string> = {
   BANK: 'Banco',
@@ -17,6 +18,7 @@ export default function FinancialTab() {
   const queryClient = useQueryClient();
   const [newAccountOpen, setNewAccountOpen] = useState(false);
   const [newTxOpen, setNewTxOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const [selectedId, setSelectedId] = useState('');
 
   const accountsQuery = useQuery({
@@ -52,12 +54,22 @@ export default function FinancialTab() {
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Cuentas financieras</h2>
-          <button
-            onClick={() => setNewAccountOpen(true)}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
-          >
-            + Nueva cuenta
-          </button>
+          <div className="flex gap-2">
+            {accounts.length >= 2 && (
+              <button
+                onClick={() => setTransferOpen(true)}
+                className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800"
+              >
+                Transferir entre cuentas
+              </button>
+            )}
+            <button
+              onClick={() => setNewAccountOpen(true)}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
+            >
+              + Nueva cuenta
+            </button>
+          </div>
         </div>
         {accountsQuery.isLoading ? (
           <div className="flex h-24 items-center justify-center text-slate-500">Cargando...</div>
@@ -185,6 +197,13 @@ export default function FinancialTab() {
       {newAccountOpen && <NewFinancialAccountModal onClose={() => setNewAccountOpen(false)} />}
       {newTxOpen && (
         <NewFinancialTransactionModal financialAccountId={selectedId} onClose={() => setNewTxOpen(false)} />
+      )}
+      {transferOpen && (
+        <TransferBetweenAccountsModal
+          accounts={accounts}
+          defaultFromId={selectedId || accounts[0]?.id || ''}
+          onClose={() => setTransferOpen(false)}
+        />
       )}
     </div>
   );

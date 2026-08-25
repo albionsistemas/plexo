@@ -1,0 +1,14 @@
+import { Module } from '@nestjs/common';
+import { AccountingModule } from '@plexo/accounting';
+import { InvoicingModule } from '@plexo/invoicing';
+import { ReportsFinancialModule } from '@plexo/reports-financial';
+import { TreasuryModule as TreasuryLibModule } from '@plexo/treasury';
+import { TreasuryController } from './treasury.controller.js';
+import { TreasuryService } from './treasury.service.js';
+
+@Module({
+  imports: [TreasuryLibModule, ReportsFinancialModule, InvoicingModule, AccountingModule],
+  controllers: [TreasuryController],
+  providers: [TreasuryService],
+})
+export class TreasuryModule {}

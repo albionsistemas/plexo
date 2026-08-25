@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AccountingService } from '@plexo/accounting';
-import { getTenantDb, Prisma } from '@plexo/database';
+import { getTenantDb, getUserId, Prisma } from '@plexo/database';
 import { InventoryService } from '@plexo/inventory';
 import { InvoicingService, type CreateCreditNoteDto, type RecordReceiptDto } from '@plexo/invoicing';
 import { resolveEmailFrom, TenantSettingsService } from '@plexo/tenant-settings';
+import { CheckService } from '@plexo/treasury';
 import type { CreateSaleDto } from './dto/create-sale.dto.js';
 
 /**
@@ -27,6 +28,7 @@ export class SalesService {
     private readonly inventoryService: InventoryService,
     private readonly accountingService: AccountingService,
     private readonly tenantSettingsService: TenantSettingsService,
+    private readonly checkService: CheckService,
   ) {}
 
   async createSale(dto: CreateSaleDto) {
@@ -202,6 +204,37 @@ export class SalesService {
       amount: receipt.amount,
       date: receipt.paidAt,
     });
+
+    // Un cheque de tercero siempre nace de un Recibo (ver
+    // CheckService.registerThirdPartyCheck) - si el DTO trae el detalle,
+    // lo registramos en Cartera en la misma transacción. No afecta
+    // FinancialAccount.currentBalance todavía (recién al depositarlo, ver
+    // apps/api/src/app/treasury/) ni el asiento de arriba, que ya trató
+    // este cobro como "cash" igual que cualquier otro método - eso es a
+    // propósito, ver el comentario en CheckService.
+    if (dto.check) {
+      const userId = getUserId();
+      if (!userId) {
+        throw new BadRequestException('An authenticated user is required to record a check');
+      }
+      const invoice = await getTenantDb().invoice.findUnique({
+        where: { id: dto.invoiceId },
+        select: { customerId: true },
+      });
+      await this.checkService.registerThirdPartyCheck({
+        receiptId: receipt.id,
+        customerId: invoice?.customerId ?? null,
+        amount: receipt.amount.toNumber(),
+        number: dto.check.number,
+        bankName: dto.check.bankName,
+        drawerCuit: dto.check.drawerCuit,
+        format: dto.check.format,
+        issueDate: new Date(dto.check.issueDate),
+        dueDate: new Date(dto.check.dueDate),
+        createdByUserId: userId,
+      });
+    }
+
     return receipt;
   }
 }

@@ -97,11 +97,21 @@ export interface CreateSaleInput {
   lines: CreateSaleLineInput[];
 }
 
+export interface ReceiptCheckInput {
+  number: string;
+  bankName: string;
+  drawerCuit?: string;
+  format?: 'PHYSICAL' | 'ECHEQ';
+  issueDate: string;
+  dueDate: string;
+}
+
 export interface RecordReceiptInput {
   invoiceId: string;
   amount: number;
   method: string;
   financialAccountId?: string;
+  check?: ReceiptCheckInput;
 }
 
 export interface CreateCreditNoteLineInput {

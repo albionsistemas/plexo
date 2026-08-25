@@ -77,6 +77,17 @@ const PURCHASES_NO_RECEIPT_ACCOUNT = {
 // session already created manually in this chart of accounts.
 const CASH_ACCOUNT = { code: '1.1.03', name: 'Caja', type: 'ASSET' as const };
 
+// Gasto de rechazo que se le recobra al cliente (ver
+// postCheckRejectionJournalEntry) - un ingreso genuino, no una reversa de
+// Ventas (el rechazo de un cheque no anula la venta original, sólo el
+// cobro), así que va a su propia cuenta de Otros Ingresos, no a
+// SALES_REVENUE_ACCOUNT.
+const CHECK_REJECTION_FEE_ACCOUNT = {
+  code: '4.2.01',
+  name: 'Gastos de Cheques Rechazados Recuperados',
+  type: 'INCOME' as const,
+};
+
 // Retenciones que EL TENANT practica a sus proveedores al pagarles
 // (Ganancias/IVA/IIBB) - ver postSupplierPaymentJournalEntry. Pasivo: lo
 // retenido no es nuestro, hay que depositarlo en AFIP/ARBA/etc. (ese
@@ -197,6 +208,13 @@ export interface PostSupplierPaymentJournalEntryInput {
 export interface PostReceiptJournalEntryInput {
   receiptId: string;
   amount: Prisma.Decimal | number | string;
+  date?: Date;
+}
+
+export interface PostCheckRejectionJournalEntryInput {
+  checkId: string;
+  amount: Prisma.Decimal | number | string;
+  feeAmount?: Prisma.Decimal | number | string;
   date?: Date;
 }
 
@@ -506,6 +524,7 @@ export class AccountingService {
       purchaseCreditNoteId?: string;
       supplierPaymentId?: string;
       receiptId?: string;
+      checkId?: string;
     },
   ): Promise<JournalEntryWithLines> {
     const tenantId = getTenantId();
@@ -541,6 +560,7 @@ export class AccountingService {
         purchaseCreditNoteId: opts.purchaseCreditNoteId,
         supplierPaymentId: opts.supplierPaymentId,
         receiptId: opts.receiptId,
+        checkId: opts.checkId,
         createdById,
         lines: {
           createMany: {
@@ -853,6 +873,47 @@ export class AccountingService {
       ],
       { date: input.date, receiptId: input.receiptId },
     );
+  }
+
+  /**
+   * Rebote de un cheque de tercero (ver CheckService.rejectCheck /
+   * apps/api's TreasuryService) - reabre la deuda del cliente reversando
+   * exactamente el Dr Caja / Cr Deudores que postReceiptJournalEntry ya
+   * hizo al cobrarlo, sin importar si después se depositó/endosó (ese
+   * asiento original nunca sabía que era un cheque, sólo que era un
+   * cobro). El gasto de rechazo opcional que se le recobra al cliente es
+   * un ingreso genuino aparte, no una reversa - tres líneas balanceadas:
+   * Dr Deudores (amount+fee) = Cr Caja (amount) + Cr Gastos de Cheques
+   * Rechazados (fee). Mismo molde inmutable que
+   * reverseSupplierReturnAgainstPayable - nunca se edita el asiento
+   * original, se postea uno nuevo.
+   */
+  async postCheckRejectionJournalEntry(
+    input: PostCheckRejectionJournalEntryInput,
+  ): Promise<JournalEntryWithLines | undefined> {
+    const amount = new Prisma.Decimal(input.amount);
+    const feeAmount = new Prisma.Decimal(input.feeAmount ?? 0);
+    if (amount.lte(0) && feeAmount.lte(0)) {
+      return undefined;
+    }
+    const [receivable, cash, fee] = await Promise.all([
+      this.getOrCreateAccount(ACCOUNTS_RECEIVABLE_ACCOUNT),
+      amount.gt(0) ? this.getOrCreateAccount(CASH_ACCOUNT) : Promise.resolve(undefined),
+      feeAmount.gt(0) ? this.getOrCreateAccount(CHECK_REJECTION_FEE_ACCOUNT) : Promise.resolve(undefined),
+    ]);
+    const lines: PostJournalEntryDto['lines'] = [
+      { accountId: receivable.id, direction: 'DEBIT', amount: amount.add(feeAmount).toNumber() },
+    ];
+    if (cash) {
+      lines.push({ accountId: cash.id, direction: 'CREDIT', amount: amount.toNumber() });
+    }
+    if (fee) {
+      lines.push({ accountId: fee.id, direction: 'CREDIT', amount: feeAmount.toNumber() });
+    }
+    return this.createBalancedEntry(`Rechazo de cheque - ${input.checkId}`, lines, {
+      date: input.date,
+      checkId: input.checkId,
+    });
   }
 
   /** The only way to correct a posted entry: a new entry with the same

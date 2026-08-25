@@ -1,11 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { AccountingService } from '@plexo/accounting';
-import { Prisma } from '@plexo/database';
+import { getTenantDb, getUserId, Prisma } from '@plexo/database';
 import {
   PurchaseInvoiceService,
   type CreatePurchaseInvoiceDto,
   type RecordSupplierPaymentDto,
 } from '@plexo/purchases';
+import { CheckService } from '@plexo/treasury';
 
 /**
  * Composes PurchaseInvoiceService (libs/modules/purchases - creates the
@@ -28,6 +29,7 @@ export class PurchaseInvoicesService {
   constructor(
     private readonly purchaseInvoiceService: PurchaseInvoiceService,
     private readonly accountingService: AccountingService,
+    private readonly checkService: CheckService,
   ) {}
 
   list() {
@@ -70,6 +72,10 @@ export class PurchaseInvoicesService {
   }
 
   async recordPayment(invoiceId: string, dto: RecordSupplierPaymentDto) {
+    if (dto.endorseCheckId && dto.ownCheck) {
+      throw new BadRequestException('No se puede endosar un cheque de cartera y emitir uno propio en el mismo pago');
+    }
+
     const payment = await this.purchaseInvoiceService.recordPayment(invoiceId, dto);
     await this.accountingService.postSupplierPaymentJournalEntry({
       supplierPaymentId: payment.id,
@@ -79,6 +85,41 @@ export class PurchaseInvoicesService {
       // as createInvoice's supplierInvoiceDate above.
       date: payment.paidAt,
     });
+
+    // Un pago puede cancelarse endosando un cheque de cartera o emitiendo
+    // uno propio diferido, en vez de efectivo/transferencia - a lo sumo
+    // uno de los dos (validado arriba). Ninguno de los dos mueve
+    // FinancialAccount.currentBalance acá: endosar nunca tocó una cuenta
+    // propia (el cheque cambia de manos, no pasó por nuestro banco); un
+    // propio recién emitido es diferido, sale de la cuenta al acreditarse
+    // (ver apps/api/src/app/treasury/).
+    if (dto.endorseCheckId || dto.ownCheck) {
+      const invoice = await getTenantDb().purchaseInvoice.findUnique({
+        where: { id: invoiceId },
+        select: { supplierId: true },
+      });
+      const userId = getUserId();
+      if (!userId) {
+        throw new BadRequestException('An authenticated user is required to record a check');
+      }
+      if (dto.endorseCheckId) {
+        await this.checkService.endorseCheck(dto.endorseCheckId, payment.id, invoice?.supplierId ?? null);
+      } else if (dto.ownCheck) {
+        await this.checkService.issueOwnCheck({
+          supplierPaymentId: payment.id,
+          supplierId: invoice?.supplierId ?? null,
+          amount: payment.amount.toNumber(),
+          number: dto.ownCheck.number,
+          bankName: dto.ownCheck.bankName,
+          format: dto.ownCheck.format,
+          issueDate: new Date(dto.ownCheck.issueDate),
+          dueDate: new Date(dto.ownCheck.dueDate),
+          financialAccountId: dto.ownCheck.financialAccountId,
+          createdByUserId: userId,
+        });
+      }
+    }
+
     return payment;
   }
 }

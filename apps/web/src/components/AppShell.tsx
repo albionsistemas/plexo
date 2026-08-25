@@ -74,6 +74,7 @@ const NAV_ENTRIES: NavEntry[] = [
     items: [
       { href: '/accounting', label: 'Contabilidad' },
       { href: '/taxes', label: 'Impuestos' },
+      { href: '/treasury', label: 'Cartera de Cheques' },
       { href: '/reports', label: 'Reportes' },
     ],
   },

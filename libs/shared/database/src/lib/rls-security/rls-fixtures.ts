@@ -17,6 +17,7 @@ export interface TenantFixture {
     articleVariantId: string;
     purchaseInvoiceId: string;
     purchaseCreditNoteId: string;
+    checkId: string;
     invoiceId: string;
     accountingAccountId: string;
     journalEntryId: string;
@@ -319,8 +320,23 @@ export async function seedTenantGraph(client: PoolClient, tenantId: string, labe
     taxAmount: 2.1,
     lineTotal: 12.1,
   });
-  await ins('receipts', { tenantId, invoiceId, amount: 50, method: 'transfer', financialAccountId });
+  const receiptId = await ins('receipts', { tenantId, invoiceId, amount: 50, method: 'transfer', financialAccountId });
   await ins('financial_transactions', { tenantId, financialAccountId, amount: 50 });
+  const checkId = await ins('checks', {
+    tenantId,
+    kind: 'THIRD_PARTY',
+    format: 'PHYSICAL',
+    number: `CHK-${label}`,
+    bankName: 'Banco RLS',
+    amount: 50,
+    issueDate: new Date(),
+    dueDate: new Date(),
+    status: 'DEPOSITED',
+    customerId: companyId,
+    receiptId,
+    financialAccountId,
+    createdByUserId: userId,
+  });
   await ins('stock_movements', {
     tenantId,
     warehouseId,
@@ -375,6 +391,7 @@ export async function seedTenantGraph(client: PoolClient, tenantId: string, labe
       articleVariantId,
       purchaseInvoiceId,
       purchaseCreditNoteId,
+      checkId,
       invoiceId,
       accountingAccountId: payableAccountId,
       journalEntryId,
@@ -439,6 +456,7 @@ const CLEANUP_TABLES_REVERSE = [
   'quote_lines',
   'quotes',
   'financial_transactions',
+  'checks',
   'receipts',
   'credit_note_lines',
   'credit_notes',

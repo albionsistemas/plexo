@@ -88,6 +88,14 @@ export interface RecordFinancialTransactionInput {
   externalRef?: string;
 }
 
+export interface TransferBetweenAccountsInput {
+  fromFinancialAccountId: string;
+  toFinancialAccountId: string;
+  amount: number;
+  occurredAt?: string;
+  note?: string;
+}
+
 export const reportsApi = {
   getIncomeStatement: (range: DateRange) =>
     api.get<IncomeStatement>('/reports/pnl/income-statement', { params: range }).then((r) => r.data),
@@ -103,6 +111,10 @@ export const reportsApi = {
     api.post<FinancialAccount>('/reports/financial/accounts', dto).then((r) => r.data),
   recordFinancialTransaction: (dto: RecordFinancialTransactionInput) =>
     api.post<FinancialTransaction>('/reports/financial/transactions', dto).then((r) => r.data),
+  transferBetweenAccounts: (dto: TransferBetweenAccountsInput) =>
+    api
+      .post<{ from: FinancialTransaction; to: FinancialTransaction }>('/reports/financial/transfers', dto)
+      .then((r) => r.data),
   reconcileTransaction: (id: string) =>
     api.post<FinancialTransaction>(`/reports/financial/transactions/${id}/reconcile`).then((r) => r.data),
   listUnreconciledTransactions: (financialAccountId?: string) =>

@@ -555,6 +555,43 @@ export class InvoicingService {
     });
   }
 
+  /**
+   * Reabre balanceDue tras el rechazo de un cheque de tercero que había
+   * cobrado esta factura (ver CheckService.rejectCheck / apps/api's
+   * TreasuryService, que es quien resuelve invoiceId a partir de
+   * check.receiptId - @plexo/invoicing nunca importa @plexo/treasury).
+   * `amount` deshace exactamente el cobro original (siempre ≤ lo que en su
+   * momento se restó, balanceDue nunca puede superar total por esto solo);
+   * `feeAmount` es deuda genuinamente nueva (el gasto de rechazo que se le
+   * recobra al cliente), no una reversa. Mismo cálculo de status que
+   * recordReceipt (PAID si llega a cero - no debería pasar acá con
+   * amount+fee > 0 -, OVERDUE si ya venció, si no PARTIALLY_PAID). No
+   * postea el asiento contable - eso es
+   * AccountingService.postCheckRejectionJournalEntry, compuesto aparte por
+   * la misma composición-root.
+   */
+  async reopenInvoiceBalance(
+    invoiceId: string,
+    amount: Prisma.Decimal | number | string,
+    feeAmount: Prisma.Decimal | number | string = 0,
+  ): Promise<Invoice> {
+    const db = getTenantDb();
+    const invoice = await db.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    const balanceDue = invoice.balanceDue.add(amount).add(feeAmount);
+    const stillOverdue = Boolean(invoice.dueDate && invoice.dueDate < new Date());
+    return db.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        balanceDue,
+        status: balanceDue.isZero() ? 'PAID' : stillOverdue ? 'OVERDUE' : 'PARTIALLY_PAID',
+      },
+    });
+  }
+
   async recordReceipt(dto: RecordReceiptDto): Promise<Receipt> {
     const db = getTenantDb();
     const tenantId = getTenantId();

@@ -3,11 +3,12 @@ import { AccountingModule } from '@plexo/accounting';
 import { InventoryModule } from '@plexo/inventory';
 import { InvoicingModule } from '@plexo/invoicing';
 import { TenantSettingsModule } from '@plexo/tenant-settings';
+import { TreasuryModule } from '@plexo/treasury';
 import { SalesController } from './sales.controller.js';
 import { SalesService } from './sales.service.js';
 
 @Module({
-  imports: [InventoryModule, InvoicingModule, AccountingModule, TenantSettingsModule],
+  imports: [InventoryModule, InvoicingModule, AccountingModule, TenantSettingsModule, TreasuryModule],
   controllers: [SalesController],
   providers: [SalesService],
 })
