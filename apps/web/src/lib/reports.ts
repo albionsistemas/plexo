@@ -96,6 +96,58 @@ export interface TransferBetweenAccountsInput {
   note?: string;
 }
 
+export type CashflowLineItemType = 'INVOICE' | 'CHECK';
+
+export interface CashflowLineItem {
+  id: string;
+  type: CashflowLineItemType;
+  reference: string;
+  counterparty: string | null;
+  dueDate: string | null;
+  amount: number;
+}
+
+export interface CashflowWeekBucket {
+  weekStart: string;
+  weekEnd: string;
+  inflows: number;
+  outflows: number;
+  netChange: number;
+  projectedBalance: number;
+  invoiceInflows: CashflowLineItem[];
+  checkInflows: CashflowLineItem[];
+  invoiceOutflows: CashflowLineItem[];
+  checkOutflows: CashflowLineItem[];
+}
+
+export interface CashflowProjection {
+  fromDate: string;
+  toDate: string;
+  openingBalance: number;
+  totalInflows: number;
+  totalOutflows: number;
+  closingBalance: number;
+  hasNegativeWeek: boolean;
+  weeks: CashflowWeekBucket[];
+}
+
+export interface CashflowProjectionParams {
+  period?: '30' | '60' | '90';
+  fromDate?: string;
+  toDate?: string;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 export const reportsApi = {
   getIncomeStatement: (range: DateRange) =>
     api.get<IncomeStatement>('/reports/pnl/income-statement', { params: range }).then((r) => r.data),
@@ -123,8 +175,21 @@ export const reportsApi = {
         params: financialAccountId ? { financialAccountId } : undefined,
       })
       .then((r) => r.data),
+  listTransactions: (financialAccountId: string) =>
+    api
+      .get<FinancialTransaction[]>(`/reports/financial/accounts/${financialAccountId}/transactions`)
+      .then((r) => r.data),
   getReconciliationSummary: (financialAccountId: string) =>
     api
       .get<ReconciliationSummary>(`/reports/financial/accounts/${financialAccountId}/reconciliation`)
       .then((r) => r.data),
+  getCashflowProjection: (params: CashflowProjectionParams) =>
+    api.get<CashflowProjection>('/reports/financial/cashflow-projection', { params }).then((r) => r.data),
+  downloadCashflowProjectionExcel: async (params: CashflowProjectionParams) => {
+    const res = await api.get('/reports/financial/cashflow-projection/excel', {
+      params,
+      responseType: 'blob',
+    });
+    downloadBlob(new Blob([res.data]), 'flujo-de-caja.xlsx');
+  },
 };

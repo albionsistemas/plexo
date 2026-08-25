@@ -1,5 +1,7 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, StreamableFile } from '@nestjs/common';
 import { RequireModuleAccess } from '@plexo/auth';
+import { CashflowProjectionExcelService } from './cashflow-projection-excel.service.js';
+import { CashflowProjectionQueryDto } from './dto/cashflow-projection-query.dto.js';
 import { CreateFinancialAccountDto } from './dto/create-financial-account.dto.js';
 import { RecordFinancialTransactionDto } from './dto/record-financial-transaction.dto.js';
 import { TransferBetweenAccountsDto } from './dto/transfer-between-accounts.dto.js';
@@ -9,7 +11,10 @@ const MODULE = 'reports-financial';
 
 @Controller('reports/financial')
 export class ReportsFinancialController {
-  constructor(private readonly reportsFinancialService: ReportsFinancialService) {}
+  constructor(
+    private readonly reportsFinancialService: ReportsFinancialService,
+    private readonly cashflowProjectionExcelService: CashflowProjectionExcelService,
+  ) {}
 
   @RequireModuleAccess(MODULE, 'write')
   @Post('accounts')
@@ -51,5 +56,28 @@ export class ReportsFinancialController {
   @Get('accounts/:id/reconciliation')
   getReconciliationSummary(@Param('id', ParseUUIDPipe) id: string) {
     return this.reportsFinancialService.getReconciliationSummary(id);
+  }
+
+  @RequireModuleAccess(MODULE, 'read')
+  @Get('accounts/:id/transactions')
+  listTransactions(@Param('id', ParseUUIDPipe) id: string) {
+    return this.reportsFinancialService.listTransactions(id);
+  }
+
+  @RequireModuleAccess(MODULE, 'read')
+  @Get('cashflow-projection')
+  getCashflowProjection(@Query() query: CashflowProjectionQueryDto) {
+    return this.reportsFinancialService.getCashflowProjection(query);
+  }
+
+  @RequireModuleAccess(MODULE, 'read')
+  @Get('cashflow-projection/excel')
+  async downloadCashflowProjectionExcel(@Query() query: CashflowProjectionQueryDto) {
+    const result = await this.reportsFinancialService.getCashflowProjection(query);
+    const buffer = await this.cashflowProjectionExcelService.generate(result);
+    return new StreamableFile(buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="flujo-de-caja_${result.fromDate}_${result.toDate}.xlsx"`,
+    });
   }
 }
