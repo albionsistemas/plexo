@@ -228,6 +228,15 @@ export class ReportsFinancialService {
    * consulta Invoice/PurchaseInvoice/Check directo por getTenantDb(), mismo
    * criterio que el resto de @plexo/reports-financial (regla del repo: un
    * lib module nunca importa el Service de otro).
+   *
+   * Sólo moneda base: FinancialAccount no tiene currencyId (ver schema.prisma)
+   * - currentBalance no está atado a ninguna moneda declarada, así que no hay
+   * forma correcta de convertir un balanceDue en otra Currency a algo
+   * comparable con esa suma. En vez de sumar montos de distintas monedas como
+   * si fueran uno solo (número sin sentido financiero), se excluyen las
+   * facturas/facturas de compra en moneda no-base del cálculo - mismo
+   * criterio que el resto del proyecto usa para no inventar una conversión
+   * que el modelo de datos no respalda.
    */
   async getCashflowProjection(query: CashflowProjectionQueryDto): Promise<CashflowProjection> {
     const from = query.fromDate ? dateOnlyUTC(new Date(query.fromDate)) : dateOnlyUTC(new Date());
@@ -242,8 +251,16 @@ export class ReportsFinancialService {
     const db = getTenantDb();
     const [accounts, invoices, purchaseInvoices, checks] = await Promise.all([
       db.financialAccount.findMany(),
-      db.invoice.findMany({ where: { balanceDue: { gt: 0 }, status: { notIn: ['DRAFT', 'CANCELLED'] } } }),
-      db.purchaseInvoice.findMany({ where: { balanceDue: { gt: 0 }, status: { not: 'CANCELLED' } } }),
+      db.invoice.findMany({
+        where: {
+          balanceDue: { gt: 0 },
+          status: { notIn: ['DRAFT', 'CANCELLED'] },
+          currency: { isBase: true },
+        },
+      }),
+      db.purchaseInvoice.findMany({
+        where: { balanceDue: { gt: 0 }, status: { not: 'CANCELLED' }, currency: { isBase: true } },
+      }),
       db.check.findMany({
         where: {
           OR: [

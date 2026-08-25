@@ -21,11 +21,14 @@ function money(amount: string) {
   return `$${Number(amount).toFixed(2)}`;
 }
 
-/** Comparación por fecha calendario (YYYY-MM-DD), no por instante - evita
- * el mismo corrimiento de huso horario que ya se corrigió en la columna de
- * vencimiento (ver PROGRESS.md, sesión 2026-08-25). */
-function isoDateOnly(date: Date) {
-  return date.toISOString().slice(0, 10);
+/** Comparación por fecha calendario (YYYY-MM-DD) en huso horario Argentina,
+ * no UTC ni por instante - .toISOString() ya cruzó al día UTC siguiente
+ * entre las 21:00 y 23:59 ART, corriendo "hoy" un día para adelante durante
+ * esas horas (mismo tipo de bug de timezone que ya se corrigió en la
+ * columna de vencimiento, ver PROGRESS.md sesión 2026-08-25 - acá afecta la
+ * fecha de referencia en vez de la de vencimiento). */
+function argDateOnly(date: Date) {
+  return date.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
 }
 
 const SUB_TABS = [
@@ -78,8 +81,8 @@ export default function ChecksTab() {
 
   const kpis = useMemo(() => {
     const inPortfolio = allChecks.filter((c) => c.kind === 'THIRD_PARTY' && c.status === 'PORTFOLIO');
-    const today = isoDateOnly(new Date());
-    const in7Days = isoDateOnly(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+    const today = argDateOnly(new Date());
+    const in7Days = argDateOnly(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
     const dueSoon = allChecks.filter((c) => {
       if (c.kind !== 'THIRD_PARTY' || (c.status !== 'PORTFOLIO' && c.status !== 'DEPOSITED')) return false;
       const due = c.dueDate.slice(0, 10);
@@ -164,7 +167,7 @@ export default function ChecksTab() {
               onClick={() => setClearingId(check.id)}
               className="text-xs font-medium text-green-600 dark:text-green-400 transition hover:text-green-700 dark:hover:text-green-300"
             >
-              {check.kind === 'OWN' ? 'Acreditado en Banco' : 'Acreditar'}
+              {check.kind === 'OWN' ? 'Acreditar en Banco' : 'Acreditar'}
             </button>
           ))}
         {canReject && (

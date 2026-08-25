@@ -155,7 +155,13 @@ export default function CashflowTab() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => data && reportsApi.downloadCashflowProjectionExcel(params)}
+            onClick={() =>
+              data &&
+              reportsApi.downloadCashflowProjectionExcel(params, {
+                fromDate: data.fromDate,
+                toDate: data.toDate,
+              })
+            }
             disabled={!data}
             className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-50"
           >

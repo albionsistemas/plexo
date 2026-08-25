@@ -418,7 +418,7 @@ describe('ReportsFinancialService.getCashflowProjection', () => {
     expect(result.closingBalance).toBe(-400);
   });
 
-  it('queries invoices/purchase invoices only for outstanding, non-cancelled balances (never re-filters in memory)', async () => {
+  it('queries invoices/purchase invoices only for outstanding, non-cancelled, base-currency balances (never re-filters in memory)', async () => {
     const service = new ReportsFinancialService();
     const invoiceFindMany = jest.fn().mockResolvedValue([]);
     const purchaseInvoiceFindMany = jest.fn().mockResolvedValue([]);
@@ -434,10 +434,14 @@ describe('ReportsFinancialService.getCashflowProjection', () => {
     );
 
     expect(invoiceFindMany).toHaveBeenCalledWith({
-      where: { balanceDue: { gt: 0 }, status: { notIn: ['DRAFT', 'CANCELLED'] } },
+      where: {
+        balanceDue: { gt: 0 },
+        status: { notIn: ['DRAFT', 'CANCELLED'] },
+        currency: { isBase: true },
+      },
     });
     expect(purchaseInvoiceFindMany).toHaveBeenCalledWith({
-      where: { balanceDue: { gt: 0 }, status: { not: 'CANCELLED' } },
+      where: { balanceDue: { gt: 0 }, status: { not: 'CANCELLED' }, currency: { isBase: true } },
     });
   });
 

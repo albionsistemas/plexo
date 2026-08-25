@@ -185,11 +185,14 @@ export const reportsApi = {
       .then((r) => r.data),
   getCashflowProjection: (params: CashflowProjectionParams) =>
     api.get<CashflowProjection>('/reports/financial/cashflow-projection', { params }).then((r) => r.data),
-  downloadCashflowProjectionExcel: async (params: CashflowProjectionParams) => {
+  downloadCashflowProjectionExcel: async (
+    params: CashflowProjectionParams,
+    range: { fromDate: string; toDate: string },
+  ) => {
     const res = await api.get('/reports/financial/cashflow-projection/excel', {
       params,
       responseType: 'blob',
     });
-    downloadBlob(new Blob([res.data]), 'flujo-de-caja.xlsx');
+    downloadBlob(new Blob([res.data]), `flujo-de-caja_${range.fromDate}_${range.toDate}.xlsx`);
   },
 };
