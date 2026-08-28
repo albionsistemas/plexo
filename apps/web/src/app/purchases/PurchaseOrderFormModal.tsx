@@ -103,7 +103,7 @@ export default function PurchaseOrderFormModal({ onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
+      <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Nueva orden de compra</h2>
           <button onClick={onClose} className="text-slate-500 transition hover:text-slate-700 dark:hover:text-slate-300">
@@ -115,7 +115,7 @@ export default function PurchaseOrderFormModal({ onClose }: Props) {
           <div className="py-10 text-center text-slate-500">Cargando...</div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
               <Field
                 label="Proveedor"
                 action={
@@ -170,16 +170,7 @@ export default function PurchaseOrderFormModal({ onClose }: Props) {
             </Field>
 
             <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm text-slate-600 dark:text-slate-400">Líneas</label>
-                <button
-                  type="button"
-                  onClick={addLine}
-                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
-                >
-                  + agregar línea
-                </button>
-              </div>
+              <label className="text-sm text-slate-600 dark:text-slate-400">Líneas</label>
               {lines.map((line, index) => (
                 <div key={index} className="flex items-center gap-2">
                   <ArticlePicker
@@ -217,6 +208,13 @@ export default function PurchaseOrderFormModal({ onClose }: Props) {
                   )}
                 </div>
               ))}
+              <button
+                type="button"
+                onClick={addLine}
+                className="flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-700 py-2.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 transition hover:border-indigo-400 hover:bg-indigo-50 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/30"
+              >
+                + Agregar línea
+              </button>
             </div>
 
             {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
