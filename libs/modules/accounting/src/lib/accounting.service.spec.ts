@@ -817,7 +817,11 @@ describe('AccountingService rounding edge cases (fractional cents)', () => {
     );
 
     const createArgs = (db.journalEntry.create as jest.Mock).mock.calls[0][0];
-    const lines = createArgs.data.lines.createMany.data as { direction: string; amount: number }[];
+    const lines = createArgs.data.lines.createMany.data as {
+      accountId: string;
+      direction: string;
+      amount: number;
+    }[];
     const debit = lines.filter((l) => l.direction === 'DEBIT').reduce((s, l) => s + l.amount, 0);
     const credit = lines.filter((l) => l.direction === 'CREDIT').reduce((s, l) => s + l.amount, 0);
     // 99.99 cash + (3.0033 + 1.4967 = 4.5) withheld = 104.49 cancelled.

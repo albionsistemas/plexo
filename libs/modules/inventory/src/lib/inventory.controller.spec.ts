@@ -1,3 +1,4 @@
+import type { ArticleAttachmentsService } from './article-attachments.service.js';
 import type { ArticleImageService } from './article-image.service.js';
 import type { ArticleImportService } from './article-import.service.js';
 import { InventoryController } from './inventory.controller.js';
@@ -9,6 +10,7 @@ describe('InventoryController.recordMovement', () => {
       inventoryService as InventoryService,
       {} as ArticleImportService,
       {} as ArticleImageService,
+      {} as ArticleAttachmentsService,
     );
   }
 
