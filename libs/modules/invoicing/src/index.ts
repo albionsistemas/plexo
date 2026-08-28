@@ -2,6 +2,7 @@ export * from './lib/invoicing.module.js';
 export * from './lib/invoicing.service.js';
 export * from './lib/email-sender.port.js';
 export * from './lib/electronic-invoicing.port.js';
+export * from './lib/bna-exchange-rate.port.js';
 export * from './lib/dto/create-credit-note.dto.js';
 export * from './lib/dto/create-currency.dto.js';
 export * from './lib/dto/create-invoice.dto.js';

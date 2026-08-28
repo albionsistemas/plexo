@@ -9,6 +9,7 @@ import {
   IsEnum,
   IsNumber,
   IsOptional,
+  IsPositive,
   IsUUID,
   Max,
   Min,
@@ -33,6 +34,11 @@ export class CreateSaleDto {
 
   @IsUUID()
   currencyId!: string;
+
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  exchangeRate?: number;
 
   @IsOptional()
   @IsNumber()

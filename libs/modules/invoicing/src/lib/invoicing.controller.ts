@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { Roles } from '@plexo/auth';
 import { CreateCurrencyDto } from './dto/create-currency.dto.js';
 import { RecordExchangeRateDto } from './dto/record-exchange-rate.dto.js';
@@ -28,6 +28,17 @@ export class InvoicingController {
   @Post('exchange-rates')
   recordExchangeRate(@Body() dto: RecordExchangeRateDto) {
     return this.invoicingService.recordExchangeRate(dto);
+  }
+
+  @Get('exchange-rates')
+  listExchangeRateHistory(@Query('currencyId', ParseUUIDPipe) currencyId: string) {
+    return this.invoicingService.listExchangeRateHistory(currencyId);
+  }
+
+  @Roles('OWNER', 'ADMIN', 'ACCOUNTANT')
+  @Post('exchange-rates/sync-bna')
+  syncBnaRate() {
+    return this.invoicingService.syncBnaRate();
   }
 
   @Get('invoices')

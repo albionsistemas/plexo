@@ -329,26 +329,43 @@ export default function CompanyFormModal({
               </Field>
             </div>
 
-            <Field label="Logo (URL)">
-              <div className="flex items-center gap-3">
-                {logoUrl && (
-                  <img
-                    src={logoUrl}
-                    alt=""
-                    className="h-10 w-10 shrink-0 rounded-lg border border-slate-300 dark:border-slate-700 object-cover"
-                    onError={(e) => {
-                      e.currentTarget.style.visibility = 'hidden';
-                    }}
-                  />
-                )}
-                <input
-                  className={inputClass + ' flex-1'}
-                  value={logoUrl}
-                  onChange={(e) => setLogoUrl(e.target.value)}
-                  placeholder="https://..."
-                />
+            <div className="grid grid-cols-4 gap-4">
+              <div className={effectiveRoles.includes('CUSTOMER') ? 'col-span-3' : 'col-span-4'}>
+                <Field label="Logo (URL)">
+                  <div className="flex items-center gap-3">
+                    {logoUrl && (
+                      <img
+                        src={logoUrl}
+                        alt=""
+                        className="h-10 w-10 shrink-0 rounded-lg border border-slate-300 dark:border-slate-700 object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.visibility = 'hidden';
+                        }}
+                      />
+                    )}
+                    <input
+                      className={inputClass + ' flex-1'}
+                      value={logoUrl}
+                      onChange={(e) => setLogoUrl(e.target.value)}
+                      placeholder="https://..."
+                    />
+                  </div>
+                </Field>
               </div>
-            </Field>
+              {effectiveRoles.includes('CUSTOMER') && (
+                <div className="col-span-1">
+                  <Field label="Límite de crédito">
+                    <input
+                      type="number"
+                      step="any"
+                      className={inputClass}
+                      value={creditLimit}
+                      onChange={(e) => setCreditLimit(e.target.value)}
+                    />
+                  </Field>
+                </div>
+              )}
+            </div>
 
             {!lockedRole && (
               <Field label="Roles">
@@ -364,18 +381,6 @@ export default function CompanyFormModal({
                     </label>
                   ))}
                 </div>
-              </Field>
-            )}
-
-            {effectiveRoles.includes('CUSTOMER') && (
-              <Field label="Límite de crédito">
-                <input
-                  type="number"
-                  step="any"
-                  className={inputClass}
-                  value={creditLimit}
-                  onChange={(e) => setCreditLimit(e.target.value)}
-                />
               </Field>
             )}
 

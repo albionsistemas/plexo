@@ -5,6 +5,16 @@ export interface Currency {
   code: string;
   name: string;
   isBase: boolean;
+  // Última cotización cargada (ExchangeRateHistory) - 1 para la moneda
+  // base, null si todavía no se cargó ninguna.
+  latestRate: number | null;
+}
+
+export interface ExchangeRateHistoryEntry {
+  id: string;
+  currencyId: string;
+  rate: string;
+  effectiveAt: string;
 }
 
 export interface InvoiceLine {
@@ -91,6 +101,10 @@ export interface CreateSaleInput {
   documentLetter: 'A' | 'B' | 'C' | 'M';
   branchId: string;
   currencyId: string;
+  // Override puntual de la cotización de este comprobante - si no viene, el
+  // backend resuelve la última cargada en el historial. Sin efecto para la
+  // moneda base.
+  exchangeRate?: number;
   globalDiscountPercent?: number;
   dueDate?: string;
   pricesIncludeTax?: boolean;
@@ -125,10 +139,25 @@ export interface CreateCreditNoteInput {
   lines: CreateCreditNoteLineInput[];
 }
 
+export interface CreateCurrencyInput {
+  code: string;
+  name: string;
+  isBase?: boolean;
+}
+
 export const invoicingApi = {
   listInvoices: () => api.get<Invoice[]>('/invoicing/invoices').then((r) => r.data),
   getInvoice: (id: string) => api.get<InvoiceDetail>(`/invoicing/invoices/${id}`).then((r) => r.data),
   listCurrencies: () => api.get<Currency[]>('/invoicing/currencies').then((r) => r.data),
+  createCurrency: (dto: CreateCurrencyInput) =>
+    api.post<Currency>('/invoicing/currencies', dto).then((r) => r.data),
+  recordExchangeRate: (currencyId: string, rate: number) =>
+    api.post('/invoicing/exchange-rates', { currencyId, rate }).then((r) => r.data),
+  syncBnaRate: () => api.post('/invoicing/exchange-rates/sync-bna').then((r) => r.data),
+  getExchangeRateHistory: (currencyId: string) =>
+    api
+      .get<ExchangeRateHistoryEntry[]>('/invoicing/exchange-rates', { params: { currencyId } })
+      .then((r) => r.data),
   createSale: (dto: CreateSaleInput) => api.post<Invoice>('/sales/invoices', dto).then((r) => r.data),
   recordReceipt: (dto: RecordReceiptInput) =>
     api.post('/sales/receipts', dto).then((r) => r.data),

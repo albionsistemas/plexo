@@ -53,6 +53,7 @@ describe('SalesService.createSale', () => {
       subtotal: new Prisma.Decimal(100),
       taxTotal: new Prisma.Decimal(21),
       total: new Prisma.Decimal(121),
+      exchangeRate: new Prisma.Decimal(1),
       issueDate: new Date('2026-01-01'),
       lines: [
         { articleVariantId: 'variant-1', quantity: new Prisma.Decimal(3) },
@@ -136,6 +137,7 @@ describe('SalesService.createSale', () => {
       subtotal: new Prisma.Decimal(100),
       taxTotal: new Prisma.Decimal(21),
       total: new Prisma.Decimal(121),
+      exchangeRate: new Prisma.Decimal(1),
       issueDate: new Date('2026-01-01'),
       lines: [],
     };
@@ -237,6 +239,7 @@ describe('SalesService.createSale', () => {
       subtotal: new Prisma.Decimal(100),
       taxTotal: new Prisma.Decimal(21),
       total: new Prisma.Decimal(121),
+      exchangeRate: new Prisma.Decimal(1),
       issueDate: new Date('2026-01-01'),
       lines: [{ articleVariantId: 'variant-1', quantity: new Prisma.Decimal(999) }],
     };
@@ -273,6 +276,7 @@ describe('SalesService.createSale', () => {
       subtotal: new Prisma.Decimal(100),
       taxTotal: new Prisma.Decimal(21),
       total: new Prisma.Decimal(121),
+      exchangeRate: new Prisma.Decimal(1),
       issueDate: new Date('2026-01-01'),
       lines: [{ articleVariantId: 'variant-1', quantity: new Prisma.Decimal(1) }],
     };
@@ -306,6 +310,51 @@ describe('SalesService.createSale', () => {
     // per-request transaction that rolls it back, not this method.
     expect(inventoryService.recordMovement).toHaveBeenCalledTimes(1);
   });
+
+  it('converts a non-base-currency invoice to its ARS-equivalent before posting the journal entry, without touching cogsAmount', async () => {
+    const invoice = {
+      id: 'invoice-1',
+      subtotal: new Prisma.Decimal(100),
+      taxTotal: new Prisma.Decimal(21),
+      total: new Prisma.Decimal(121),
+      exchangeRate: new Prisma.Decimal(1050),
+      issueDate: new Date('2026-01-01'),
+      lines: [{ articleVariantId: 'variant-1', quantity: new Prisma.Decimal(1) }],
+    };
+    const invoicingService = {
+      createInvoice: jest.fn().mockResolvedValue(invoice),
+    } as unknown as InvoicingService;
+    const inventoryService = {
+      recordMovement: jest.fn().mockResolvedValue({ unitCost: new Prisma.Decimal(30) }),
+    } as unknown as InventoryService;
+    const accountingService = {
+      postInvoiceJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-1', lines: [] }),
+    } as unknown as AccountingService;
+
+    const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService(), makeCheckService());
+
+    await runInTenant(makeBranchDb(), () =>
+      service.createSale({
+        customerId: 'customer-1',
+        warehouseId: 'warehouse-1',
+        documentLetter: 'B',
+        branchId: 'branch-1',
+        currencyId: 'currency-usd',
+        lines: [{ articleVariantId: 'variant-1', quantity: 1 }],
+      }),
+    );
+
+    const postedEntry = (accountingService.postInvoiceJournalEntry as jest.Mock).mock.calls[0][0];
+    // 100/21/121 USD * 1050 = 105000/22050/127050 ARS-equivalent - not the
+    // raw USD figures, which would corrupt the trial balance (a ledger only
+    // makes sense in a single unit of account).
+    expect((postedEntry.subtotal as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(105000);
+    expect((postedEntry.taxTotal as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(22050);
+    expect((postedEntry.total as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(127050);
+    // cogsAmount comes from inventory cost, already in ARS regardless of the
+    // sale's currency - must NOT be multiplied by exchangeRate too.
+    expect((postedEntry.cogsAmount as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(30);
+  });
 });
 
 describe('SalesService.voidSale', () => {
@@ -316,6 +365,7 @@ describe('SalesService.voidSale', () => {
       subtotal: new Prisma.Decimal(100),
       taxTotal: new Prisma.Decimal(21),
       total: new Prisma.Decimal(121),
+      exchangeRate: new Prisma.Decimal(1),
       issueDate: new Date('2026-02-01'),
       lines: [
         { id: 'cn-line-1', invoiceLineId: 'line-1', quantity: new Prisma.Decimal(3) },
@@ -492,6 +542,33 @@ describe('SalesService.voidSale', () => {
       ),
     ).rejects.toThrow(failure);
     expect(inventoryService.recordMovement).not.toHaveBeenCalled();
+  });
+
+  it('converts a non-base-currency credit note to its ARS-equivalent before posting the journal entry', async () => {
+    const creditNote = makeCreditNote({ exchangeRate: new Prisma.Decimal(1050), lines: [] });
+    const invoicingService = {
+      createCreditNote: jest.fn().mockResolvedValue(creditNote),
+    } as unknown as InvoicingService;
+    const inventoryService = { recordMovement: jest.fn() } as unknown as InventoryService;
+    const accountingService = {
+      postCreditNoteJournalEntry: jest.fn().mockResolvedValue({ id: 'entry-2', lines: [] }),
+    } as unknown as AccountingService;
+    const db = { stockMovement: { findFirst: jest.fn().mockResolvedValue(null) } };
+
+    const service = new SalesService(invoicingService, inventoryService, accountingService, makeTenantSettingsService(), makeCheckService());
+
+    await runInTenant(db, () =>
+      service.voidSale({
+        invoiceId: 'invoice-1',
+        reason: 'Devolución de mercadería',
+        lines: [],
+      }),
+    );
+
+    const postedEntry = (accountingService.postCreditNoteJournalEntry as jest.Mock).mock.calls[0][0];
+    expect((postedEntry.subtotal as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(105000);
+    expect((postedEntry.taxTotal as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(22050);
+    expect((postedEntry.total as InstanceType<typeof Prisma.Decimal>).toNumber()).toBe(127050);
   });
 });
 

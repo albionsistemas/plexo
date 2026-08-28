@@ -147,3 +147,23 @@ export const adminPlansApi = {
   create: (dto: CreatePlanInput) => api.post<AdminPlan>('/admin/plans', dto).then((r) => r.data),
   update: (id: string, dto: UpdatePlanInput) => api.patch<AdminPlan>(`/admin/plans/${id}`, dto).then((r) => r.data),
 };
+
+export interface BnaSyncSettings {
+  bnaSyncEnabled: boolean;
+  bnaSyncHour: number;
+}
+
+export interface BnaSyncResult {
+  synced: number;
+  skipped: number;
+}
+
+// Cotización oficial USD sincronizada una sola vez para toda la plataforma
+// (no por tenant, ver ExchangeRateSchedulerService) - horario/on-off vive
+// acá en Admin, no en Preferencias de cada tenant.
+export const adminBnaSyncApi = {
+  getSettings: () => api.get<BnaSyncSettings>('/admin/bna-sync').then((r) => r.data),
+  updateSettings: (dto: Partial<{ enabled: boolean; hour: number }>) =>
+    api.patch<BnaSyncSettings>('/admin/bna-sync', dto).then((r) => r.data),
+  syncNow: () => api.post<BnaSyncResult>('/admin/bna-sync/sync-now').then((r) => r.data),
+};

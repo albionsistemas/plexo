@@ -22,6 +22,7 @@ import {
   type TaxLineKind,
 } from '@plexo/database';
 import { SubscriptionService } from '@plexo/subscriptions';
+import { BNA_EXCHANGE_RATE, type BnaExchangeRatePort } from './bna-exchange-rate.port.js';
 import type { CreateCreditNoteDto } from './dto/create-credit-note.dto.js';
 import type { CreateCurrencyDto } from './dto/create-currency.dto.js';
 import type { CreateInvoiceDto } from './dto/create-invoice.dto.js';
@@ -61,6 +62,8 @@ export class InvoicingService {
     private readonly electronicInvoicing: ElectronicInvoicingPort,
     private readonly eventEmitter: EventEmitter2,
     private readonly subscriptionService: SubscriptionService,
+    @Inject(BNA_EXCHANGE_RATE)
+    private readonly bnaExchangeRate: BnaExchangeRatePort,
   ) {}
 
   createCurrency(dto: CreateCurrencyDto): Promise<Currency> {
@@ -74,14 +77,54 @@ export class InvoicingService {
     });
   }
 
-  listCurrencies(): Promise<Currency[]> {
-    return getTenantDb().currency.findMany({ orderBy: { code: 'asc' } });
+  /** latestRate viene de una consulta extra por moneda (findFirst sobre su
+   * historial) - un puñado de monedas por tenant, no vale la pena una
+   * consulta más compleja para evitarlo. null cuando la moneda todavía no
+   * tiene ninguna cotización cargada (recién creada). */
+  async listCurrencies(): Promise<(Currency & { latestRate: number | null })[]> {
+    const db = getTenantDb();
+    const currencies = await db.currency.findMany({ orderBy: { code: 'asc' } });
+    return Promise.all(
+      currencies.map(async (currency) => {
+        if (currency.isBase) {
+          return { ...currency, latestRate: 1 };
+        }
+        const latest = await db.exchangeRateHistory.findFirst({
+          where: { currencyId: currency.id },
+          orderBy: { effectiveAt: 'desc' },
+        });
+        return { ...currency, latestRate: latest ? latest.rate.toNumber() : null };
+      }),
+    );
   }
 
   recordExchangeRate(dto: RecordExchangeRateDto): Promise<ExchangeRateHistory> {
     return getTenantDb().exchangeRateHistory.create({
       data: { tenantId: getTenantId(), currencyId: dto.currencyId, rate: dto.rate },
     });
+  }
+
+  listExchangeRateHistory(currencyId: string): Promise<ExchangeRateHistory[]> {
+    return getTenantDb().exchangeRateHistory.findMany({
+      where: { currencyId },
+      orderBy: { effectiveAt: 'desc' },
+    });
+  }
+
+  /** "Sincronizar con Banco Nación" en Preferencias (y el cron diario, ver
+   * ExchangeRateSchedulerService en apps/api) - sólo sabe traer USD (ver
+   * BnaExchangeRatePort). Pide que la moneda ya exista para este tenant
+   * (se crea a mano una vez desde Preferencias, POST /invoicing/currencies)
+   * en vez de crearla implícitamente acá, para no inventar isBase/nombre. */
+  async syncBnaRate(): Promise<ExchangeRateHistory> {
+    const usd = await getTenantDb().currency.findFirst({ where: { code: 'USD' } });
+    if (!usd) {
+      throw new BadRequestException(
+        'Este tenant todavía no tiene la moneda USD configurada - creala primero en Preferencias → Monedas y Cotizaciones',
+      );
+    }
+    const { sell } = await this.bnaExchangeRate.getOfficialUsdRate();
+    return this.recordExchangeRate({ currencyId: usd.id, rate: sell });
   }
 
   listInvoices(): Promise<InvoiceWithLines[]> {
@@ -170,7 +213,13 @@ export class InvoicingService {
       throw new NotFoundException('Currency not found');
     }
 
-    const exchangeRate = await this.resolveExchangeRate(currency);
+    // Override puntual del comprobante (NewInvoiceModal, "ajustar cotización
+    // antes de emitir") - si no vino, se resuelve del historial como
+    // siempre. No pisa nada del historial en sí, sólo esta factura.
+    const exchangeRate =
+      dto.exchangeRate !== undefined
+        ? new Prisma.Decimal(dto.exchangeRate)
+        : await this.resolveExchangeRate(currency);
     const globalDiscountPercent = new Prisma.Decimal(dto.globalDiscountPercent ?? 0);
 
     const lineCalculations: LineCalculation[] = [];

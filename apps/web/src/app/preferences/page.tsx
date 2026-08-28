@@ -19,6 +19,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import { useState } from 'react';
+import CurrencySettings from './CurrencySettings';
 
 const inputClass =
   'rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500';
@@ -95,6 +96,7 @@ export default function PreferencesPage() {
       ) : (
         <>
           <EmailSettingsCard settings={settings} />
+          <CurrencySettings />
           <CompanyListView
             role="BRANCH"
             editable

@@ -11,6 +11,7 @@ const NAV_ENTRIES = [
   { href: '/admin/activity', label: 'Actividad' },
   { href: '/admin/errors', label: 'Errores' },
   { href: '/admin/backups', label: 'Backups' },
+  { href: '/admin/bna-sync', label: 'Cotizaciones USD' },
 ];
 
 /**

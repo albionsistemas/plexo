@@ -60,6 +60,7 @@ export default function NewInvoiceModal({ onClose }: Props) {
   const [warehouseId, setWarehouseId] = useState('');
   const [documentLetter, setDocumentLetter] = useState<(typeof DOCUMENT_LETTERS)[number]>('B');
   const [currencyId, setCurrencyId] = useState('');
+  const [exchangeRateOverride, setExchangeRateOverride] = useState('');
   const [pricesIncludeTax, setPricesIncludeTax] = useState(false);
   const [lines, setLines] = useState<CreateSaleLineInput[]>([
     { articleVariantId: '', quantity: 1, unitPrice: 0, taxKind: 'GRAVADO', taxRate: 0 },
@@ -86,6 +87,14 @@ export default function NewInvoiceModal({ onClose }: Props) {
   // vez que cambia el cliente, sin pisar una corrección manual del usuario
   // mientras el cliente sigue siendo el mismo.
   const selectedCustomer = customers.find((c) => c.id === customerId);
+  const selectedCurrency = currencies.find((c) => c.id === currencyId);
+  // Limpia un override tipeado para OTRA moneda al cambiar de moneda - sólo
+  // depende de currencyId (no de latestRate) para no pisar una corrección
+  // manual del usuario si la cotización se actualiza de fondo (sync BNA)
+  // mientras el modal sigue abierto en la misma moneda.
+  useEffect(() => {
+    setExchangeRateOverride('');
+  }, [currencyId]);
   const letterSuggestion = suggestDocumentLetter(
     tenantSettingsQuery.data?.ownTaxCondition ?? null,
     selectedCustomer?.taxId ?? null,
@@ -103,6 +112,10 @@ export default function NewInvoiceModal({ onClose }: Props) {
         warehouseId,
         documentLetter,
         currencyId,
+        exchangeRate:
+          selectedCurrency && !selectedCurrency.isBase && exchangeRateOverride
+            ? Number(exchangeRateOverride)
+            : undefined,
         pricesIncludeTax,
         lines,
       }),
@@ -168,7 +181,7 @@ export default function NewInvoiceModal({ onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
+      <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Nueva factura</h2>
           <button onClick={onClose} className="text-slate-500 transition hover:text-slate-700 dark:hover:text-slate-300">
@@ -185,7 +198,7 @@ export default function NewInvoiceModal({ onClose }: Props) {
           </p>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
               <Field
                 label="Cliente"
                 action={
@@ -211,7 +224,7 @@ export default function NewInvoiceModal({ onClose }: Props) {
                 </select>
               </Field>
               <Field
-                label="Sucursal / punto de venta"
+                label="Sucursal / PV"
                 action={
                   <button
                     type="button"
@@ -234,7 +247,7 @@ export default function NewInvoiceModal({ onClose }: Props) {
                   ))}
                 </select>
               </Field>
-              <Field label="Depósito (para descontar stock)">
+              <Field label="Depósito">
                 <select
                   className={inputClass}
                   value={warehouseId}
@@ -278,28 +291,33 @@ export default function NewInvoiceModal({ onClose }: Props) {
                     </option>
                   ))}
                 </select>
+                {selectedCurrency && !selectedCurrency.isBase && (
+                  <input
+                    type="number"
+                    step="any"
+                    min={0}
+                    title="Cotización de este comprobante"
+                    placeholder={
+                      selectedCurrency.latestRate ? `Vigente: ${selectedCurrency.latestRate}` : 'Sin cotización cargada'
+                    }
+                    value={exchangeRateOverride}
+                    onChange={(e) => setExchangeRateOverride(e.target.value)}
+                    className={`${inputClass} mt-1 w-full`}
+                  />
+                )}
               </Field>
             </div>
 
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <label className="text-sm text-slate-600 dark:text-slate-400">Líneas</label>
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-                    <ToggleSwitch
-                      checked={pricesIncludeTax}
-                      onChange={setPricesIncludeTax}
-                      label="Precios con IVA incluido"
-                    />
-                    <span>Precios con IVA incluido</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={addLine}
-                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
-                  >
-                    + agregar línea
-                  </button>
+                <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                  <ToggleSwitch
+                    checked={pricesIncludeTax}
+                    onChange={setPricesIncludeTax}
+                    label="Precios con IVA incluido"
+                  />
+                  <span>Precios con IVA incluido</span>
                 </div>
               </div>
               <p className="text-xs text-slate-500">
@@ -347,6 +365,13 @@ export default function NewInvoiceModal({ onClose }: Props) {
                   )}
                 </div>
               ))}
+              <button
+                type="button"
+                onClick={addLine}
+                className="flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-700 py-2.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 transition hover:border-indigo-400 hover:bg-indigo-50 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/30"
+              >
+                + Agregar línea
+              </button>
               <VatLineSummary lines={lines} pricesIncludeTax={pricesIncludeTax} />
             </div>
 

@@ -56,6 +56,7 @@ export class SalesService {
         documentLetter: dto.documentLetter,
         pointOfSale: branch.pointOfSaleNumber,
         currencyId: dto.currencyId,
+        exchangeRate: dto.exchangeRate,
         globalDiscountPercent: dto.globalDiscountPercent,
         dueDate: dto.dueDate,
         pricesIncludeTax: dto.pricesIncludeTax,
@@ -85,11 +86,18 @@ export class SalesService {
       }
     }
 
+    // El asiento contable es un libro de una sola moneda (el balance de
+    // sumas y saldos no tiene sentido mezclando pesos con dólares crudos) -
+    // se convierte al equivalente en la moneda base multiplicando por
+    // exchangeRate (1 para la moneda base misma, no-op para todo lo que ya
+    // factura en ARS). cogsAmount NO se convierte: viene del costo de
+    // inventario, que siempre está en ARS sin importar en qué moneda se
+    // facturó la venta.
     await this.accountingService.postInvoiceJournalEntry({
       invoiceId: invoice.id,
-      subtotal: invoice.subtotal,
-      taxTotal: invoice.taxTotal,
-      total: invoice.total,
+      subtotal: invoice.subtotal.mul(invoice.exchangeRate),
+      taxTotal: invoice.taxTotal.mul(invoice.exchangeRate),
+      total: invoice.total.mul(invoice.exchangeRate),
       date: invoice.issueDate,
       cogsAmount: totalCogs,
     });
@@ -157,12 +165,13 @@ export class SalesService {
       }
     }
 
+    // Misma conversión que createSale - ver ese comentario.
     await this.accountingService.postCreditNoteJournalEntry({
       creditNoteId: creditNote.id,
       invoiceId: dto.invoiceId,
-      subtotal: creditNote.subtotal,
-      taxTotal: creditNote.taxTotal,
-      total: creditNote.total,
+      subtotal: creditNote.subtotal.mul(creditNote.exchangeRate),
+      taxTotal: creditNote.taxTotal.mul(creditNote.exchangeRate),
+      total: creditNote.total.mul(creditNote.exchangeRate),
       date: creditNote.issueDate,
       cogsAmount: totalCogs,
     });

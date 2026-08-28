@@ -201,6 +201,21 @@ model Plan {
   @@map("plans")
 }
 
+// Fila única (id fijo "global", ver ExchangeRateSchedulerService) - mismo
+// criterio que Plan: sin tenantId, sin RLS, editable sólo por el SuperAdmin
+// (PlatformAdminGuard). El cron de sincronización con Banco Nación corre
+// una sola vez para toda la plataforma (no es por tenant, ver
+// ExchangeRateSchedulerService), así que su on/off y horario viven acá, no
+// en TenantSettings.
+model PlatformSettings {
+  id             String   @id @default("global")
+  bnaSyncEnabled Boolean  @default(true)
+  bnaSyncHour    Int      @default(9)
+  updatedAt      DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
 // Una por tenant (mismo patrón 1:1 que TenantSettings) - a diferencia de
 // Plan, SÍ es tenant-scoped y SÍ tiene RLS (ver la migración). "promo*" son
 // 3 campos libres que el SuperAdmin carga a mano por tenant vía

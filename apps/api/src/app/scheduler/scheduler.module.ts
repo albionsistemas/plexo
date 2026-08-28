@@ -6,7 +6,9 @@ import { ReceivablesModule } from '@plexo/receivables';
 import { SubscriptionModule } from '@plexo/subscriptions';
 import { TenantSettingsModule } from '@plexo/tenant-settings';
 import { AdminBackupsController } from './admin-backups.controller.js';
+import { AdminBnaSyncController } from './admin-bna-sync.controller.js';
 import { BackupSchedulerService } from './backup-scheduler.service.js';
+import { ExchangeRateSchedulerService } from './exchange-rate-scheduler.service.js';
 import { InventoryReplenishmentController } from './inventory-replenishment.controller.js';
 import { InventoryReplenishmentSchedulerService } from './inventory-replenishment-scheduler.service.js';
 import { ReceivablesSchedulerService } from './receivables-scheduler.service.js';
@@ -22,12 +24,18 @@ import { SubscriptionsSchedulerService } from './subscriptions-scheduler.service
     InventoryModule,
     PurchasesModule,
   ],
-  controllers: [RemindersController, AdminBackupsController, InventoryReplenishmentController],
+  controllers: [
+    RemindersController,
+    AdminBackupsController,
+    AdminBnaSyncController,
+    InventoryReplenishmentController,
+  ],
   providers: [
     ReceivablesSchedulerService,
     SubscriptionsSchedulerService,
     BackupSchedulerService,
     InventoryReplenishmentSchedulerService,
+    ExchangeRateSchedulerService,
   ],
 })
 export class SchedulerModule {}

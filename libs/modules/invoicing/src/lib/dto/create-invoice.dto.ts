@@ -76,6 +76,15 @@ export class CreateInvoiceDto {
   @IsUUID()
   currencyId!: string;
 
+  // Override puntual de la cotización de ESTE comprobante - si no viene, se
+  // resuelve del historial (ExchangeRateHistory) como siempre. No tiene
+  // efecto para la moneda base (su cotización siempre es 1, ver
+  // InvoicingService.resolveExchangeRate).
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  exchangeRate?: number;
+
   @IsOptional()
   @IsNumber()
   @Min(0)
