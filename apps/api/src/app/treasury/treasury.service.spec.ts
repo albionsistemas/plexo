@@ -6,6 +6,11 @@ import type { ReportsFinancialService } from '@plexo/reports-financial';
 import type { CheckService } from '@plexo/treasury';
 import { TreasuryService } from './treasury.service.js';
 
+// Mismo mock vacío que sales.service.spec.ts - @plexo/invoicing arrastra
+// @react-pdf/renderer (ESM-only) vía el import de producción de
+// TreasuryService, y esta suite sólo necesita InvoicingService como tipo.
+jest.mock('@plexo/invoicing', () => ({}));
+
 function runInTenant<T>(db: Record<string, unknown>, fn: () => T): T {
   return tenantContextStorage.run({ tenantId: 'tenant-1', userId: 'user-1', tx: db as never }, fn);
 }

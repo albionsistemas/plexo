@@ -7,6 +7,14 @@ import type { TenantSettingsService } from '@plexo/tenant-settings';
 import type { CheckService } from '@plexo/treasury';
 import { SalesService } from './sales.service.js';
 
+// @plexo/invoicing (y su árbol de dependencias) importa @react-pdf/renderer
+// para el PDF de Facturación - ESM-only (sin build CJS), Jest lo arrastra
+// vía el import de producción de SalesService y falla al parsearlo. Mismo
+// mock vacío que ya usa @plexo/receivables en receivables-scheduler.service.spec.ts -
+// esta suite sólo necesita InvoicingService como tipo (siempre mockeado a
+// mano), nunca la implementación real.
+jest.mock('@plexo/invoicing', () => ({}));
+
 function runInTenant<T>(db: Record<string, unknown>, fn: () => T): T {
   return tenantContextStorage.run({ tenantId: 'tenant-1', userId: 'user-1', tx: db as never }, fn);
 }

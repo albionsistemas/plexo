@@ -14,8 +14,12 @@ module.exports = {
   preset: '../../../jest.preset.js',
   testEnvironment: 'node',
   transform: {
-    '^.+\\.[tj]s$': ['@swc/jest', swcJestConfig],
+    '^.+\\.[tj]sx?$': ['@swc/jest', swcJestConfig],
   },
-  moduleFileExtensions: ['ts', 'js', 'html'],
+  // @react-pdf/renderer (y su propio árbol de dependencias) es ESM-only -
+  // Jest ignora node_modules por default, lo que deja esos imports sin
+  // transpilar. Mismo fix que ya usa purchases/quotes.
+  transformIgnorePatterns: [],
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'html'],
   coverageDirectory: 'test-output/jest/coverage',
 };

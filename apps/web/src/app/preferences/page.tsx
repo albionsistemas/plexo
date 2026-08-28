@@ -3,6 +3,7 @@
 import { activityLogApi, type TenantActivityEntry } from '@/lib/activityLog';
 import CompanyListView from '@/components/CompanyListView';
 import { formatCuitInput } from '@/lib/cuit';
+import { INVOICE_PDF_FORMATS, invoicingPreferencesApi, type InvoicePdfFormat } from '@/lib/invoicing';
 import { inventoryApi, type AutoReplenishmentResult } from '@/lib/inventory';
 import {
   afipCertificateApi,
@@ -105,6 +106,7 @@ export default function PreferencesPage() {
             variant="card"
           />
           <AfipCertificateCard settings={settings} />
+          <InvoicePdfCard settings={settings} />
           <WithholdingAgentCard settings={settings} />
           <InventoryPricingCard settings={settings} />
           <ReplenishmentCard />
@@ -617,6 +619,116 @@ function WithholdingAgentCard({ settings }: { settings: TenantSettings }) {
  * propio override (Inventario → editar artículo) - nunca recalcula un
  * precio ya cargado solo, sólo pre-completa el campo la próxima vez que
  * alguien cree o edite un artículo sin su propio %. */
+/** Datos fiscales del emisor que van en el PDF de Facturación (ver
+ * @plexo/invoicing/pdf) - CUIT/razón social ya se cargan en otro lado
+ * (tenantInfoApi/Tenant.name), acá sólo lo que faltaba. El formato de
+ * papel por defecto es una preferencia del USUARIO (User.invoicePdfFormat,
+ * no TenantSettings) - mismo criterio que purchaseDocumentPdfStyle - por
+ * eso usa su propia mutation/query en vez de tenantSettingsApi. */
+function InvoicePdfCard({ settings }: { settings: TenantSettings }) {
+  const queryClient = useQueryClient();
+  const [fiscalAddress, setFiscalAddress] = useState(settings.fiscalAddress ?? '');
+  const [grossIncomeNumber, setGrossIncomeNumber] = useState(settings.grossIncomeNumber ?? '');
+  const [activityStartDate, setActivityStartDate] = useState(
+    settings.activityStartDate ? settings.activityStartDate.slice(0, 10) : '',
+  );
+  const [message, setMessage] = useState('');
+
+  const { data: preferences } = useQuery({
+    queryKey: ['invoicing-preferences'],
+    queryFn: invoicingPreferencesApi.get,
+  });
+
+  const saveFiscalDataMutation = useMutation({
+    mutationFn: () =>
+      tenantSettingsApi.update({
+        fiscalAddress: fiscalAddress.trim() === '' ? null : fiscalAddress.trim(),
+        grossIncomeNumber: grossIncomeNumber.trim() === '' ? null : grossIncomeNumber.trim(),
+        activityStartDate: activityStartDate === '' ? null : activityStartDate,
+      }),
+    onSuccess: () => {
+      setMessage('Guardado');
+      void queryClient.invalidateQueries({ queryKey: ['tenant-settings'] });
+    },
+  });
+
+  const formatMutation = useMutation({
+    mutationFn: (invoicePdfFormat: InvoicePdfFormat) => invoicingPreferencesApi.update(invoicePdfFormat),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['invoicing-preferences'] }),
+  });
+
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-6">
+      <h2 className="mb-1 text-sm font-medium text-slate-600 dark:text-slate-400">
+        Datos fiscales para la Factura
+      </h2>
+      <p className="mb-4 text-xs text-slate-500">
+        Domicilio, Ingresos Brutos e inicio de actividades del emisor - se imprimen en el PDF de
+        Facturación (CUIT y razón social ya se cargan arriba, en Certificado AFIP).
+      </p>
+      <div className="grid grid-cols-2 gap-4">
+        <label className="col-span-2 flex flex-col gap-1">
+          <span className="text-xs text-slate-500">Domicilio fiscal</span>
+          <input
+            value={fiscalAddress}
+            onChange={(e) => setFiscalAddress(e.target.value)}
+            placeholder="Av. Siempre Viva 123, CABA"
+            className={inputClass}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-slate-500">Ingresos Brutos</span>
+          <input
+            value={grossIncomeNumber}
+            onChange={(e) => setGrossIncomeNumber(e.target.value)}
+            className={inputClass}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-slate-500">Inicio de actividades</span>
+          <input
+            type="date"
+            value={activityStartDate}
+            onChange={(e) => setActivityStartDate(e.target.value)}
+            className={inputClass}
+          />
+        </label>
+      </div>
+      <div className="mt-3 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            setMessage('');
+            saveFiscalDataMutation.mutate();
+          }}
+          disabled={saveFiscalDataMutation.isPending}
+          className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+        >
+          {saveFiscalDataMutation.isPending ? 'Guardando...' : 'Guardar'}
+        </button>
+        {message && <p className="text-xs text-green-600 dark:text-green-400">{message}</p>}
+      </div>
+
+      {preferences && (
+        <div className="mt-6 flex items-center gap-3 border-t border-slate-200 dark:border-slate-800 pt-4">
+          <span className="text-xs text-slate-500">Formato de PDF por defecto</span>
+          <select
+            value={preferences.invoicePdfFormat}
+            onChange={(e) => formatMutation.mutate(e.target.value as InvoicePdfFormat)}
+            className={inputClass}
+          >
+            {INVOICE_PDF_FORMATS.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function InventoryPricingCard({ settings }: { settings: TenantSettings }) {
   const queryClient = useQueryClient();
   const [value, setValue] = useState(settings.defaultMarkupPercent?.toString() ?? '');

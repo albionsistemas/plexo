@@ -21,6 +21,11 @@ jest.mock('@plexo/database', () => ({
 // as the @plexo/database mock above, one module over.
 jest.mock('@plexo/receivables', () => ({}));
 
+// Mismo motivo, un módulo más: @plexo/invoicing ahora también arrastra
+// @react-pdf/renderer (el PDF de Facturación) vía su propio import de
+// InvoicingService en este service.
+jest.mock('@plexo/invoicing', () => ({}));
+
 const { withTenantContext, getTenantDb } = jest.requireMock('@plexo/database') as {
   withTenantContext: jest.Mock;
   getTenantDb: jest.Mock;

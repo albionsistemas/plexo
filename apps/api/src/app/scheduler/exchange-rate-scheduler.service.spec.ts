@@ -11,6 +11,12 @@ jest.mock('@plexo/database', () => ({
   getTenantDb: jest.fn(),
 }));
 
+// @plexo/invoicing arrastra @react-pdf/renderer (ESM-only, el PDF de
+// Facturación) vía su propio import de InvoicingService en este service -
+// esta suite sólo necesita InvoicingService/BnaExchangeRatePort como tipos
+// (siempre mockeados a mano), mismo criterio que receivables-scheduler.service.spec.ts.
+jest.mock('@plexo/invoicing', () => ({}));
+
 const { withTenantContext, getTenantDb } = jest.requireMock('@plexo/database') as {
   withTenantContext: jest.Mock;
   getTenantDb: jest.Mock;

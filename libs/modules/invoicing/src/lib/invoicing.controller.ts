@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseEnumPipe, ParseUUIDPipe, Post, Query, StreamableFile } from '@nestjs/common';
 import { Roles } from '@plexo/auth';
+import { InvoicePdfFormat } from '@plexo/database';
 import { CreateCurrencyDto } from './dto/create-currency.dto.js';
 import { RecordExchangeRateDto } from './dto/record-exchange-rate.dto.js';
 import { InvoicingService } from './invoicing.service.js';
@@ -49,6 +50,18 @@ export class InvoicingController {
   @Get('invoices/:id')
   getInvoice(@Param('id', ParseUUIDPipe) id: string) {
     return this.invoicingService.getInvoice(id);
+  }
+
+  @Get('invoices/:id/pdf')
+  async downloadPdf(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('format', new ParseEnumPipe(InvoicePdfFormat, { optional: true })) format?: InvoicePdfFormat,
+  ) {
+    const { buffer, filename } = await this.invoicingService.generatePdf(id, format);
+    return new StreamableFile(buffer, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${filename}"`,
+    });
   }
 
   // Credit notes are created via POST /sales/credit-notes (SalesService),

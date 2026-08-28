@@ -21,6 +21,9 @@ export interface TenantSettings {
   afipConfigured: boolean;
   afipCertExpiresAt: string | null;
   ownTaxCondition: TenantTaxCondition | null;
+  fiscalAddress: string | null;
+  grossIncomeNumber: string | null;
+  activityStartDate: string | null;
   defaultMarkupPercent: number | null;
   tenantTaxId: string | null;
 }
@@ -64,6 +67,9 @@ export const tenantSettingsApi = {
       withholdingAgentVat: boolean;
       withholdingAgentGrossIncome: boolean;
       ownTaxCondition: TenantTaxCondition | null;
+      fiscalAddress: string | null;
+      grossIncomeNumber: string | null;
+      activityStartDate: string | null;
       defaultMarkupPercent: number | null;
     }>,
   ) => api.patch<TenantSettings>('/tenant-settings', dto).then((r) => r.data),

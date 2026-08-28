@@ -389,6 +389,16 @@ model TenantSettings {
   // que derivar con certeza, la UI cae a selección manual sin sugerencia.
   ownTaxCondition TenantTaxCondition?
 
+  // Datos fiscales del emisor que van impresos en el PDF de Facturación
+  // (ver @plexo/invoicing/pdf) - ninguno de los tres existía en el schema
+  // hasta ahora. `Tenant.name`/`Tenant.taxId` ya cubren razón social/CUIT,
+  // y `ownTaxCondition` arriba la condición IVA propia; sólo faltaban
+  // estos tres. Nullable a propósito (null = todavía no cargado en
+  // Preferencias) - el PDF simplemente omite la línea si no está.
+  fiscalAddress      String?
+  grossIncomeNumber  String?
+  activityStartDate  DateTime?
+
   // Sugerencia genérica de remarca (%) para cuando un Article no tiene la
   // suya propia (Article.markupPercent) - null = sin sugerencia en
   // absoluto para esos casos. Ver ese campo para el resto del criterio.
@@ -438,6 +448,13 @@ model User {
   // Default template for "Descargar PDF" on a QuoteRequest/PurchaseOrder;
   // overridable per-download without persisting (see PurchasesController).
   purchaseDocumentPdfStyle PdfStyle   @default(MODERNO)
+  // Formato de papel por defecto para "Descargar PDF" en Facturación
+  // (A4/A5/ticket angosto para impresora térmica) - mismo criterio que
+  // purchaseDocumentPdfStyle arriba, overridable por descarga sin
+  // persistir (ver InvoiceDetailPanel). A diferencia de Compras/Cotizaciones
+  // (5 estilos visuales libres), acá el diseño es uno solo fiel al formato
+  // real de ARCA - lo que varía es el tamaño de papel, no el estilo.
+  invoicePdfFormat         InvoicePdfFormat @default(A4)
   // Same per-user numbering/PDF-style pattern as the Compras fields above,
   // for Cotizaciones (@plexo/quotes) - a separate series on purpose, not
   // shared with quoteRequestPrefix even though both start from "cotización"
@@ -1781,6 +1798,18 @@ enum PdfStyle {
   TRADICIONAL
   NATURAL
   LETRAS_GRANDES
+}
+
+// Tamaño de papel para el PDF de Facturación (ver User.invoicePdfFormat) -
+// A4 y A5 comparten el mismo layout fiel a ARCA (sólo cambia el tamaño de
+// hoja), TICKET es un layout angosto de una columna para impresora
+// térmica/de tickets común. Ninguno es integración con un Controlador
+// Fiscal real (eso seguiría siendo Factura Electrónica vía WSFE, sólo
+// cambia el tamaño de papel del PDF resultante).
+enum InvoicePdfFormat {
+  A4
+  A5
+  TICKET
 }
 
 // Free-text catalogs the tenant maintains itself (transporte/forma de

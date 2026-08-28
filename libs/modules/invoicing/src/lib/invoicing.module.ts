@@ -7,7 +7,10 @@ import type { EmailSender } from './email-sender.port.js';
 import { EMAIL_SENDER } from './email-sender.port.js';
 import { ELECTRONIC_INVOICING } from './electronic-invoicing.port.js';
 import { InvoicingController } from './invoicing.controller.js';
+import { InvoicingPreferencesController } from './invoicing-preferences.controller.js';
+import { InvoicingPreferencesService } from './invoicing-preferences.service.js';
 import { InvoicingService } from './invoicing.service.js';
+import { InvoicePdfService } from './pdf/invoice-pdf.service.js';
 import { RealBnaExchangeRateService } from './real-bna-exchange-rate.js';
 import { RealElectronicInvoicingService } from './real-electronic-invoicing.js';
 import { ResendEmailSender } from './resend-email-sender.js';
@@ -35,9 +38,11 @@ function createEmailSender(): EmailSender {
 
 @Module({
   imports: [AfipCredentialsModule, SubscriptionModule],
-  controllers: [InvoicingController],
+  controllers: [InvoicingController, InvoicingPreferencesController],
   providers: [
     InvoicingService,
+    InvoicePdfService,
+    InvoicingPreferencesService,
     { provide: EMAIL_SENDER, useFactory: createEmailSender },
     { provide: ELECTRONIC_INVOICING, useClass: RealElectronicInvoicingService },
     RealBnaExchangeRateService,

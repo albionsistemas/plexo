@@ -17,8 +17,11 @@ const xmlParser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true 
 
 /** Factura/Nota de Crédito CbteTipo per DocumentLetter - the only two
  * fiscal-document families this app issues (no Nota de Débito, no
- * Bienes Usados/Exportación/FCE variants). */
-const CBTE_TIPO: Record<'FACTURA' | 'NOTA_CREDITO', Record<DocumentLetter, number>> = {
+ * Bienes Usados/Exportación/FCE variants). Exported - also needed to build
+ * the AFIP QR payload (RG 4892, tipoCmp) in @plexo/invoicing's pdf module,
+ * still intra-module so it doesn't break the "never cross-module import"
+ * rule. */
+export const CBTE_TIPO: Record<'FACTURA' | 'NOTA_CREDITO', Record<DocumentLetter, number>> = {
   FACTURA: { A: 1, B: 6, C: 11, M: 51 },
   NOTA_CREDITO: { A: 3, B: 8, C: 13, M: 53 },
 };
@@ -49,7 +52,8 @@ const MON_ID: Record<string, string> = {
   USD: 'DOL',
 };
 
-function resolveMonId(currencyCode: string): string {
+/** Exportado - reusado por el QR de AFIP (RG 4892, campo "moneda"). */
+export function resolveMonId(currencyCode: string): string {
   const monId = MON_ID[currencyCode.toUpperCase()];
   if (!monId) {
     throw new Error(
@@ -59,7 +63,9 @@ function resolveMonId(currencyCode: string): string {
   return monId;
 }
 
-function resolveDocTipoNro(customerTaxId: string | null): { docTipo: number; docNro: string } {
+/** Exportado - reusado por el QR de AFIP (RG 4892, campos "tipoDocRec"/
+ * "nroDocRec"). */
+export function resolveDocTipoNro(customerTaxId: string | null): { docTipo: number; docNro: string } {
   if (!customerTaxId) {
     return { docTipo: 99, docNro: '0' }; // Consumidor Final
   }

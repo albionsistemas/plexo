@@ -1,6 +1,7 @@
 import { EmailSenderMode, ReminderTone, TenantTaxCondition } from '@plexo/database';
 import {
   IsBoolean,
+  IsDateString,
   IsEmail,
   IsEnum,
   IsInt,
@@ -80,6 +81,23 @@ export class UpdateTenantSettingsDto {
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsEnum(TenantTaxCondition)
   ownTaxCondition?: TenantTaxCondition | null;
+
+  // Datos fiscales del emisor que van en el PDF de Facturación (ver
+  // @plexo/invoicing/pdf) - mismo criterio de "null limpia, omitir deja sin
+  // tocar" que ownTaxCondition/reminderCcEmail.
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsString()
+  @MaxLength(200)
+  fiscalAddress?: string | null;
+
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsString()
+  @MaxLength(50)
+  grossIncomeNumber?: string | null;
+
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsDateString()
+  activityStartDate?: string | null;
 
   /** null vuelve a "sin sugerencia" para los artículos que no tengan su
    * propio Article.markupPercent; omitir el campo deja el valor guardado

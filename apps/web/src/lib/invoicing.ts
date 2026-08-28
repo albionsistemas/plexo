@@ -145,6 +145,25 @@ export interface CreateCurrencyInput {
   isBase?: boolean;
 }
 
+export type InvoicePdfFormat = 'A4' | 'A5' | 'TICKET';
+
+export const INVOICE_PDF_FORMATS: { value: InvoicePdfFormat; label: string; description: string }[] = [
+  { value: 'A4', label: 'A4', description: 'Hoja completa - el formato estándar de oficina' },
+  { value: 'A5', label: 'A5', description: 'Media hoja' },
+  { value: 'TICKET', label: 'Ticket', description: 'Angosto, para impresora térmica/de tickets' },
+];
+
+/** Blob en vez de un <a href>/window.open directo, así viaja el header de
+ * Authorization - mismo criterio que openPdf en apps/web/src/lib/purchases.ts. */
+async function openPdf(id: string, format?: InvoicePdfFormat): Promise<void> {
+  const res = await api.get(`/invoicing/invoices/${id}/pdf`, {
+    params: format ? { format } : {},
+    responseType: 'blob',
+  });
+  const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+  window.open(url, '_blank');
+}
+
 export const invoicingApi = {
   listInvoices: () => api.get<Invoice[]>('/invoicing/invoices').then((r) => r.data),
   getInvoice: (id: string) => api.get<InvoiceDetail>(`/invoicing/invoices/${id}`).then((r) => r.data),
@@ -163,4 +182,11 @@ export const invoicingApi = {
     api.post('/sales/receipts', dto).then((r) => r.data),
   createCreditNote: (dto: CreateCreditNoteInput) =>
     api.post('/sales/credit-notes', dto).then((r) => r.data),
+  openPdf: (id: string, format?: InvoicePdfFormat) => openPdf(id, format),
+};
+
+export const invoicingPreferencesApi = {
+  get: () => api.get<{ invoicePdfFormat: InvoicePdfFormat }>('/invoicing/preferences').then((r) => r.data),
+  update: (invoicePdfFormat: InvoicePdfFormat) =>
+    api.patch<{ invoicePdfFormat: InvoicePdfFormat }>('/invoicing/preferences', { invoicePdfFormat }).then((r) => r.data),
 };

@@ -16,6 +16,7 @@ import {
   type CreditNoteLine,
   type ExchangeRateHistory,
   type InvoiceConcept,
+  type InvoicePdfFormat,
   type Receipt,
   type ReminderTone,
   type TaxDefinition,
@@ -34,14 +35,22 @@ import {
   type ElectronicInvoicingPort,
   type ElectronicInvoiceTaxLine,
 } from './electronic-invoicing.port.js';
+import { buildInvoicePdfData } from './pdf/build-pdf-data.js';
+import { InvoicePdfService } from './pdf/invoice-pdf.service.js';
 
 type InvoiceWithLines = Invoice & { lines: InvoiceLine[] };
-type InvoiceLineDetail = InvoiceLine & { articleVariant: ArticleVariant & { article: Article } };
-type InvoiceDetail = Invoice & {
+export type InvoiceLineDetail = InvoiceLine & { articleVariant: ArticleVariant & { article: Article } };
+export type InvoiceDetail = Invoice & {
   lines: InvoiceLineDetail[];
   receipts: Receipt[];
   creditNotes: CreditNote[];
 };
+/** Shape usada por generatePdf()/buildInvoicePdfData - a diferencia de
+ * InvoiceDetail (la del panel "ver detalle"), acá sí hace falta `currency`
+ * (código/isBase para el QR y el desglose de moneda del PDF). Una consulta
+ * propia en vez de reusar getInvoice() para no cambiarle el include a ese
+ * otro caller. */
+export type InvoiceWithCurrencyAndLines = Invoice & { currency: Currency; lines: InvoiceLineDetail[] };
 
 interface LineCalculation {
   articleVariantId: string;
@@ -64,6 +73,7 @@ export class InvoicingService {
     private readonly subscriptionService: SubscriptionService,
     @Inject(BNA_EXCHANGE_RATE)
     private readonly bnaExchangeRate: BnaExchangeRatePort,
+    private readonly invoicePdfService: InvoicePdfService,
   ) {}
 
   createCurrency(dto: CreateCurrencyDto): Promise<Currency> {
@@ -166,6 +176,46 @@ export class InvoicingService {
       orderBy: { issueDate: 'desc' },
     });
     return { ...invoice, receipts, creditNotes };
+  }
+
+  /** "Descargar PDF" en el detalle de Facturación - consulta propia (no
+   * reusa getInvoice()) porque hace falta `currency` acá (código/isBase
+   * para el QR y el desglose de moneda), que ese otro caller no necesita.
+   * `format` es opcional - si no viene, se resuelve la preferencia guardada
+   * del usuario (mismo criterio que purchaseDocumentPdfStyle). */
+  async generatePdf(id: string, format?: InvoicePdfFormat): Promise<{ buffer: Buffer; filename: string }> {
+    const db = getTenantDb();
+    const tenantId = getTenantId();
+    const invoice = await db.invoice.findUnique({
+      where: { id },
+      include: {
+        currency: true,
+        lines: { include: { articleVariant: { include: { article: true } } } },
+      },
+    });
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+    const customer = await db.company.findUniqueOrThrow({ where: { id: invoice.customerId } });
+    const tenant = await db.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+    const tenantSettings = await db.tenantSettings.findUnique({ where: { tenantId } });
+    const resolvedFormat = format ?? (await this.resolveRequesterInvoicePdfFormat());
+
+    const data = await buildInvoicePdfData(invoice, customer, tenant, tenantSettings);
+    const buffer = await this.invoicePdfService.generate(resolvedFormat, data);
+    return { buffer, filename: `${invoice.documentLetter}-${invoice.pointOfSale}-${invoice.number}.pdf` };
+  }
+
+  private async resolveRequesterInvoicePdfFormat(): Promise<InvoicePdfFormat> {
+    const userId = getUserId();
+    if (!userId) {
+      return 'A4';
+    }
+    const user = await getTenantDb().user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { invoicePdfFormat: true },
+    });
+    return user.invoicePdfFormat;
   }
 
   /**

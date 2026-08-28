@@ -36,6 +36,12 @@ export interface TenantSettingsView {
   // configure a mano en Preferencias. Alimenta resolveDocumentLetter en el
   // frontend (letra A/B/C sugerida/forzada al emitir factura).
   ownTaxCondition: TenantTaxCondition | null;
+  // Datos fiscales del emisor que van en el PDF de Facturación (ver
+  // @plexo/invoicing/pdf) - null hasta que el usuario los cargue en
+  // Preferencias, el PDF simplemente omite la línea si no están.
+  fiscalAddress: string | null;
+  grossIncomeNumber: string | null;
+  activityStartDate: Date | null;
   // Sugerencia genérica de % de remarca - ver el comentario del campo en
   // el schema. Usado por Inventario para pre-completar el precio de venta
   // cuando el Article en cuestión no tiene su propio markupPercent.
@@ -110,6 +116,9 @@ export class TenantSettingsService {
       afipConfigured: Boolean(row?.afipCertEncrypted && row?.afipKeyEncrypted && tenantTaxId),
       afipCertExpiresAt: row?.afipCertExpiresAt ?? null,
       ownTaxCondition: row?.ownTaxCondition ?? null,
+      fiscalAddress: row?.fiscalAddress ?? null,
+      grossIncomeNumber: row?.grossIncomeNumber ?? null,
+      activityStartDate: row?.activityStartDate ?? null,
       defaultMarkupPercent: row?.defaultMarkupPercent?.toNumber() ?? null,
       tenantTaxId,
     };
@@ -133,6 +142,9 @@ export class TenantSettingsService {
         withholdingAgentVat: dto.withholdingAgentVat,
         withholdingAgentGrossIncome: dto.withholdingAgentGrossIncome,
         ownTaxCondition: dto.ownTaxCondition ?? null,
+        fiscalAddress: dto.fiscalAddress ?? null,
+        grossIncomeNumber: dto.grossIncomeNumber ?? null,
+        activityStartDate: dto.activityStartDate ? new Date(dto.activityStartDate) : null,
         defaultMarkupPercent: dto.defaultMarkupPercent ?? null,
       },
       update: {
@@ -146,6 +158,9 @@ export class TenantSettingsService {
         withholdingAgentVat: dto.withholdingAgentVat,
         withholdingAgentGrossIncome: dto.withholdingAgentGrossIncome,
         ownTaxCondition: dto.ownTaxCondition,
+        fiscalAddress: dto.fiscalAddress,
+        grossIncomeNumber: dto.grossIncomeNumber,
+        activityStartDate: dto.activityStartDate === undefined ? undefined : dto.activityStartDate ? new Date(dto.activityStartDate) : null,
         defaultMarkupPercent: dto.defaultMarkupPercent,
       },
     });

@@ -1,6 +1,11 @@
 'use client';
 
-import { invoicingApi } from '@/lib/invoicing';
+import {
+  INVOICE_PDF_FORMATS,
+  invoicingApi,
+  invoicingPreferencesApi,
+  type InvoicePdfFormat,
+} from '@/lib/invoicing';
 import { buildVariantLabel } from '@/lib/inventory';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -53,6 +58,19 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
     queryKey: ['invoice-detail', invoice.id],
     queryFn: () => invoicingApi.getInvoice(invoice.id),
   });
+
+  // Precarga el formato preferido del usuario, sin pisar un cambio manual
+  // que haga después en este mismo panel - mismo patrón que
+  // PurchaseOrderDetailPanel/pdfStyle.
+  const { data: preferences } = useQuery({
+    queryKey: ['invoicing-preferences'],
+    queryFn: invoicingPreferencesApi.get,
+  });
+  const [pdfFormat, setPdfFormat] = useState<InvoicePdfFormat>('A4');
+  const [formatTouched, setFormatTouched] = useState(false);
+  useEffect(() => {
+    if (!formatTouched && preferences) setPdfFormat(preferences.invoicePdfFormat);
+  }, [preferences, formatTouched]);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60">
@@ -209,6 +227,34 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
                     </li>
                   ))}
                 </ul>
+              </section>
+            )}
+
+            {data.afipCae && (
+              <section className="flex flex-col gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    className="rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-2 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    value={pdfFormat}
+                    onChange={(e) => {
+                      setPdfFormat(e.target.value as InvoicePdfFormat);
+                      setFormatTouched(true);
+                    }}
+                  >
+                    {INVOICE_PDF_FORMATS.map((f) => (
+                      <option key={f.value} value={f.value}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void invoicingApi.openPdf(invoice.id, pdfFormat)}
+                    className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-800"
+                  >
+                    Descargar PDF
+                  </button>
+                </div>
               </section>
             )}
           </div>
