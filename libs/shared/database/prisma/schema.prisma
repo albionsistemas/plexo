@@ -2430,7 +2430,8 @@ model Connector {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  secrets ConnectorSecret[]
+  secrets        ConnectorSecret[]
+  paymentIntents PaymentIntent[]
 
   @@unique([tenantId, provider])
   @@unique([tenantId, id])
@@ -2464,4 +2465,68 @@ model ConnectorSecret {
   @@unique([connectorId, key])
   @@index([tenantId])
   @@map("connector_secrets")
+}
+
+enum PaymentIntentStatus {
+  PENDING   // link creado, esperando pago
+  PAID      // pagado y conciliado (Fase 4)
+  EXPIRED   // venció sin pagarse
+  CANCELLED // anulado por el usuario
+  REFUNDED
+  ERROR
+}
+
+// Un cobro Mercado Pago pendiente contra una Factura o Cotización (ver
+// MercadoPagoPaymentService, @plexo/mercadopago) - documentType/documentId
+// es una referencia polimórfica a propósito (String simple, no FK real):
+// Prisma no modela FKs condicionales, y esto puede apuntar a "invoices" o
+// "quotes" según el caso. Sólo los intents de tipo INVOICE se concilian
+// automáticamente en la Fase 4 (vía SalesService.recordReceipt, que exige
+// un invoiceId) - Quote no tiene ningún concepto de saldo/pago en este
+// schema (es un presupuesto, no un documento fiscal), así que un intent de
+// tipo QUOTE queda como registro informativo: cuando se paga, se marca PAID
+// acá pero no dispara ningún asiento contable ni actualiza la Cotización.
+model PaymentIntent {
+  id          String            @id @default(uuid())
+  tenantId    String
+  connectorId String
+  connector   Connector         @relation(fields: [tenantId, connectorId], references: [tenantId, id])
+
+  documentType String // "INVOICE" | "QUOTE"
+  documentId   String
+
+  provider ConnectorProvider @default(MERCADO_PAGO)
+
+  // Lo que devuelve MP al crear la preferencia (Checkout Pro).
+  externalId   String? // preference_id
+  initPoint    String? // URL de pago (link)
+  qrCodeBase64 String? // data URI PNG del QR (ver mercadopago-qr.util.ts) - mismo formato que buildAfipQrDataUri
+
+  amount   Decimal @db.Decimal(14, 2)
+  currency String  @default("ARS")
+
+  status PaymentIntentStatus @default(PENDING)
+
+  // Trazabilidad del pago real cuando llega (Fase 4).
+  externalPaymentId String? // payment id de MP
+  paidAt            DateTime?
+  paymentRaw        Json? // payload crudo del pago, para auditoría
+
+  // Idempotencia de creación: un UUID fresco por intent, enviado como
+  // X-Idempotency-Key a MP - la deduplicación real de "no crear dos
+  // preferencias para el mismo documento" pasa por buscar un PENDING
+  // existente ANTES de llegar acá (MercadoPagoPaymentService.
+  // createPaymentLink), no por derivar esta clave de (documentId+amount) -
+  // eso rompería al reintentar cobrar el mismo documento después de que el
+  // intent anterior expiró/se canceló, con la misma FK única.
+  idempotencyKey String @unique
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, documentType, documentId])
+  @@index([externalPaymentId])
+  @@map("payment_intents")
 }

@@ -380,6 +380,15 @@ export async function seedTenantGraph(client: PoolClient, tenantId: string, labe
     value: 'rls-fixture-ciphertext',
     updatedAt: new Date(),
   });
+  await ins('payment_intents', {
+    tenantId,
+    connectorId,
+    documentType: 'INVOICE',
+    documentId: invoiceId,
+    amount: 50,
+    idempotencyKey: `rls-fixture-${label}-${newId()}`,
+    updatedAt: new Date(),
+  });
 
   // --- audit_log: populated exclusively by DB triggers (see its own doc
   // comment in schema.prisma), never inserted directly - several of the
@@ -469,6 +478,7 @@ export async function seedTenantGraph(client: PoolClient, tenantId: string, labe
  * user_activity_log above.
  */
 const CLEANUP_TABLES_REVERSE = [
+  'payment_intents',
   'connector_secrets',
   'connectors',
   'quote_lines',

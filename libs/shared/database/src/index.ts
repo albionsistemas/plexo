@@ -72,5 +72,6 @@ export type {
   DatabaseBackup,
   Connector,
   ConnectorSecret,
+  PaymentIntent,
 } from './generated/client.js';
 export * from './generated/enums.js';

@@ -117,6 +117,25 @@ export class MercadoPagoConnector implements ProviderConnector {
     }
   }
 
+  /**
+   * Refresh-then-fetch as one operation - every caller that actually needs
+   * to talk to the MP API on this tenant's behalf (payment links today,
+   * the webhook's payment lookup in Fase 4 later) wants this, not
+   * refreshIfNeeded()+getSecret() duplicated at each call site. Throws if
+   * there's simply no access_token stored yet (never connected) - a
+   * distinct, callable-earlier failure from "refresh failed", which
+   * refreshIfNeeded already turns into an EXPIRED status instead of a
+   * throw when there's no refresh_token to try.
+   */
+  async getValidAccessToken(connectorId: string): Promise<string> {
+    await this.refreshIfNeeded(connectorId);
+    const accessToken = await this.connectorService.getSecret(connectorId, 'access_token');
+    if (!accessToken) {
+      throw new Error('No hay access_token guardado para este connector');
+    }
+    return accessToken;
+  }
+
   /** tenantId kept for interface symmetry with getAuthorizationUrl/
    * handleOAuthCallback - ConnectorService.disconnect already scopes to
    * getTenantId() internally, this method always runs inside that same

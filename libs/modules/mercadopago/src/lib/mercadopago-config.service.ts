@@ -38,4 +38,22 @@ export class MercadoPagoConfigService {
   isConfigured(): boolean {
     return Boolean(this.clientId && this.clientSecret && this.redirectUri && this.accessToken);
   }
+
+  /**
+   * Where MP should POST payment notifications for a preference (Fase 4's
+   * webhook, not built yet - MP will 404 against this until then, same as
+   * any phased build). Reuses OAUTH_CALLBACK_BASE_URL ("public origin of
+   * THIS api process", already documented in .env.example for the Google/
+   * Microsoft OAuth callbacks) instead of a new env var - one place names
+   * this server's public URL, not two. `?client=<tenantId>` is how the
+   * webhook will identify which tenant's connector to use (see plan
+   * section 4.2) since the notification body alone doesn't carry it.
+   */
+  webhookNotificationUrl(tenantId: string): string | undefined {
+    const base = process.env['OAUTH_CALLBACK_BASE_URL'];
+    if (!base) {
+      return undefined;
+    }
+    return `${base}/webhooks/mercadopago?client=${tenantId}`;
+  }
 }
