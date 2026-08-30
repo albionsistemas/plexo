@@ -70,5 +70,7 @@ export type {
   TenantSubscription,
   SystemErrorLog,
   DatabaseBackup,
+  Connector,
+  ConnectorSecret,
 } from './generated/client.js';
 export * from './generated/enums.js';

@@ -2390,3 +2390,78 @@ model SupplierPayment {
   @@index([tenantId, purchaseInvoiceId])
   @@map("supplier_payments")
 }
+
+enum ConnectorProvider {
+  MERCADO_PAGO
+  TIENDANUBE    // reservado para futuro (ver PLAN_MERCADOPAGO.md)
+  MERCADO_LIBRE // reservado para futuro
+}
+
+enum ConnectorStatus {
+  PENDING      // se inició OAuth, falta el callback
+  CONNECTED    // activo y usable
+  EXPIRED      // el token venció y no se pudo refrescar
+  REVOKED      // el vendedor desautorizó desde el proveedor
+  ERROR        // fallo repetido
+  DISCONNECTED // el usuario lo desconectó desde OPLEX
+}
+
+// Conexión de un tenant con un proveedor externo (Mercado Pago hoy;
+// Tiendanube/ML después, mismo patrón - ver @plexo/connectors). Sólo estado
+// y metadata NO sensible - las credenciales en sí nunca viven acá, ver
+// ConnectorSecret.
+model Connector {
+  id       String            @id @default(uuid())
+  tenantId String
+  provider ConnectorProvider
+  status   ConnectorStatus   @default(PENDING)
+
+  // Identidad de la cuenta externa, para mostrar en UI - no es secreto.
+  externalAccountId String?
+  externalNickname   String?
+  scopes             String?
+
+  connectedByUserId String?
+  connectedAt       DateTime?
+  lastRefreshAt     DateTime?
+  lastErrorAt       DateTime?
+  lastErrorMessage  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  secrets ConnectorSecret[]
+
+  @@unique([tenantId, provider])
+  @@unique([tenantId, id])
+  @@index([tenantId, provider, status])
+  @@map("connectors")
+}
+
+// Credencial cifrada de un Connector (access_token/refresh_token/
+// webhook_secret, etc.), una fila por (connector, key). `value` es el mismo
+// blob opaco base64 que produce EncryptionService.encrypt() (AES-256-GCM) -
+// idéntico mecanismo que TenantSettings.afipCertEncrypted/afipKeyEncrypted,
+// nunca texto plano. `tenantId` denormalizado (no sólo vía join a
+// Connector) para que la policy RLS de abajo sea directa. onDelete: Cascade
+// a propósito - borrar un Connector no debe dejar secretos huérfanos
+// (ConnectorService.disconnect ya los borra a mano antes, esto es la red
+// de seguridad para cualquier otro camino de borrado).
+model ConnectorSecret {
+  id          String    @id @default(uuid())
+  tenantId    String
+  connectorId String
+  connector   Connector @relation(fields: [tenantId, connectorId], references: [tenantId, id], onDelete: Cascade)
+
+  key   String
+  value String
+
+  expiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([connectorId, key])
+  @@index([tenantId])
+  @@map("connector_secrets")
+}

@@ -365,6 +365,22 @@ export async function seedTenantGraph(client: PoolClient, tenantId: string, labe
   await ins('journal_entry_lines', { tenantId, journalEntryId, accountId: payableAccountId, direction: 'DEBIT', amount: 100 });
   await ins('journal_entry_lines', { tenantId, journalEntryId, accountId: inventoryAccountId, direction: 'CREDIT', amount: 100 });
 
+  // --- Connectors (Mercado Pago / future Tiendanube-ML) ---
+  const connectorId = await ins('connectors', {
+    tenantId,
+    provider: 'MERCADO_PAGO',
+    status: 'CONNECTED',
+    connectedByUserId: userId,
+    updatedAt: new Date(),
+  });
+  await ins('connector_secrets', {
+    tenantId,
+    connectorId,
+    key: 'access_token',
+    value: 'rls-fixture-ciphertext',
+    updatedAt: new Date(),
+  });
+
   // --- audit_log: populated exclusively by DB triggers (see its own doc
   // comment in schema.prisma), never inserted directly - several of the
   // inserts above (articles, article_variants, invoices, invoice_lines,
@@ -453,6 +469,8 @@ export async function seedTenantGraph(client: PoolClient, tenantId: string, labe
  * user_activity_log above.
  */
 const CLEANUP_TABLES_REVERSE = [
+  'connector_secrets',
+  'connectors',
   'quote_lines',
   'quotes',
   'financial_transactions',
