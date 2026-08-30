@@ -73,5 +73,6 @@ export type {
   Connector,
   ConnectorSecret,
   PaymentIntent,
+  WebhookEvent,
 } from './generated/client.js';
 export * from './generated/enums.js';

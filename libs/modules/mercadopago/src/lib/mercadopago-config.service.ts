@@ -35,14 +35,22 @@ export class MercadoPagoConfigService {
     return process.env['MP_ACCESS_TOKEN'];
   }
 
+  /** App-level secret (one per OPLEX application in MP's panel, not per
+   * tenant) used to validate the x-signature HMAC on every webhook -
+   * every tenant's Checkout Pro preferences are created under this same
+   * client_id, so MP signs every notification with this same secret
+   * regardless of which tenant's payment it's about. */
+  get webhookSecret(): string | undefined {
+    return process.env['MP_WEBHOOK_SECRET'];
+  }
+
   isConfigured(): boolean {
     return Boolean(this.clientId && this.clientSecret && this.redirectUri && this.accessToken);
   }
 
   /**
-   * Where MP should POST payment notifications for a preference (Fase 4's
-   * webhook, not built yet - MP will 404 against this until then, same as
-   * any phased build). Reuses OAUTH_CALLBACK_BASE_URL ("public origin of
+   * Where MP should POST payment notifications for a preference (see
+   * apps/api's MercadoPagoWebhookController). Reuses OAUTH_CALLBACK_BASE_URL ("public origin of
    * THIS api process", already documented in .env.example for the Google/
    * Microsoft OAuth callbacks) instead of a new env var - one place names
    * this server's public URL, not two. `?client=<tenantId>` is how the

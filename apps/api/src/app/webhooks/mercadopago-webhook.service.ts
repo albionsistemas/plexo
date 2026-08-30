@@ -1,0 +1,272 @@
+import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { ConnectorService } from '@plexo/connectors';
+import {
+  getTenantDb,
+  getTenantId,
+  getUserId,
+  Prisma,
+  PrismaService,
+  withTenantContext,
+  type ConnectorProvider,
+} from '@plexo/database';
+import {
+  MercadoPagoConfigService,
+  MercadoPagoConnector,
+  MercadoPagoPaymentClient,
+  verifyMercadoPagoWebhookSignature,
+} from '@plexo/mercadopago';
+import { INVOICE_PAID, type InvoicePaidEvent } from '../dashboard/events.js';
+import { SalesService } from '../sales/sales.service.js';
+
+const PROVIDER: ConnectorProvider = 'MERCADO_PAGO';
+
+export interface MercadoPagoWebhookInput {
+  signatureHeader: string | undefined;
+  requestId: string | undefined;
+  dataId: string | undefined;
+  type: string | undefined;
+  tenantIdParam: string | undefined;
+  payload: unknown;
+}
+
+/**
+ * Composition root for Fase 4: the ONLY thing this adds on top of what
+ * already exists is "how does a Mercado Pago notification turn into a
+ * verified, idempotent call to SalesService.recordReceipt" - no new
+ * accounting logic, no new Receipt/JournalEntry shape. Lives in apps/api
+ * (not @plexo/mercadopago) for the same reason SalesService itself does:
+ * it composes across modules (mercadopago + sales) that must never import
+ * each other directly.
+ */
+@Injectable()
+export class MercadoPagoWebhookService {
+  private readonly logger = new Logger(MercadoPagoWebhookService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: MercadoPagoConfigService,
+    private readonly connectorService: ConnectorService,
+    private readonly mercadoPagoConnector: MercadoPagoConnector,
+    private readonly paymentClient: MercadoPagoPaymentClient,
+    private readonly salesService: SalesService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
+
+  /**
+   * Structural ordering, not incidental: signature validation is the
+   * FIRST thing this does, before `tenantIdParam` is read for anything
+   * beyond parsing - a request with a bad signature gets byte-for-byte
+   * the same 401 whether `?client=` names a real tenant, a nonexistent
+   * one, or is missing entirely. Nothing here may branch on tenant
+   * existence before this check passes.
+   */
+  async handleNotification(input: MercadoPagoWebhookInput): Promise<void> {
+    const secret = this.config.webhookSecret;
+    const signatureOk =
+      Boolean(secret) &&
+      verifyMercadoPagoWebhookSignature({
+        signatureHeader: input.signatureHeader,
+        requestId: input.requestId,
+        dataId: input.dataId,
+        secret: secret as string,
+      });
+
+    if (!signatureOk) {
+      throw new UnauthorizedException('Firma de Mercado Pago inválida');
+    }
+
+    // Only "payment" notifications carry anything to reconcile - MP also
+    // sends merchant_order/other types under the same URL. Ack without a
+    // WebhookEvent row: there's nothing to deduplicate against later since
+    // there's no accounting action tied to these.
+    if (input.type !== 'payment' || !input.dataId) {
+      return;
+    }
+
+    const existing = await this.prisma.webhookEvent.findUnique({
+      where: { provider_externalId_type: { provider: PROVIDER, externalId: input.dataId, type: input.type } },
+    });
+    if (existing?.processed) {
+      // Genuine duplicate delivery of an already-fully-reconciled event -
+      // this is the "doble notificación = un solo asiento" guarantee.
+      return;
+    }
+
+    const webhookEvent =
+      existing ??
+      (await this.prisma.webhookEvent.create({
+        data: {
+          provider: PROVIDER,
+          externalId: input.dataId,
+          type: input.type,
+          requestId: input.requestId,
+          signatureOk: true,
+          tenantId: input.tenantIdParam,
+          payload: (input.payload ?? {}) as Prisma.InputJsonValue,
+        },
+      }));
+
+    if (!input.tenantIdParam) {
+      // Can never be resolved by retrying - the notification URL simply
+      // has no ?client= on it. Ack (ties off the WebhookEvent as an
+      // error, not silently), don't ask MP to keep retrying forever.
+      await this.prisma.webhookEvent.update({
+        where: { id: webhookEvent.id },
+        data: { error: 'Missing ?client=<tenantId> on notification_url' },
+      });
+      return;
+    }
+
+    try {
+      const result = await withTenantContext(this.prisma, input.tenantIdParam, () =>
+        this.reconcile(input.dataId as string),
+      );
+      // Only reached if the tenant-scoped transaction above committed -
+      // marking processed here (a SEPARATE statement against the bare,
+      // non-RLS WebhookEvent table) is what makes the whole thing
+      // atomic-in-effect: a PAID PaymentIntent only ever coexists with
+      // processed=true, never PAID+processed=false, because a thrown
+      // error below rolls the tenant transaction back before this line
+      // ever runs.
+      await this.prisma.webhookEvent.update({
+        where: { id: webhookEvent.id },
+        data: { processed: true, processedAt: new Date() },
+      });
+      if (result?.invoicePaidEvent) {
+        this.eventEmitter.emit(INVOICE_PAID, result.invoicePaidEvent);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.prisma.webhookEvent.update({ where: { id: webhookEvent.id }, data: { error: message } });
+      this.logger.error(`Fallo al conciliar webhook de Mercado Pago (data.id=${input.dataId}): ${message}`);
+      // Rethrow so the controller surfaces a non-2xx and MP retries -
+      // processed stays false, so the retry re-enters this same method
+      // and tries again from scratch (see the orphan-PaymentIntent case
+      // in reconcile(), the concrete race this exists for).
+      throw err;
+    }
+  }
+
+  /**
+   * Runs entirely inside the tenant transaction withTenantContext opened
+   * above - every write here (paymentIntent.update, recordReceipt's
+   * Receipt+JournalEntry, userActivityLog) shares that ONE transaction,
+   * so a throw anywhere below (recordReceipt included) rolls back
+   * everything this function already did, not just its own step. This is
+   * the atomicity the review asked for: no code here opens its own
+   * transaction, on purpose - see SalesService's own class doc comment
+   * for the same guarantee already relied on elsewhere.
+   */
+  private async reconcile(dataId: string): Promise<{ invoicePaidEvent?: InvoicePaidEvent } | undefined> {
+    const db = getTenantDb();
+
+    const connector = await this.connectorService.getConnector(PROVIDER);
+    if (!connector || connector.status !== 'CONNECTED') {
+      // Terminal for now (Fase 6's proactive refresh doesn't exist yet) -
+      // retrying won't reconnect the tenant's account by itself. Ack.
+      return undefined;
+    }
+
+    const accessToken = await this.mercadoPagoConnector.getValidAccessToken(connector.id);
+    const payment = await this.paymentClient.getPayment(accessToken, dataId);
+
+    if (!payment.external_reference) {
+      return undefined;
+    }
+
+    // external_reference IS the PaymentIntent.id set at creation (Fase 3) -
+    // findFirst under getTenantDb() is RLS-scoped to THIS tenant only, so
+    // an external_reference that belongs to another tenant's intent (a
+    // guessed/replayed id, or a mismatched ?client=) resolves to null
+    // here exactly as if it didn't exist - that's the multi-tenant
+    // isolation guarantee, not a special case handled in code.
+    const intent = await db.paymentIntent.findFirst({ where: { id: payment.external_reference } });
+    if (!intent) {
+      // Could be a genuine race (Fase 3's createPaymentLink hasn't
+      // committed its PaymentIntent row yet when this notification
+      // lands) as much as a garbage reference - throwing here (not
+      // returning) keeps WebhookEvent.processed=false so a legitimate MP
+      // retry gets a real second chance instead of the door being closed
+      // on the very first attempt.
+      throw new NotFoundException(`No PaymentIntent found for external_reference ${payment.external_reference}`);
+    }
+
+    if (intent.status !== 'PENDING') {
+      // Already reconciled (PAID, any externalPaymentId), or a terminal
+      // state from a prior notification (ERROR/CANCELLED/EXPIRED/
+      // REFUNDED) - never re-run recordReceipt for a second time no
+      // matter how many more notifications arrive for the same intent.
+      return undefined;
+    }
+
+    if (payment.status !== 'approved') {
+      // pending/in_process/rejected/etc - nothing to reconcile yet, this
+      // intent stays PENDING for a later notification to pick up.
+      return undefined;
+    }
+
+    const paymentAmount =
+      payment.transaction_amount != null ? new Prisma.Decimal(payment.transaction_amount) : undefined;
+    const amountMatches = Boolean(paymentAmount?.equals(intent.amount));
+    const currencyMatches = payment.currency_id === intent.currency;
+    if (!amountMatches || !currencyMatches) {
+      // Defense against an altered amount/currency between preference
+      // creation and payment - never asienta on a mismatch. Committed as
+      // its own outcome (not a throw): retrying won't change what MP
+      // already approved, so no retry is warranted either.
+      await db.paymentIntent.update({ where: { id: intent.id }, data: { status: 'ERROR' } });
+      this.logger.error(
+        `Mercado Pago payment ${payment.id} amount/currency mismatch for intent ${intent.id}: ` +
+          `expected ${intent.amount.toString()} ${intent.currency}, got ${payment.transaction_amount} ${payment.currency_id}`,
+      );
+      return undefined;
+    }
+
+    await db.paymentIntent.update({
+      where: { id: intent.id },
+      data: {
+        status: 'PAID',
+        externalPaymentId: String(payment.id),
+        paidAt: payment.date_approved ? new Date(payment.date_approved) : new Date(),
+        paymentRaw: payment as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    if (intent.documentType !== 'INVOICE') {
+      // QUOTE: informational only, per the Fase 3 decision - no
+      // SalesService call, no journal entry, nothing else to do.
+      return undefined;
+    }
+
+    await this.salesService.recordReceipt({
+      invoiceId: intent.documentId,
+      amount: intent.amount.toNumber(),
+      method: 'MERCADO_PAGO',
+    });
+
+    await db.userActivityLog.create({
+      data: {
+        tenantId: getTenantId(),
+        userId: getUserId(), // undefined - system-initiated, no acting user
+        action: 'mercadopago.payment_received',
+        outcome: 'SUCCESS',
+        entityType: 'Invoice',
+        entityId: intent.documentId,
+        entityLabel: `Cobro Mercado Pago recibido - $${intent.amount.toString()}`,
+      },
+    });
+
+    const invoice = await db.invoice.findUnique({ where: { id: intent.documentId } });
+
+    return {
+      invoicePaidEvent: {
+        tenantId: getTenantId(),
+        invoiceId: intent.documentId,
+        amount: intent.amount.toString(),
+        balanceDue: invoice?.balanceDue.toString() ?? '0',
+        status: invoice?.status ?? 'PAID',
+      },
+    };
+  }
+}

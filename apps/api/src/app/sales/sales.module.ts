@@ -11,5 +11,11 @@ import { SalesService } from './sales.service.js';
   imports: [InventoryModule, InvoicingModule, AccountingModule, TenantSettingsModule, TreasuryModule],
   controllers: [SalesController],
   providers: [SalesService],
+  // Exported for MercadoPagoWebhookModule - the webhook's whole reason to
+  // reuse this (rather than posting a Receipt+JournalEntry itself) is to
+  // never have a second path that collects a payment without also
+  // crediting Deudores por Ventas, see SalesService.recordReceipt's own
+  // doc comment.
+  exports: [SalesService],
 })
 export class SalesModule {}

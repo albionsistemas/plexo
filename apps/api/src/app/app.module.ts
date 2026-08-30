@@ -37,6 +37,7 @@ import { SupplierReturnsModule } from './supplier-returns/supplier-returns.modul
 import { SystemModule } from './system/system.module.js';
 import { TreasuryModule } from './treasury/treasury.module.js';
 import { UsersModule } from './users/users.module.js';
+import { MercadoPagoWebhookModule } from './webhooks/mercadopago-webhook.module.js';
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { UsersModule } from './users/users.module.js';
     TreasuryModule,
     SubscriptionModule,
     MercadoPagoModule,
+    MercadoPagoWebhookModule,
     AdminModule,
     SystemModule,
     UsersModule,

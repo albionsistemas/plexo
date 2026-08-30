@@ -28,6 +28,9 @@
   ],
   "references": [
     {
+      "path": "../../libs/shared/connectors/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/shared/auth-email/tsconfig.lib.json"
     },
     {

@@ -11,11 +11,13 @@ import { getTenantDb, PrismaService, withTenantContext } from '@plexo/database';
 import type { Server, Socket } from 'socket.io';
 import type {
   InvoiceCreatedEvent,
+  InvoicePaidEvent,
   PresenceUser,
   StockUpdatedEvent,
 } from './events.js';
 import {
   INVOICE_CREATED,
+  INVOICE_PAID,
   PRESENCE_OFFLINE,
   PRESENCE_ONLINE,
   PRESENCE_SNAPSHOT,
@@ -139,5 +141,10 @@ export class DashboardGateway implements OnGatewayConnection, OnGatewayDisconnec
   @OnEvent(INVOICE_CREATED)
   onInvoiceCreated(event: InvoiceCreatedEvent) {
     this.server.to(`tenant:${event.tenantId}`).emit(INVOICE_CREATED, event);
+  }
+
+  @OnEvent(INVOICE_PAID)
+  onInvoicePaid(event: InvoicePaidEvent) {
+    this.server.to(`tenant:${event.tenantId}`).emit(INVOICE_PAID, event);
   }
 }

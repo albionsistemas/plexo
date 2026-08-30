@@ -2530,3 +2530,42 @@ model PaymentIntent {
   @@index([externalPaymentId])
   @@map("payment_intents")
 }
+
+// Global como Plan/SystemErrorLog - sin tenantId requerido ni RLS, a
+// propósito: existe precisamente para deduplicar una notificación de MP
+// ANTES de que se sepa (o se confíe en) qué tenant es, y la validación de
+// firma en sí es estructuralmente previa a cualquier decisión de tenant
+// (ver MercadoPagoWebhookController - nunca hay que poder distinguir "mal
+// firmado" de "tenant inexistente" por la respuesta). tenantId queda
+// nullable, recién se completa una vez identificado el `?client=` del
+// query string, después de validar la firma.
+//
+// `processed` es la idempotencia real: un evento con processed=true nunca
+// se reprocesa (ver "doble notificación = un solo asiento"). Uno con
+// processed=false SÍ se reprocesa en el próximo reintento de MP a
+// propósito - así un fallo real (recordReceipt tira, la transacción
+// tenant-scoped hace rollback completo incluyendo el PaymentIntent que se
+// había marcado PAID) deja una vía de recuperación real en vez de un
+// cobro fantasma sin asiento.
+model WebhookEvent {
+  id       String            @id @default(uuid())
+  provider ConnectorProvider
+
+  tenantId String?
+
+  externalId String // data.id (id del pago en MP)
+  requestId  String? // x-request-id
+  type       String // "payment", etc.
+
+  signatureOk Boolean
+  processed   Boolean @default(false)
+  payload     Json
+
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+  error       String?
+
+  @@unique([provider, externalId, type])
+  @@index([tenantId, processed])
+  @@map("webhook_events")
+}
