@@ -1,4 +1,5 @@
 import { JwtService } from '@nestjs/jwt';
+import { MPAuthenticationError, MPForbiddenError } from 'mercadopago';
 import type { ConnectorService } from '@plexo/connectors';
 import { MercadoPagoConnector } from './mercadopago.connector.js';
 import { MercadoPagoStateService } from './mercadopago-state.service.js';
@@ -21,6 +22,7 @@ function makeConnectorService(overrides: Partial<jest.Mocked<ConnectorService>> 
     getSecretMeta: jest.fn(),
     finishConnecting: jest.fn().mockResolvedValue({}),
     setStatus: jest.fn().mockResolvedValue({}),
+    clearSecrets: jest.fn().mockResolvedValue(undefined),
     disconnect: jest.fn().mockResolvedValue(undefined),
     getConnector: jest.fn(),
     ...overrides,
@@ -236,23 +238,46 @@ describe('MercadoPagoConnector.refreshIfNeeded', () => {
     );
   });
 
-  it('marks EXPIRED and rethrows when the refresh call itself fails (e.g. a revoked grant)', async () => {
+  it('marks EXPIRED (not REVOKED) and rethrows for a non-auth failure (e.g. MP still down after retries)', async () => {
     const connectorService = makeConnectorService({
       getSecretMeta: jest.fn().mockResolvedValue(null),
       getSecret: jest.fn().mockResolvedValue('old-refresh-token'),
     } as never);
     const oauthClient = makeOAuthClient({
-      refreshTokens: jest.fn().mockRejectedValue(new Error('invalid_grant')),
+      refreshTokens: jest.fn().mockRejectedValue(new Error('network still unreachable')),
     } as never);
     const connector = new MercadoPagoConnector(connectorService, oauthClient, makeStateService());
 
-    await expect(connector.refreshIfNeeded('connector-1')).rejects.toThrow('invalid_grant');
+    await expect(connector.refreshIfNeeded('connector-1')).rejects.toThrow('network still unreachable');
 
     expect(connectorService.setStatus).toHaveBeenCalledWith(
       'connector-1',
       'EXPIRED',
       'No se pudo refrescar el token de Mercado Pago - hace falta reconectar',
     );
+    expect(connectorService.clearSecrets).not.toHaveBeenCalled();
+  });
+
+  it('marks REVOKED and clears secrets when the FINAL error (after oauthClient\'s own retries) is a 401/403', async () => {
+    for (const authError of [new MPAuthenticationError({ status: 401 }), new MPForbiddenError({ status: 403 })]) {
+      const connectorService = makeConnectorService({
+        getSecretMeta: jest.fn().mockResolvedValue(null),
+        getSecret: jest.fn().mockResolvedValue('old-refresh-token'),
+      } as never);
+      const oauthClient = makeOAuthClient({
+        refreshTokens: jest.fn().mockRejectedValue(authError),
+      } as never);
+      const connector = new MercadoPagoConnector(connectorService, oauthClient, makeStateService());
+
+      await expect(connector.refreshIfNeeded('connector-1')).rejects.toBe(authError);
+
+      expect(connectorService.clearSecrets).toHaveBeenCalledWith('connector-1');
+      expect(connectorService.setStatus).toHaveBeenCalledWith(
+        'connector-1',
+        'REVOKED',
+        expect.stringContaining('desautorizó'),
+      );
+    }
   });
 });
 

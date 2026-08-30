@@ -9,5 +9,6 @@ export * from './lib/mercadopago-payment-links.controller.js';
 export * from './lib/mercadopago-preference.client.js';
 export * from './lib/mercadopago-payment.client.js';
 export * from './lib/mercadopago-qr.util.js';
+export * from './lib/mercadopago-retry.util.js';
 export * from './lib/mercadopago-webhook-signature.util.js';
 export * from './lib/pkce.js';

@@ -113,6 +113,37 @@ export const adminBackupsApi = {
   list: (limit = 30) => api.get<DatabaseBackup[]>('/admin/backups', { params: { limit } }).then((r) => r.data),
 };
 
+export interface MercadoPagoMetrics {
+  paymentIntentsByStatus: Record<string, number>;
+  connectorsByStatus: Record<string, number>;
+  webhooks: {
+    totalLast7Days: number;
+    invalidSignatureLast7Days: number;
+    invalidSignatureRate: number;
+    avgProcessingLatencyMs: number | null;
+  };
+}
+
+export interface MercadoPagoWebhookEvent {
+  id: string;
+  externalId: string;
+  type: string;
+  signatureOk: boolean;
+  processed: boolean;
+  tenantId: string | null;
+  receivedAt: string;
+  processedAt: string | null;
+  error: string | null;
+}
+
+export const adminMercadoPagoApi = {
+  getMetrics: () => api.get<MercadoPagoMetrics>('/admin/mercadopago/metrics').then((r) => r.data),
+  listFailedWebhookEvents: (limit = 100) =>
+    api
+      .get<MercadoPagoWebhookEvent[]>('/admin/mercadopago/webhook-events', { params: { limit } })
+      .then((r) => r.data),
+};
+
 export interface AdminPlan {
   id: string;
   key: string;

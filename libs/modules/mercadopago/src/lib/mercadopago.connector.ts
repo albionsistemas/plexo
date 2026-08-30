@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { MPAuthenticationError, MPForbiddenError } from 'mercadopago';
 import type { ConnectorProvider } from '@plexo/database';
 import { ConnectorService, type ProviderConnector } from '@plexo/connectors';
 import { codeChallengeFromVerifier } from './pkce.js';
@@ -7,10 +8,17 @@ import { MercadoPagoStateService } from './mercadopago-state.service.js';
 
 const PROVIDER: ConnectorProvider = 'MERCADO_PAGO';
 
-/** access_token lives 180 days (MP's own docs) - refresh a full day before
- * that so a slightly-stale check never leaves a payment link generation
- * (Fase 3) working against an access_token that expires mid-request. */
-const REFRESH_MARGIN_MS = 24 * 60 * 60 * 1000;
+/**
+ * access_token lives 180 days (MP's own docs). One margin, used both by
+ * the lazy check here (right before an actual API call) and by
+ * MercadoPagoRefreshSchedulerService's daily proactive sweep (Fase 6) -
+ * 14 days rather than the original 1 day: refreshing a 180-day token two
+ * weeks early costs nothing real, and it means the daily cron can miss
+ * up to ~2 weeks of runs (a deploy issue, a stuck server) before any
+ * tenant's token is actually at risk of expiring unrefreshed - a single
+ * missed run of a 1-day margin would have had zero slack.
+ */
+const REFRESH_MARGIN_MS = 14 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class MercadoPagoConnector implements ProviderConnector {
@@ -108,11 +116,32 @@ export class MercadoPagoConnector implements ProviderConnector {
       await this.connectorService.saveSecret(connectorId, 'refresh_token', tokens.refresh_token);
       await this.connectorService.setStatus(connectorId, 'CONNECTED');
     } catch (err) {
-      await this.connectorService.setStatus(
-        connectorId,
-        'EXPIRED',
-        'No se pudo refrescar el token de Mercado Pago - hace falta reconectar',
-      );
+      // oauthClient.refreshTokens already retried transient failures
+      // internally (retryMercadoPagoCall) - by the time an error reaches
+      // here, retries are exhausted. So this classification never fires
+      // on an intermediate/transient 401, only on the final outcome:
+      // - 401/403 (invalid_grant, a real revocation) -> REVOKED, and the
+      //   now-dead tokens are cleared (Fase 6, 6.2) - there's nothing
+      //   left worth keeping encrypted, MP already rejected them.
+      // - anything else (network still down, MP 5xx persisting) ->
+      //   EXPIRED, secrets left in place - could still be transient
+      //   beyond what the retry budget covered, worth trying again later
+      //   rather than throwing away a token that might still work.
+      const revoked = err instanceof MPAuthenticationError || err instanceof MPForbiddenError;
+      if (revoked) {
+        await this.connectorService.clearSecrets(connectorId);
+        await this.connectorService.setStatus(
+          connectorId,
+          'REVOKED',
+          'Mercado Pago desautorizó el acceso (token inválido al refrescar) - hace falta reconectar',
+        );
+      } else {
+        await this.connectorService.setStatus(
+          connectorId,
+          'EXPIRED',
+          'No se pudo refrescar el token de Mercado Pago - hace falta reconectar',
+        );
+      }
       throw err;
     }
   }

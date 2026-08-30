@@ -190,6 +190,20 @@ describe('ConnectorService.setStatus', () => {
       data: { status: 'CONNECTED', lastErrorAt: undefined, lastErrorMessage: undefined },
     });
   });
+
+  it('also stamps lastErrorAt/lastErrorMessage for EXPIRED and REVOKED - every "needs attention" status, not just ERROR', async () => {
+    for (const status of ['EXPIRED', 'REVOKED'] as const) {
+      const db = { connector: { update: jest.fn().mockResolvedValue({}) } };
+      const service = new ConnectorService(makeEncryption());
+
+      await runInTenant(db, () => service.setStatus('connector-1', status, 'some diagnostic message'));
+
+      expect(db.connector.update).toHaveBeenCalledWith({
+        where: { id: 'connector-1' },
+        data: { status, lastErrorAt: expect.any(Date), lastErrorMessage: 'some diagnostic message' },
+      });
+    }
+  });
 });
 
 describe('ConnectorService.disconnect', () => {
@@ -223,5 +237,20 @@ describe('ConnectorService.disconnect', () => {
       where: { id: 'connector-1' },
       data: { status: 'DISCONNECTED' },
     });
+  });
+});
+
+describe('ConnectorService.clearSecrets', () => {
+  it('deletes every secret WITHOUT touching the connector status - distinct from disconnect()', async () => {
+    const db = {
+      connector: { update: jest.fn() },
+      connectorSecret: { deleteMany: jest.fn().mockResolvedValue({}) },
+    };
+    const service = new ConnectorService(makeEncryption());
+
+    await runInTenant(db, () => service.clearSecrets('connector-1'));
+
+    expect(db.connectorSecret.deleteMany).toHaveBeenCalledWith({ where: { connectorId: 'connector-1' } });
+    expect(db.connector.update).not.toHaveBeenCalled();
   });
 });

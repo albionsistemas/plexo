@@ -58,9 +58,20 @@ export class MercadoPagoPaymentService {
     }
 
     const connectorRow = await this.connectorService.getConnector('MERCADO_PAGO');
-    if (!connectorRow || connectorRow.status !== 'CONNECTED') {
+    if (!connectorRow || connectorRow.status === 'DISCONNECTED' || connectorRow.status === 'PENDING') {
       throw new BadRequestException(
         'Esta empresa todavía no vinculó una cuenta de Mercado Pago - conectala desde Preferencias antes de generar un link de cobro',
+      );
+    }
+    if (connectorRow.status !== 'CONNECTED') {
+      // EXPIRED/REVOKED/ERROR (Fase 6, 6.1/6.2): distinct from "never
+      // connected" - this tenant WAS linked, something needs fixing on
+      // their end, not a first-time setup. Same "Cobrar con Mercado
+      // Pago" button in the UI is already gated on status === CONNECTED
+      // (see GestionTab.tsx), so this only ever surfaces for a direct API
+      // call bypassing that gate.
+      throw new BadRequestException(
+        'La conexión con Mercado Pago de esta empresa necesita reconectarse - hacelo desde Preferencias antes de generar un link de cobro',
       );
     }
 

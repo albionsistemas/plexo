@@ -151,13 +151,30 @@ describe('MercadoPagoPaymentService.createPaymentLink (INVOICE)', () => {
     ).rejects.toThrow('todavía no vinculó una cuenta de Mercado Pago');
   });
 
-  it('rejects when the connector exists but is not CONNECTED (e.g. EXPIRED)', async () => {
+  it('rejects with a distinct "needs reconnection" message when the connector is EXPIRED/REVOKED (was connected, now isn\'t)', async () => {
+    for (const status of ['EXPIRED', 'REVOKED', 'ERROR']) {
+      const db = {
+        invoice: { findUnique: jest.fn().mockResolvedValue(makeInvoice()) },
+        paymentIntent: { findFirst: jest.fn().mockResolvedValue(null) },
+      };
+      const connectorService = makeConnectorService({
+        getConnector: jest.fn().mockResolvedValue({ id: 'connector-1', status }),
+      });
+      const service = new MercadoPagoPaymentService(connectorService, makeConnector(), makePreferenceClient(), makeConfig());
+
+      await expect(
+        runInTenant(db, () => service.createPaymentLink({ documentType: 'INVOICE', documentId: 'invoice-1' })),
+      ).rejects.toThrow('necesita reconectarse');
+    }
+  });
+
+  it('rejects with the "never connected" message when the connector is still PENDING (OAuth started, never finished)', async () => {
     const db = {
       invoice: { findUnique: jest.fn().mockResolvedValue(makeInvoice()) },
       paymentIntent: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const connectorService = makeConnectorService({
-      getConnector: jest.fn().mockResolvedValue({ id: 'connector-1', status: 'EXPIRED' }),
+      getConnector: jest.fn().mockResolvedValue({ id: 'connector-1', status: 'PENDING' }),
     });
     const service = new MercadoPagoPaymentService(connectorService, makeConnector(), makePreferenceClient(), makeConfig());
 

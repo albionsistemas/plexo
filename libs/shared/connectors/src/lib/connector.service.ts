@@ -109,15 +109,34 @@ export class ConnectorService {
     });
   }
 
+  /** ERROR/EXPIRED/REVOKED all stamp lastErrorAt/lastErrorMessage - every
+   * "needs attention" status benefits from the same diagnostic trail, not
+   * just ERROR specifically. */
+  private static readonly NEEDS_ATTENTION: ConnectorStatus[] = ['ERROR', 'EXPIRED', 'REVOKED'];
+
   setStatus(connectorId: string, status: ConnectorStatus, errorMessage?: string): Promise<Connector> {
+    const needsAttention = ConnectorService.NEEDS_ATTENTION.includes(status);
     return getTenantDb().connector.update({
       where: { id: connectorId },
       data: {
         status,
-        lastErrorAt: status === 'ERROR' ? new Date() : undefined,
-        lastErrorMessage: status === 'ERROR' ? errorMessage : undefined,
+        lastErrorAt: needsAttention ? new Date() : undefined,
+        lastErrorMessage: needsAttention ? errorMessage : undefined,
       },
     });
+  }
+
+  /**
+   * Deletes every stored secret for a connector WITHOUT touching its
+   * status - deliberately separate from disconnect() below, which does
+   * both. Used when MP itself signals the tokens are dead (a 401/403 on
+   * refresh after retries, see MercadoPagoConnector.refreshIfNeeded) so
+   * the connector can be marked REVOKED (distinct from the user-initiated
+   * DISCONNECTED) while still not hanging on to credentials MP has
+   * already invalidated.
+   */
+  async clearSecrets(connectorId: string): Promise<void> {
+    await getTenantDb().connectorSecret.deleteMany({ where: { connectorId } });
   }
 
   /** No-op if this tenant never connected `provider` - disconnecting
@@ -127,7 +146,7 @@ export class ConnectorService {
     if (!connector) {
       return;
     }
-    await getTenantDb().connectorSecret.deleteMany({ where: { connectorId: connector.id } });
+    await this.clearSecrets(connector.id);
     await getTenantDb().connector.update({
       where: { id: connector.id },
       data: { status: 'DISCONNECTED' },

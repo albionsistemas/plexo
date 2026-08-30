@@ -4,6 +4,7 @@ import type { AuthorizationRequest } from 'mercadopago/dist/clients/oAuth/getAut
 import type { OAuthRequest } from 'mercadopago/dist/clients/oAuth/create/types.js';
 import type { OAuthResponse } from 'mercadopago/dist/clients/oAuth/commonTypes.js';
 import { MercadoPagoConfigService } from './mercadopago-config.service.js';
+import { retryMercadoPagoCall } from './mercadopago-retry.util.js';
 
 /**
  * The installed SDK's own .d.ts under-declares both of these: neither
@@ -67,17 +68,29 @@ export class MercadoPagoOAuthClient {
     return this.sdk().create({ body });
   }
 
-  /** POST /oauth/token, grant_type=refresh_token. The response's own
+  /**
+   * POST /oauth/token, grant_type=refresh_token. The response's own
    * refresh_token is a NEW one (MP rotates it on every refresh) - callers
-   * must store it, never keep reusing the one passed in here. */
+   * must store it, never keep reusing the one passed in here.
+   *
+   * Wrapped in retryMercadoPagoCall (Fase 6 hardening) - a transient
+   * network blip or MP 5xx here shouldn't flip a tenant's connector to
+   * EXPIRED/REVOKED on the first try. A 401/403 (invalid_grant, real
+   * revocation) is NOT retryable by design (see the util's own doc
+   * comment), so MercadoPagoConnector.refreshIfNeeded's REVOKED
+   * classification always runs on the FINAL error, after retries are
+   * already exhausted - never on an intermediate one.
+   */
   refreshTokens(refreshToken: string): Promise<OAuthResponse> {
-    return this.sdk().refresh({
-      body: {
-        client_id: this.config.clientId,
-        client_secret: this.config.clientSecret,
-        refresh_token: refreshToken,
-      },
-    });
+    return retryMercadoPagoCall(() =>
+      this.sdk().refresh({
+        body: {
+          client_id: this.config.clientId,
+          client_secret: this.config.clientSecret,
+          refresh_token: refreshToken,
+        },
+      }),
+    );
   }
 
   /**

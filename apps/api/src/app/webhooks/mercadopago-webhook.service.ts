@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConnectorService } from '@plexo/connectors';
@@ -73,6 +74,39 @@ export class MercadoPagoWebhookService {
       });
 
     if (!signatureOk) {
+      // Fase 6 observability (6.4, "tasa de firmas inválidas"): logged as
+      // its own WebhookEvent row rather than silently 401ing, so an
+      // admin metric can actually count these. externalId falls back to
+      // a fresh UUID when dataId is missing/blank so unrelated malformed
+      // attempts never collide into the same row under the
+      // (provider, externalId, type) unique constraint.
+      //
+      // KNOWN GAP, left for infra hardening (flagged in the PR, not
+      // fixed here): this is an unauthenticated POST endpoint - every
+      // invalid attempt is one DB insert, with no rate limiting in front
+      // of it. A flood of bogus requests is both a write-amplification
+      // and a "the invalid-signature metric itself gets noisy" problem.
+      // Needs a rate limiter (e.g. at the reverse proxy, or a NestJS
+      // throttler guard) in front of this route before it's internet-
+      // facing at real scale - out of scope for this integration alone.
+      await this.prisma.webhookEvent
+        .create({
+          data: {
+            provider: PROVIDER,
+            externalId: input.dataId || randomUUID(),
+            type: input.type || 'unknown',
+            requestId: input.requestId,
+            signatureOk: false,
+            tenantId: input.tenantIdParam,
+            payload: (input.payload ?? {}) as Prisma.InputJsonValue,
+            error: 'Invalid x-signature',
+          },
+        })
+        .catch((err: unknown) => {
+          // Logging the rejection must never be why the rejection itself
+          // fails - same tolerance as ActivityLogInterceptor's own write.
+          this.logger.warn(`Failed to log invalid webhook signature attempt: ${(err as Error).message}`);
+        });
       throw new UnauthorizedException('Firma de Mercado Pago inválida');
     }
 
