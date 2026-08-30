@@ -107,6 +107,61 @@ describe('ConnectorService.saveSecret / getSecret', () => {
   });
 });
 
+describe('ConnectorService.getSecretMeta', () => {
+  it('returns just the expiresAt, never the encrypted value', async () => {
+    const db = {
+      connectorSecret: {
+        findUnique: jest.fn().mockResolvedValue({ expiresAt: new Date('2026-12-01') }),
+      },
+    };
+    const service = new ConnectorService(makeEncryption());
+
+    const result = await runInTenant(db, () => service.getSecretMeta('connector-1', 'access_token'));
+
+    expect(result).toEqual({ expiresAt: new Date('2026-12-01') });
+    expect(db.connectorSecret.findUnique).toHaveBeenCalledWith({
+      where: { connectorId_key: { connectorId: 'connector-1', key: 'access_token' } },
+      select: { expiresAt: true },
+    });
+  });
+
+  it('returns null when no secret is stored under that key', async () => {
+    const db = { connectorSecret: { findUnique: jest.fn().mockResolvedValue(null) } };
+    const service = new ConnectorService(makeEncryption());
+
+    const result = await runInTenant(db, () => service.getSecretMeta('connector-1', 'access_token'));
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('ConnectorService.finishConnecting', () => {
+  it('marks the connector CONNECTED with the account metadata and the acting user', async () => {
+    const db = { connector: { update: jest.fn().mockResolvedValue({}) } };
+    const service = new ConnectorService(makeEncryption());
+
+    await runInTenant(db, () =>
+      service.finishConnecting('connector-1', {
+        externalAccountId: '123456',
+        externalNickname: 'MI NEGOCIO',
+        scopes: 'read write offline_access',
+      }),
+    );
+
+    expect(db.connector.update).toHaveBeenCalledWith({
+      where: { id: 'connector-1' },
+      data: {
+        status: 'CONNECTED',
+        externalAccountId: '123456',
+        externalNickname: 'MI NEGOCIO',
+        scopes: 'read write offline_access',
+        connectedByUserId: 'user-1',
+        connectedAt: expect.any(Date),
+      },
+    });
+  });
+});
+
 describe('ConnectorService.setStatus', () => {
   it('stamps lastErrorAt/lastErrorMessage when moving to ERROR', async () => {
     const db = { connector: { update: jest.fn().mockResolvedValue({}) } };

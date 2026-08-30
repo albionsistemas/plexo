@@ -70,6 +70,9 @@
       "path": "../../libs/modules/payables/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/modules/mercadopago/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/modules/invoicing/tsconfig.lib.json"
     },
     {

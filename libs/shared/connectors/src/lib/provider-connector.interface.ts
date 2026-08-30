@@ -17,7 +17,15 @@ import type { ConnectorProvider } from '@plexo/database';
 export interface ProviderConnector {
   readonly provider: ConnectorProvider;
   getAuthorizationUrl(tenantId: string, state: string): string;
-  handleOAuthCallback(tenantId: string, code: string): Promise<void>;
+  /**
+   * `state` is threaded through again here (not just at
+   * getAuthorizationUrl) because PKCE's `code_verifier` never left the
+   * server - it travels inside the signed `state` itself (see each
+   * provider's own state service), so completing the exchange means
+   * decoding the same `state` a second time, not receiving the verifier
+   * separately.
+   */
+  handleOAuthCallback(tenantId: string, code: string, state: string): Promise<void>;
   refreshIfNeeded(connectorId: string): Promise<void>;
   disconnect(tenantId: string): Promise<void>;
 }

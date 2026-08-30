@@ -89,6 +89,9 @@
     },
     {
       "path": "./libs/shared/connectors"
+    },
+    {
+      "path": "./libs/modules/mercadopago"
     }
   ],
   "compilerOptions": {}

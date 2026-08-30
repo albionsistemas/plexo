@@ -17,6 +17,7 @@
     "@plexo/encryption": "^0.0.1",
     "@plexo/inventory": "^0.0.1",
     "@plexo/invoicing": "^0.0.1",
+    "@plexo/mercadopago": "^0.0.1",
     "@plexo/payables": "^0.0.1",
     "@plexo/purchases": "^0.0.1",
     "@plexo/receivables": "^0.0.1",

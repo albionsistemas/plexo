@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { getTenantDb, getTenantId, type Connector, type ConnectorProvider, type ConnectorStatus } from '@plexo/database';
+import {
+  getTenantDb,
+  getTenantId,
+  getUserId,
+  type Connector,
+  type ConnectorProvider,
+  type ConnectorStatus,
+} from '@plexo/database';
 import { EncryptionService } from '@plexo/encryption';
 
 /**
@@ -65,6 +72,41 @@ export class ConnectorService {
       where: { connectorId_key: { connectorId, key } },
     });
     return secret ? this.encryption.decrypt(secret.value) : null;
+  }
+
+  /** null = no secret stored under that key. Metadata only (expiresAt) -
+   * never decrypts, for callers that just need to decide whether a refresh
+   * is due without touching the plaintext. */
+  async getSecretMeta(connectorId: string, key: string): Promise<{ expiresAt: Date | null } | null> {
+    const secret = await getTenantDb().connectorSecret.findUnique({
+      where: { connectorId_key: { connectorId, key } },
+      select: { expiresAt: true },
+    });
+    return secret ?? null;
+  }
+
+  /**
+   * Marks a Connector CONNECTED with the account metadata OAuth just
+   * returned (externalAccountId/nickname/scopes - none of it secret,
+   * see the model's own doc comment). connectedByUserId/connectedAt are
+   * stamped here rather than left to the caller so "who linked this" can
+   * never be forgotten by a provider implementation.
+   */
+  finishConnecting(
+    connectorId: string,
+    info: { externalAccountId?: string; externalNickname?: string; scopes?: string },
+  ): Promise<Connector> {
+    return getTenantDb().connector.update({
+      where: { id: connectorId },
+      data: {
+        status: 'CONNECTED',
+        externalAccountId: info.externalAccountId,
+        externalNickname: info.externalNickname,
+        scopes: info.scopes,
+        connectedByUserId: getUserId(),
+        connectedAt: new Date(),
+      },
+    });
   }
 
   setStatus(connectorId: string, status: ConnectorStatus, errorMessage?: string): Promise<Connector> {

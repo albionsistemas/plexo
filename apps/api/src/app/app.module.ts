@@ -11,6 +11,7 @@ import { EncryptionModule } from '@plexo/encryption';
 import { InventoryModule } from '@plexo/inventory';
 import { InventoryCartModule } from '@plexo/inventory-cart';
 import { InvoicingModule } from '@plexo/invoicing';
+import { MercadoPagoModule } from '@plexo/mercadopago';
 import { PayablesModule } from '@plexo/payables';
 import { PurchasesModule } from '@plexo/purchases';
 import { QuotesModule } from '@plexo/quotes';
@@ -69,6 +70,7 @@ import { UsersModule } from './users/users.module.js';
     PurchaseCreditNotesModule,
     TreasuryModule,
     SubscriptionModule,
+    MercadoPagoModule,
     AdminModule,
     SystemModule,
     UsersModule,
