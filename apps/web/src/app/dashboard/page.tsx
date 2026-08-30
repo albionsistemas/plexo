@@ -86,9 +86,17 @@ export default function DashboardPage() {
       void queryClient.invalidateQueries({ queryKey: ['dashboard-snapshot'] });
     });
 
+    // Cobro reconciliado por el webhook de Mercado Pago - "Cobrado hoy" ya
+    // lo toma porque reusa el mismo Receipt que un cobro manual, sólo
+    // falta refrescar el snapshot en vivo (ver MercadoPagoWebhookService).
+    socket.on('invoice.paid', () => {
+      void queryClient.invalidateQueries({ queryKey: ['dashboard-snapshot'] });
+    });
+
     return () => {
       socket.off('stock.updated');
       socket.off('invoice.created');
+      socket.off('invoice.paid');
     };
   }, [queryClient]);
 

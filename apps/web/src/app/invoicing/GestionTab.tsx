@@ -2,11 +2,13 @@
 
 import InvoiceDetailPanel from '@/components/InvoiceDetailPanel';
 import { invoicingApi, type Invoice } from '@/lib/invoicing';
+import { mercadoPagoApi } from '@/lib/mercadopago';
 import { getSocket } from '@/lib/socket';
 import { useDensity } from '@/providers/DensityProvider';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import CreditNoteModal from './CreditNoteModal';
+import MercadoPagoPaymentModal from './MercadoPagoPaymentModal';
 import NewInvoiceModal from './NewInvoiceModal';
 import ReceiptModal from './ReceiptModal';
 
@@ -38,19 +40,38 @@ export default function GestionTab() {
   const [receiptFor, setReceiptFor] = useState<Invoice | null>(null);
   const [creditNoteFor, setCreditNoteFor] = useState<Invoice | null>(null);
   const [detailFor, setDetailFor] = useState<Invoice | null>(null);
+  const [mercadoPagoFor, setMercadoPagoFor] = useState<Invoice | null>(null);
 
   const invoicesQuery = useQuery({
     queryKey: ['invoices'],
     queryFn: invoicingApi.listInvoices,
   });
 
+  // Mismo query key que la card de Preferencias - React Query lo cachea
+  // una sola vez entre ambas pantallas, no duplica el pedido. Sólo importa
+  // si está CONNECTED: el botón de cobro no tiene sentido mostrarlo si la
+  // empresa nunca vinculó una cuenta.
+  const { data: mercadoPagoStatus } = useQuery({
+    queryKey: ['mercadopago-status'],
+    queryFn: mercadoPagoApi.getStatus,
+  });
+  const mercadoPagoConnected = mercadoPagoStatus?.status === 'CONNECTED';
+
   useEffect(() => {
     const socket = getSocket();
     socket.on('invoice.created', () => {
       void queryClient.invalidateQueries({ queryKey: ['invoices'] });
     });
+    // Cobro reconciliado por el webhook de Mercado Pago (ver
+    // MercadoPagoWebhookService) - nadie en este navegador disparó la
+    // acción, así que sin esto la fila se queda con el saldo viejo hasta
+    // un refresh manual.
+    socket.on('invoice.paid', () => {
+      void queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    });
     return () => {
       socket.off('invoice.created');
+      socket.off('invoice.paid');
     };
   }, [queryClient]);
 
@@ -152,6 +173,14 @@ export default function GestionTab() {
                             Cobrar
                           </button>
                         )}
+                        {mercadoPagoConnected && Number(inv.balanceDue) > 0 && inv.status !== 'CANCELLED' && (
+                          <button
+                            onClick={() => setMercadoPagoFor(inv)}
+                            className="text-xs text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300"
+                          >
+                            Cobrar con Mercado Pago
+                          </button>
+                        )}
                         {inv.afipCae && inv.status !== 'CANCELLED' && (
                           <button
                             onClick={() => setCreditNoteFor(inv)}
@@ -172,6 +201,9 @@ export default function GestionTab() {
 
       {newInvoiceOpen && <NewInvoiceModal onClose={() => setNewInvoiceOpen(false)} />}
       {receiptFor && <ReceiptModal invoice={receiptFor} onClose={() => setReceiptFor(null)} />}
+      {mercadoPagoFor && (
+        <MercadoPagoPaymentModal invoice={mercadoPagoFor} onClose={() => setMercadoPagoFor(null)} />
+      )}
       {creditNoteFor && (
         <CreditNoteModal invoice={creditNoteFor} onClose={() => setCreditNoteFor(null)} />
       )}
