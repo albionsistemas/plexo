@@ -144,6 +144,17 @@ export const adminMercadoPagoApi = {
       .then((r) => r.data),
 };
 
+export interface SystemStatusItem {
+  key: string;
+  label: string;
+  configured: boolean;
+  detail?: string;
+}
+
+export const adminSystemStatusApi = {
+  getStatus: () => api.get<SystemStatusItem[]>('/admin/system-status').then((r) => r.data),
+};
+
 export interface AdminPlan {
   id: string;
   key: string;

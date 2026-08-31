@@ -13,6 +13,7 @@ const NAV_ENTRIES = [
   { href: '/admin/mercadopago', label: 'Mercado Pago' },
   { href: '/admin/backups', label: 'Backups' },
   { href: '/admin/bna-sync', label: 'Cotizaciones USD' },
+  { href: '/admin/system-status', label: 'Configuración del sistema' },
 ];
 
 /**
