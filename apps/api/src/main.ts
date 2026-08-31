@@ -17,9 +17,25 @@ import fastifyStatic from '@fastify/static';
 import { AppModule } from './app/app.module';
 
 async function bootstrap() {
+  // rawBody: true - NestJS's own supported mechanism (not a hand-rolled
+  // content-type parser): FastifyAdapter.useBodyParser already stamps
+  // req.rawBody with the exact bytes it read, BEFORE handing them to its
+  // own JSON parser, whenever this flag is on (see registerJsonContentParser
+  // in @nestjs/platform-fastify's source). TiendanubeWebhookController
+  // needs this: Tiendanube signs the raw body bytes (see
+  // tiendanube-webhook-signature.util.ts's own doc comment - re-serializing
+  // the parsed JSON can change key order/whitespace and break
+  // verification). A hand-rolled `addContentTypeParser('application/json', ...)`
+  // here was tried first and crashed the server at boot
+  // (FST_ERR_CTP_ALREADY_PRESENT) - Nest's own FastifyAdapter already
+  // registers a real (non-default) 'application/json' parser via that same
+  // API, so a second registration collides exactly like @fastify/formbody
+  // does below for urlencoded. rawBody:true is the supported way to get
+  // this without fighting Nest's own parser registration.
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
+    { rawBody: true },
   );
   // 20MB - antes 5MB, insuficiente para el folleto (PDF) y adjunto ZIP de
   // artículo (hasta 10MB/20MB respectivamente, ver ArticleAttachmentsService)
@@ -44,30 +60,6 @@ async function bootstrap() {
     root: join(process.cwd(), 'uploads'),
     prefix: '/uploads/',
   });
-  // Captures the raw JSON body bytes on every request, alongside the
-  // normal parsed body - TiendanubeWebhookController needs the EXACT bytes
-  // Tiendanube signed (see tiendanube-webhook-signature.util.ts's own doc
-  // comment: re-serializing the parsed JSON can change key order/
-  // whitespace and break verification). This is Fastify's own documented
-  // pattern for this exact need (overriding the built-in 'application/json'
-  // parser, not adding a competing one) - unlike @fastify/formbody earlier
-  // in this file, a default content-type parser CAN be overridden this way
-  // without a "Content type parser already present" collision. Applied
-  // globally rather than scoped to one route (Fastify's per-route content
-  // parser scoping needs a nested plugin registration Nest doesn't expose
-  // easily) - harmless elsewhere, every other route already ignores
-  // whatever extra property sits on the request object.
-  app
-    .getHttpAdapter()
-    .getInstance()
-    .addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
-      (req as { rawBody?: Buffer }).rawBody = body as Buffer;
-      try {
-        done(null, JSON.parse((body as Buffer).toString('utf8')));
-      } catch (err) {
-        done(err as Error, undefined);
-      }
-    });
   // @fastify/cors defaults `methods` to 'GET,HEAD,POST' - narrower than every
   // other CORS middleware's default, and narrower than this API's actual
   // surface (PATCH/DELETE are used throughout). Left unset, any PATCH/DELETE

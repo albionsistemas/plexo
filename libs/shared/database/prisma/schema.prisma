@@ -2636,6 +2636,15 @@ model TiendanubeOrder {
   // criterio que PaymentIntent.paymentRaw.
   rawPayload Json
 
+  // Poblados sólo cuando status pasa a CONVERTED (el "clic humano" de la
+  // decisión #4 - endpoint de conversión, Fase 2 cont.). convertedInvoiceId
+  // es una referencia suelta (sin @relation), no compuesta ni con
+  // integridad referencial - mismo criterio que PaymentIntent.documentId:
+  // sólo existe en el modo INVOICE (el modo WITHOUT_INVOICE no genera una
+  // única Invoice a la que apuntar, sólo movimientos de stock sueltos).
+  convertedAt        DateTime?
+  convertedInvoiceId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

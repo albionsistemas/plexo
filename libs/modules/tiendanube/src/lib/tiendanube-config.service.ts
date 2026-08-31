@@ -74,4 +74,22 @@ export class TiendanubeConfigService {
   apiBaseUrl(storeId: string): string {
     return `https://api.tiendanube.com/${this.apiVersion}/${storeId}`;
   }
+
+  /** Where Tiendanube should POST order/app webhooks - reuses
+   * OAUTH_CALLBACK_BASE_URL ("public origin of THIS api process", already
+   * documented in .env.example for the Google/Microsoft OAuth callbacks
+   * and for Mercado Pago's webhook), same criterion as
+   * MercadoPagoConfigService.webhookNotificationUrl. Unlike MP's, this URL
+   * carries no `?client=<tenantId>` query param - Tiendanube's webhook
+   * body already carries `store_id`, which TiendanubeWebhookService
+   * resolves to a tenant itself (see find_tenant_by_connector() in the
+   * 20260912000000_tiendanube_orders migration), so ONE fixed URL serves
+   * every tenant's store. */
+  get webhookUrl(): string | undefined {
+    const base = process.env['OAUTH_CALLBACK_BASE_URL'];
+    if (!base) {
+      return undefined;
+    }
+    return `${base}/webhooks/tiendanube`;
+  }
 }

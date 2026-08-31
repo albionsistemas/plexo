@@ -1,6 +1,10 @@
 import type { ConnectorService } from '@plexo/connectors';
 import { TiendanubeConnector } from './tiendanube.connector.js';
+import type { TiendanubeApiClient } from './tiendanube-api.client.js';
+import type { TiendanubeConfigService } from './tiendanube-config.service.js';
 import type { TiendanubeOAuthClient } from './tiendanube-oauth.client.js';
+
+const WEBHOOK_URL = 'https://app.oplex.com.ar/api/webhooks/tiendanube';
 
 function makeConnectorService(overrides: Partial<jest.Mocked<ConnectorService>> = {}) {
   return {
@@ -26,10 +30,35 @@ function makeOAuthClient(overrides: Partial<jest.Mocked<TiendanubeOAuthClient>> 
   } as unknown as jest.Mocked<TiendanubeOAuthClient>;
 }
 
+function makeApiClient(overrides: Partial<jest.Mocked<TiendanubeApiClient>> = {}) {
+  return {
+    request: jest.fn().mockResolvedValue([]),
+    ...overrides,
+  } as unknown as jest.Mocked<TiendanubeApiClient>;
+}
+
+function makeConfig(overrides: Partial<jest.Mocked<TiendanubeConfigService>> = {}) {
+  return { webhookUrl: WEBHOOK_URL, ...overrides } as unknown as jest.Mocked<TiendanubeConfigService>;
+}
+
+function makeConnector(deps: {
+  connectorService?: jest.Mocked<ConnectorService>;
+  oauthClient?: jest.Mocked<TiendanubeOAuthClient>;
+  apiClient?: jest.Mocked<TiendanubeApiClient>;
+  config?: jest.Mocked<TiendanubeConfigService>;
+} = {}): TiendanubeConnector {
+  return new TiendanubeConnector(
+    deps.connectorService ?? makeConnectorService(),
+    deps.oauthClient ?? makeOAuthClient(),
+    deps.apiClient ?? makeApiClient(),
+    deps.config ?? makeConfig(),
+  );
+}
+
 describe('TiendanubeConnector.getAuthorizationUrl', () => {
   it('passes state straight through to the OAuth client (no PKCE to derive, unlike Mercado Pago)', () => {
     const oauthClient = makeOAuthClient();
-    const connector = new TiendanubeConnector(makeConnectorService(), oauthClient);
+    const connector = makeConnector({ oauthClient });
 
     const url = connector.getAuthorizationUrl('tenant-1', 'csrf-state-token');
 
@@ -49,7 +78,7 @@ describe('TiendanubeConnector.handleOAuthCallback', () => {
         user_id: 654321,
       }),
     } as never);
-    const connector = new TiendanubeConnector(connectorService, oauthClient);
+    const connector = makeConnector({ connectorService, oauthClient });
 
     await connector.handleOAuthCallback('tenant-1', 'auth-code-from-tn');
 
@@ -69,7 +98,7 @@ describe('TiendanubeConnector.handleOAuthCallback', () => {
     const oauthClient = makeOAuthClient({
       exchangeCodeForToken: jest.fn().mockRejectedValue(new Error('invalid_grant')),
     } as never);
-    const connector = new TiendanubeConnector(connectorService, oauthClient);
+    const connector = makeConnector({ connectorService, oauthClient });
 
     await expect(connector.handleOAuthCallback('tenant-1', 'auth-code-from-tn')).rejects.toThrow('invalid_grant');
 
@@ -86,7 +115,7 @@ describe('TiendanubeConnector.handleOAuthCallback', () => {
     const oauthClient = makeOAuthClient({
       exchangeCodeForToken: jest.fn().mockResolvedValue({ access_token: 'tn-x' }),
     } as never);
-    const connector = new TiendanubeConnector(connectorService, oauthClient);
+    const connector = makeConnector({ connectorService, oauthClient });
 
     await expect(connector.handleOAuthCallback('tenant-1', 'auth-code-from-tn')).rejects.toThrow();
 
@@ -106,7 +135,7 @@ describe('TiendanubeConnector.handleOAuthCallback', () => {
       }),
       fetchStoreName: jest.fn().mockRejectedValue(new Error('network blip')),
     } as never);
-    const connector = new TiendanubeConnector(connectorService, oauthClient);
+    const connector = makeConnector({ connectorService, oauthClient });
 
     await connector.handleOAuthCallback('tenant-1', 'auth-code-from-tn');
 
@@ -115,12 +144,114 @@ describe('TiendanubeConnector.handleOAuthCallback', () => {
       expect.objectContaining({ externalNickname: undefined }),
     );
   });
+
+  describe('webhook registration (idempotent, best-effort)', () => {
+    function successfulExchange() {
+      return jest.fn().mockResolvedValue({ access_token: 'tn-access-token', user_id: 654321, scope: 'read write' });
+    }
+
+    it('registers order/paid and app/uninstalled when neither is already subscribed', async () => {
+      const apiClient = makeApiClient({ request: jest.fn().mockResolvedValueOnce([]) } as never);
+      const oauthClient = makeOAuthClient({ exchangeCodeForToken: successfulExchange() } as never);
+      const connector = makeConnector({ oauthClient, apiClient });
+
+      await connector.handleOAuthCallback('tenant-1', 'auth-code-from-tn');
+
+      expect(apiClient.request).toHaveBeenNthCalledWith(1, {
+        connectorId: 'connector-1',
+        storeId: '654321',
+        accessToken: 'tn-access-token',
+        method: 'GET',
+        path: '/webhooks',
+      });
+      expect(apiClient.request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: 'POST', path: '/webhooks', body: { event: 'order/paid', url: WEBHOOK_URL } }),
+      );
+      expect(apiClient.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'POST',
+          path: '/webhooks',
+          body: { event: 'app/uninstalled', url: WEBHOOK_URL },
+        }),
+      );
+      expect(apiClient.request).toHaveBeenCalledTimes(3); // 1 GET + 2 POST
+    });
+
+    it('never re-subscribes an event that is already registered for our URL (idempotent on reconnect)', async () => {
+      const apiClient = makeApiClient({
+        request: jest.fn().mockResolvedValueOnce([
+          { id: 1, event: 'order/paid', url: WEBHOOK_URL },
+          { id: 2, event: 'app/uninstalled', url: WEBHOOK_URL },
+        ]),
+      } as never);
+      const oauthClient = makeOAuthClient({ exchangeCodeForToken: successfulExchange() } as never);
+      const connector = makeConnector({ oauthClient, apiClient });
+
+      await connector.handleOAuthCallback('tenant-1', 'auth-code-from-tn');
+
+      expect(apiClient.request).toHaveBeenCalledTimes(1); // only the GET - nothing to create
+    });
+
+    it('only registers the missing event when the other is already subscribed', async () => {
+      const apiClient = makeApiClient({
+        request: jest.fn().mockResolvedValueOnce([{ id: 1, event: 'order/paid', url: WEBHOOK_URL }]),
+      } as never);
+      const oauthClient = makeOAuthClient({ exchangeCodeForToken: successfulExchange() } as never);
+      const connector = makeConnector({ oauthClient, apiClient });
+
+      await connector.handleOAuthCallback('tenant-1', 'auth-code-from-tn');
+
+      expect(apiClient.request).toHaveBeenCalledTimes(2); // 1 GET + 1 POST (app/uninstalled only)
+      expect(apiClient.request).toHaveBeenCalledWith(
+        expect.objectContaining({ body: { event: 'app/uninstalled', url: WEBHOOK_URL } }),
+      );
+    });
+
+    it('a subscription registered for a DIFFERENT url does not count as already-registered', async () => {
+      const apiClient = makeApiClient({
+        request: jest.fn().mockResolvedValueOnce([
+          { id: 1, event: 'order/paid', url: 'https://old-ngrok-url.example.com/webhooks/tiendanube' },
+        ]),
+      } as never);
+      const oauthClient = makeOAuthClient({ exchangeCodeForToken: successfulExchange() } as never);
+      const connector = makeConnector({ oauthClient, apiClient });
+
+      await connector.handleOAuthCallback('tenant-1', 'auth-code-from-tn');
+
+      expect(apiClient.request).toHaveBeenCalledWith(
+        expect.objectContaining({ body: { event: 'order/paid', url: WEBHOOK_URL } }),
+      );
+    });
+
+    it('the store connected successfully even when webhook registration fails entirely (best-effort, never blocks)', async () => {
+      const apiClient = makeApiClient({ request: jest.fn().mockRejectedValue(new Error('Tiendanube 500')) } as never);
+      const connectorService = makeConnectorService();
+      const oauthClient = makeOAuthClient({ exchangeCodeForToken: successfulExchange() } as never);
+      const connector = makeConnector({ connectorService, oauthClient, apiClient });
+
+      await expect(connector.handleOAuthCallback('tenant-1', 'auth-code-from-tn')).resolves.toBeUndefined();
+
+      expect(connectorService.finishConnecting).toHaveBeenCalled();
+      expect(connectorService.setStatus).not.toHaveBeenCalledWith('connector-1', 'ERROR', expect.anything());
+    });
+
+    it('never attempts registration when OAUTH_CALLBACK_BASE_URL is not configured (no webhookUrl)', async () => {
+      const apiClient = makeApiClient();
+      const config = makeConfig({ webhookUrl: undefined } as never);
+      const oauthClient = makeOAuthClient({ exchangeCodeForToken: successfulExchange() } as never);
+      const connector = makeConnector({ oauthClient, apiClient, config });
+
+      await connector.handleOAuthCallback('tenant-1', 'auth-code-from-tn');
+
+      expect(apiClient.request).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('TiendanubeConnector.refreshIfNeeded', () => {
   it('is a no-op - Tiendanube access tokens never expire, there is nothing to refresh', async () => {
     const connectorService = makeConnectorService();
-    const connector = new TiendanubeConnector(connectorService, makeOAuthClient());
+    const connector = makeConnector({ connectorService });
 
     await connector.refreshIfNeeded('connector-1');
 
@@ -134,7 +265,7 @@ describe('TiendanubeConnector.getValidAccessToken', () => {
     const connectorService = makeConnectorService({
       getSecret: jest.fn().mockResolvedValue('tn-access-token'),
     } as never);
-    const connector = new TiendanubeConnector(connectorService, makeOAuthClient());
+    const connector = makeConnector({ connectorService });
 
     const token = await connector.getValidAccessToken('connector-1');
 
@@ -145,7 +276,7 @@ describe('TiendanubeConnector.getValidAccessToken', () => {
     const connectorService = makeConnectorService({
       getSecret: jest.fn().mockResolvedValue(null),
     } as never);
-    const connector = new TiendanubeConnector(connectorService, makeOAuthClient());
+    const connector = makeConnector({ connectorService });
 
     await expect(connector.getValidAccessToken('connector-1')).rejects.toThrow();
   });
@@ -154,7 +285,7 @@ describe('TiendanubeConnector.getValidAccessToken', () => {
 describe('TiendanubeConnector.disconnect', () => {
   it('delegates to ConnectorService.disconnect for the TIENDANUBE provider', async () => {
     const connectorService = makeConnectorService();
-    const connector = new TiendanubeConnector(connectorService, makeOAuthClient());
+    const connector = makeConnector({ connectorService });
 
     await connector.disconnect('tenant-1');
 

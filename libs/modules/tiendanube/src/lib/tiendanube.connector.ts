@@ -1,9 +1,24 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { ConnectorProvider } from '@plexo/database';
 import { ConnectorService, type ProviderConnector } from '@plexo/connectors';
+import { TiendanubeApiClient } from './tiendanube-api.client.js';
+import { TiendanubeConfigService } from './tiendanube-config.service.js';
 import { TiendanubeOAuthClient } from './tiendanube-oauth.client.js';
 
 const PROVIDER: ConnectorProvider = 'TIENDANUBE';
+
+/** Events this app needs a live subscription for - `order/paid` drives the
+ * Fase 2 order-import loop, `app/uninstalled` is how a merchant-initiated
+ * uninstall (from Tiendanube's side, not our own "Desconectar" button)
+ * gets detected and turned into REVOKED (see
+ * TiendanubeWebhookService.handleUninstall). */
+const REQUIRED_WEBHOOK_EVENTS = ['order/paid', 'app/uninstalled'] as const;
+
+interface TiendanubeWebhookSubscription {
+  id: number;
+  event: string;
+  url: string;
+}
 
 @Injectable()
 export class TiendanubeConnector implements ProviderConnector {
@@ -14,6 +29,8 @@ export class TiendanubeConnector implements ProviderConnector {
   constructor(
     private readonly connectorService: ConnectorService,
     private readonly oauthClient: TiendanubeOAuthClient,
+    private readonly apiClient: TiendanubeApiClient,
+    private readonly config: TiendanubeConfigService,
   ) {}
 
   /**
@@ -77,6 +94,65 @@ export class TiendanubeConnector implements ProviderConnector {
       externalNickname: storeName,
       scopes: tokens.scope,
     });
+
+    // Best-effort, never blocks the connection (mismo criterio que
+    // fetchStoreName arriba) - ver registerWebhooks's propio doc comment
+    // para el caso "se conectó pero el registro de webhooks falló".
+    await this.registerWebhooks(connector.id, storeId, tokens.access_token);
+  }
+
+  /**
+   * Idempotente: lista las suscripciones existentes antes de dar de alta -
+   * la doc oficial no dice si Tiendanube dedupe un alta duplicada por su
+   * cuenta, así que nunca se asume, se listra primero (GET /{store_id}/
+   * webhooks) y sólo se da de alta el (event, url) que falte. Un evento
+   * por POST - la API no acepta varios eventos en una sola alta
+   * (confirmado contra la doc oficial).
+   *
+   * "La tienda se conectó pero el registro del webhook falló": esto NUNCA
+   * tira - el catch de abajo sólo loguea. La conexión OAuth ya completó
+   * (tokens válidos, Connector CONNECTED) antes de que este método
+   * corra; sin webhooks activos el loop de Fase 2 simplemente no recibe
+   * nada hasta que se reintente (reconectar vuelve a pasar por acá), pero
+   * eso no es motivo para deshacer una vinculación que en sí funciona -
+   * mismo criterio que fetchStoreName/fetchAccountNickname (MP) como
+   * pasos best-effort que nunca bloquean el resultado principal.
+   */
+  private async registerWebhooks(connectorId: string, storeId: string, accessToken: string): Promise<void> {
+    const webhookUrl = this.config.webhookUrl;
+    if (!webhookUrl) {
+      this.logger.warn(
+        'No se pudieron registrar los webhooks de Tiendanube: falta OAUTH_CALLBACK_BASE_URL en este servidor',
+      );
+      return;
+    }
+
+    try {
+      const existing = await this.apiClient.request<TiendanubeWebhookSubscription[]>({
+        connectorId,
+        storeId,
+        accessToken,
+        method: 'GET',
+        path: '/webhooks',
+      });
+
+      for (const event of REQUIRED_WEBHOOK_EVENTS) {
+        const alreadyRegistered = existing.some((sub) => sub.event === event && sub.url === webhookUrl);
+        if (alreadyRegistered) {
+          continue;
+        }
+        await this.apiClient.request({
+          connectorId,
+          storeId,
+          accessToken,
+          method: 'POST',
+          path: '/webhooks',
+          body: { event, url: webhookUrl },
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`No se pudieron registrar los webhooks de Tiendanube para el store ${storeId}: ${err}`);
+    }
   }
 
   /**

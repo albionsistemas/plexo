@@ -16,8 +16,10 @@ const PROVIDER: ConnectorProvider = 'TIENDANUBE';
 // Decisión #1 del usuario: sólo order/paid crea algo en OPLEX. Otros
 // eventos que puedan llegar a este mismo endpoint algún día (order/created,
 // order/cancelled, product/updated, etc.) se descartan sin dejar rastro en
-// WebhookEvent - no hay nada que deduplicar para ellos todavía.
+// WebhookEvent - no hay nada que deduplicar para ellos todavía. app/uninstalled
+// es la única excepción, manejada aparte (ver handleUninstall).
 const HANDLED_EVENT = 'order/paid';
+const UNINSTALL_EVENT = 'app/uninstalled';
 
 export interface TiendanubeWebhookInput {
   signatureHeader: string | undefined;
@@ -28,7 +30,7 @@ export interface TiendanubeWebhookInput {
   payload: unknown;
 }
 
-interface TiendanubeOrderLineItemSnapshot {
+export interface TiendanubeOrderLineItemSnapshot {
   sku: string | null;
   name: string;
   quantity: number;
@@ -97,6 +99,10 @@ export class TiendanubeWebhookService {
           this.logger.warn(`Failed to log invalid Tiendanube webhook signature attempt: ${(err as Error).message}`);
         });
       throw new UnauthorizedException('Firma de Tiendanube inválida');
+    }
+
+    if (input.event === UNINSTALL_EVENT) {
+      return this.handleUninstall(input);
     }
 
     if (input.event !== HANDLED_EVENT || !input.orderId) {
@@ -171,6 +177,74 @@ export class TiendanubeWebhookService {
       SELECT tenant_id FROM find_tenant_by_connector(${PROVIDER}, ${storeId})
     `;
     return rows[0]?.tenant_id;
+  }
+
+  /**
+   * `app/uninstalled` - el merchant desinstaló la app desde el lado de
+   * Tiendanube (distinto del botón "Desconectar" de OPLEX, que ya pasa por
+   * TiendanubeConnector.disconnect). Mismo esqueleto de bookkeeping que el
+   * camino de `order/paid` (WebhookEvent para idempotencia/auditoría), pero
+   * sin `orderId` real - Tiendanube no documenta qué trae `id` para este
+   * evento, así que se usa `storeId` como externalId (estable, un uninstall
+   * por store).
+   */
+  private async handleUninstall(input: TiendanubeWebhookInput): Promise<void> {
+    const externalId = input.storeId ?? randomUUID();
+    const existing = await this.prisma.webhookEvent.findUnique({
+      where: { provider_externalId_type: { provider: PROVIDER, externalId, type: UNINSTALL_EVENT } },
+    });
+    if (existing?.processed) {
+      return;
+    }
+
+    const tenantId = existing?.tenantId ?? (await this.resolveTenantId(input.storeId));
+    const webhookEvent =
+      existing ??
+      (await this.prisma.webhookEvent.create({
+        data: {
+          provider: PROVIDER,
+          externalId,
+          type: UNINSTALL_EVENT,
+          signatureOk: true,
+          tenantId: tenantId ?? undefined,
+          payload: (input.payload ?? {}) as Prisma.InputJsonValue,
+        },
+      }));
+
+    if (!tenantId) {
+      // A diferencia de order/paid, esto NO es un error para este evento:
+      // find_tenant_by_connector() sólo mira connectors CONNECTED, así que
+      // "no hay tenant" acá significa simplemente "nunca se conectó, o ya
+      // se revocó por una notificación de uninstall anterior" - en ambos
+      // casos no hay nada que hacer, se marca procesado igual.
+      await this.prisma.webhookEvent.update({
+        where: { id: webhookEvent.id },
+        data: { processed: true, processedAt: new Date() },
+      });
+      return;
+    }
+
+    try {
+      await withTenantContext(this.prisma, tenantId, () => this.revokeConnector());
+      await this.prisma.webhookEvent.update({
+        where: { id: webhookEvent.id },
+        data: { processed: true, processedAt: new Date() },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.prisma.webhookEvent.update({ where: { id: webhookEvent.id }, data: { error: message } });
+      this.logger.error(`Fallo al procesar app/uninstalled de Tiendanube (store ${input.storeId}): ${message}`);
+      throw err;
+    }
+  }
+
+  private async revokeConnector(): Promise<void> {
+    const connector = await this.connectorService.getConnector(PROVIDER);
+    if (!connector || connector.status === 'REVOKED' || connector.status === 'DISCONNECTED') {
+      return; // nada que hacer - nunca existió, o ya está en un estado terminal.
+    }
+    await this.connectorService.clearSecrets(connector.id);
+    await this.connectorService.setStatus(connector.id, 'REVOKED', 'La tienda desinstaló la app de Tiendanube');
   }
 
   /**

@@ -103,6 +103,8 @@ function makeDeps(
       getConnector: jest
         .fn()
         .mockResolvedValue(overrides.connector === undefined ? { id: 'connector-1', status: 'CONNECTED' } : overrides.connector),
+      clearSecrets: jest.fn().mockResolvedValue(undefined),
+      setStatus: jest.fn().mockResolvedValue({}),
     } as unknown as jest.Mocked<ConnectorService>,
     connector: {
       getValidAccessToken: jest.fn().mockResolvedValue('tn-access-token'),
@@ -442,5 +444,75 @@ describe('TiendanubeWebhookService.handleNotification - other terminal cases', (
     expect(call.create.currency).toBe('ARS');
     expect(call.create.total.toString()).toBe('1500');
     expect(call.create.rawPayload).toEqual(makeOrder());
+  });
+});
+
+describe('TiendanubeWebhookService.handleNotification - app/uninstalled', () => {
+  function uninstallInput(overrides: Partial<TiendanubeWebhookInput> = {}): TiendanubeWebhookInput {
+    return baseInput({
+      event: 'app/uninstalled',
+      orderId: undefined,
+      payload: { store_id: 999, event: 'app/uninstalled' },
+      rawBody: Buffer.from(JSON.stringify({ store_id: 999, event: 'app/uninstalled' })),
+      ...overrides,
+    });
+  }
+
+  it('revokes the connector and clears its secrets when the store uninstalls the app', async () => {
+    const deps = makeDeps({ resolvedTenantId: 'tenant-1' });
+    const service = makeService(deps);
+
+    await service.handleNotification(uninstallInput());
+
+    expect(deps.connectorService.clearSecrets).toHaveBeenCalledWith('connector-1');
+    expect(deps.connectorService.setStatus).toHaveBeenCalledWith(
+      'connector-1',
+      'REVOKED',
+      expect.stringContaining('desinstaló'),
+    );
+    expect(deps.prisma.webhookEvent.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ processed: true }) }),
+    );
+    // Nunca toca el camino de importación de órdenes.
+    expect(deps.apiClient.request).not.toHaveBeenCalled();
+  });
+
+  it('is a clean no-op (still marked processed, no error) when there is no CONNECTED connector to revoke', async () => {
+    const deps = makeDeps({ resolvedTenantId: null });
+    const service = makeService(deps);
+
+    await service.handleNotification(uninstallInput());
+
+    expect(deps.connectorService.clearSecrets).not.toHaveBeenCalled();
+    expect(deps.prisma.webhookEvent.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { processed: true, processedAt: expect.any(Date) } }),
+    );
+  });
+
+  it('the same uninstall notification delivered twice only revokes once (idempotent)', async () => {
+    const deps = makeDeps({ resolvedTenantId: 'tenant-1' });
+    const service = makeService(deps);
+
+    await service.handleNotification(uninstallInput());
+    expect(deps.connectorService.clearSecrets).toHaveBeenCalledTimes(1);
+
+    (deps.prisma.webhookEvent.findUnique as jest.Mock).mockResolvedValue({
+      id: 'event-1',
+      tenantId: 'tenant-1',
+      processed: true,
+    });
+    await service.handleNotification(uninstallInput());
+
+    expect(deps.connectorService.clearSecrets).toHaveBeenCalledTimes(1);
+  });
+
+  it('is never re-attempted once an already-REVOKED connector is found - no-op, not an error', async () => {
+    const deps = makeDeps({ resolvedTenantId: 'tenant-1', connector: { id: 'connector-1', status: 'REVOKED' } });
+    const service = makeService(deps);
+
+    await service.handleNotification(uninstallInput());
+
+    expect(deps.connectorService.clearSecrets).not.toHaveBeenCalled();
+    expect(deps.connectorService.setStatus).not.toHaveBeenCalled();
   });
 });
