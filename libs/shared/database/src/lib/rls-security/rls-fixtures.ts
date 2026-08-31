@@ -389,6 +389,17 @@ export async function seedTenantGraph(client: PoolClient, tenantId: string, labe
     idempotencyKey: `rls-fixture-${label}-${newId()}`,
     updatedAt: new Date(),
   });
+  await ins('tiendanube_orders', {
+    tenantId,
+    tiendanubeStoreId: `rls-fixture-store-${label}`,
+    tiendanubeOrderId: `rls-fixture-order-${label}`,
+    customerId: companyId,
+    currency: 'ARS',
+    total: 100,
+    lineItems: [],
+    rawPayload: {},
+    updatedAt: new Date(),
+  });
 
   // --- audit_log: populated exclusively by DB triggers (see its own doc
   // comment in schema.prisma), never inserted directly - several of the
@@ -478,6 +489,7 @@ export async function seedTenantGraph(client: PoolClient, tenantId: string, labe
  * user_activity_log above.
  */
 const CLEANUP_TABLES_REVERSE = [
+  'tiendanube_orders',
   'payment_intents',
   'connector_secrets',
   'connectors',

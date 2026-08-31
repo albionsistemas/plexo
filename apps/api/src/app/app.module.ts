@@ -39,6 +39,7 @@ import { SystemModule } from './system/system.module.js';
 import { TreasuryModule } from './treasury/treasury.module.js';
 import { UsersModule } from './users/users.module.js';
 import { MercadoPagoWebhookModule } from './webhooks/mercadopago-webhook.module.js';
+import { TiendanubeWebhookModule } from './webhooks/tiendanube-webhook.module.js';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { MercadoPagoWebhookModule } from './webhooks/mercadopago-webhook.module.
     MercadoPagoModule,
     MercadoPagoWebhookModule,
     TiendanubeModule,
+    TiendanubeWebhookModule,
     AdminModule,
     SystemModule,
     UsersModule,

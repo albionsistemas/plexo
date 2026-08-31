@@ -74,5 +74,6 @@ export type {
   ConnectorSecret,
   PaymentIntent,
   WebhookEvent,
+  TiendanubeOrder,
 } from './generated/client.js';
 export * from './generated/enums.js';

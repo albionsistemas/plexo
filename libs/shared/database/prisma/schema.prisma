@@ -702,6 +702,10 @@ model Company {
   // (cliente) o a quien se le endosó/pagó (proveedor) - ver model Check.
   checksAsCustomer     Check[]              @relation("CheckCustomer")
   checksAsSupplier     Check[]              @relation("CheckSupplier")
+  // Empresas creadas o matcheadas automáticamente al recibir una orden de
+  // Tiendanube (ver TiendanubeOrder) - por CUIT/taxId primero, email
+  // segundo, creada de cero si ninguno matchea (consumidor final incluido).
+  tiendanubeOrders     TiendanubeOrder[]
 
   @@index([tenantId])
   @@map("companies")
@@ -2568,4 +2572,74 @@ model WebhookEvent {
   @@unique([provider, externalId, type])
   @@index([tenantId, processed])
   @@map("webhook_events")
+}
+
+enum TiendanubeOrderStatus {
+  PENDING_REVIEW
+  CONVERTED
+  ERROR
+}
+
+// Bandeja de revisión para una orden de Tiendanube (webhook order/paid, ver
+// TiendanubeWebhookService en apps/api) - Fase 2 de PLAN_TIENDANUBE.md.
+// Decisión con el usuario: NINGUNA orden crea una venta/factura real por sí
+// sola, ni siquiera una "perfecta" (cliente resuelto + todos los SKU
+// mapeados) - todas quedan acá para que un humano las convierta con un
+// clic (endpoint de conversión todavía sin construir). `reviewReason` es
+// lo que distingue "lista para convertir sin problemas" (null) de
+// "necesita atención" (SKU sin mapear, ver `lineItems`).
+model TiendanubeOrder {
+  id       String @id @default(uuid())
+  tenantId String
+
+  // El store_id que ya vive en Connector.externalAccountId - repetido acá
+  // sólo para no tener que resolver el Connector de nuevo al listar/mostrar
+  // esta bandeja (un tenant sólo puede tener un Connector TIENDANUBE, ver
+  // @@unique([tenantId, provider]) en Connector).
+  tiendanubeStoreId     String
+  tiendanubeOrderId     String
+  tiendanubeOrderNumber Int?
+
+  status TiendanubeOrderStatus @default(PENDING_REVIEW)
+  // null = nada para atender. No-null hoy sólo se usa para "hay SKU sin
+  // mapear" (nunca se crea un artículo automático) - ERROR de conversión
+  // (ver el enum) es un motivo futuro, sin código todavía que lo dispare.
+  reviewReason String?
+
+  // Empresa matcheada/creada por CUIT (taxId) primero, email segundo, o
+  // creada de cero si ninguno matchea - ver TiendanubeWebhookService.
+  // FK simple (no compuesta) a propósito: mismo criterio ya documentado en
+  // PROGRESS.md para customerId/supplierId - referencia "comercial", no un
+  // documento fiscal.
+  customerId String
+  customer   Company @relation(fields: [customerId], references: [id])
+
+  // Snapshot de contacto de la orden (Order.contact_*, no el objeto
+  // "customer" anidado de Tiendanube - ese requiere el scope read_customers
+  // que esta integración no pide) - mismo criterio snapshot que
+  // PurchaseOrder.sentToContactName: lo que vino EN la orden, no una
+  // referencia viva.
+  contactName           String?
+  contactEmail          String?
+  contactIdentification String?
+
+  currency String
+  total    Decimal @db.Decimal(14, 2)
+
+  // [{ sku, name, quantity, unitPrice, articleVariantId }] - articleVariantId
+  // null = SKU sin mapear en OPLEX. Snapshot, no una relación viva a
+  // ArticleVariant (mismo motivo que el contacto arriba): el catálogo puede
+  // cambiar después sin que esta orden ya recibida deba reflejarlo.
+  lineItems Json
+
+  // Payload completo de GET /orders/:id, para debug/auditoría - mismo
+  // criterio que PaymentIntent.paymentRaw.
+  rawPayload Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, tiendanubeOrderId])
+  @@index([tenantId, status])
+  @@map("tiendanube_orders")
 }

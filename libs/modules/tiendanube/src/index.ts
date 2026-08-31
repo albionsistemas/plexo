@@ -6,3 +6,5 @@ export * from './lib/tiendanube-oauth.client.js';
 export * from './lib/tiendanube-state.service.js';
 export * from './lib/tiendanube-api.client.js';
 export * from './lib/tiendanube-errors.js';
+export * from './lib/tiendanube-order.types.js';
+export * from './lib/tiendanube-webhook-signature.util.js';
