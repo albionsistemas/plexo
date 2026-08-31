@@ -22,6 +22,7 @@ import { ReportsSalesModule } from '@plexo/reports-sales';
 import { SubscriptionModule } from '@plexo/subscriptions';
 import { TaxesModule } from '@plexo/taxes';
 import { TenantSettingsModule } from '@plexo/tenant-settings';
+import { TiendanubeModule } from '@plexo/tiendanube';
 import { AdminModule } from './admin/admin.module.js';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -73,6 +74,7 @@ import { MercadoPagoWebhookModule } from './webhooks/mercadopago-webhook.module.
     SubscriptionModule,
     MercadoPagoModule,
     MercadoPagoWebhookModule,
+    TiendanubeModule,
     AdminModule,
     SystemModule,
     UsersModule,

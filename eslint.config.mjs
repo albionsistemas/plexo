@@ -36,6 +36,7 @@ export default [
             { sourceTag: 'scope:payables', onlyDependOnLibsWithTags: ['scope:payables', 'scope:shared'] },
             { sourceTag: 'scope:treasury', onlyDependOnLibsWithTags: ['scope:treasury', 'scope:shared'] },
             { sourceTag: 'scope:mercadopago', onlyDependOnLibsWithTags: ['scope:mercadopago', 'scope:shared'] },
+            { sourceTag: 'scope:tiendanube', onlyDependOnLibsWithTags: ['scope:tiendanube', 'scope:shared'] },
             {
               sourceTag: 'scope:api',
               onlyDependOnLibsWithTags: [
@@ -57,6 +58,7 @@ export default [
                 'scope:payables',
                 'scope:treasury',
                 'scope:mercadopago',
+                'scope:tiendanube',
               ],
             },
             {

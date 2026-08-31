@@ -52,6 +52,9 @@
       "path": "../../libs/modules/tenant-settings/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/modules/tiendanube/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/modules/taxes/tsconfig.lib.json"
     },
     {
