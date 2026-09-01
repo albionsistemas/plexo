@@ -32,6 +32,11 @@ jobs:
 
       - run: npm ci
 
+      # The Prisma client (libs/shared/database/src/generated) is
+      # gitignored on purpose - every project that imports @plexo/database
+      # needs it generated before build/test/typecheck can even compile.
+      - run: npx prisma generate --schema=libs/shared/database/prisma/schema.prisma
+
       # Prepend any command with "nx record --" to record its logs to Nx Cloud
       - run: npx nx record -- npx nx format:check --base="remotes/origin/main"
       - run: npx nx run-many -t lint test build typecheck e2e
