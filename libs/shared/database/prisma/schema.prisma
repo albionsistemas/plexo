@@ -2689,6 +2689,17 @@ model TiendanubeProductMapping {
   lastPushedStock Decimal?  @db.Decimal(14, 3)
   lastPushedAt    DateTime?
 
+  // Fase 4 (catálogo/imagen) - id de la imagen de Tiendanube que
+  // TiendanubeCatalogSyncService subió por última vez (necesario para
+  // poder borrarla antes de subir el reemplazo: la API no soporta
+  // "reemplazar el src de una imagen existente", sólo alta/baja) y la
+  // Article.imageUrl que corresponde a ese id (para saber si hay que
+  // reemplazarla). A propósito duplicado en cada fila-variante de un mismo
+  // producto (la imagen es a nivel Article, esta tabla es por
+  // ArticleVariant) - no amerita una segunda tabla sólo por estos 2 campos.
+  tiendanubeImageId  String?
+  lastPushedImageUrl String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

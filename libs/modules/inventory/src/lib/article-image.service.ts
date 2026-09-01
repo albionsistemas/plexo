@@ -3,7 +3,8 @@ import { mkdirSync } from 'node:fs';
 import { unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { getTenantDb } from '@plexo/database';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { getTenantDb, getTenantId } from '@plexo/database';
 import type { Article } from '@plexo/database';
 
 const ALLOWED_MIME_TYPES: Record<string, string> = {
@@ -26,7 +27,7 @@ export class ArticleImageService {
   private readonly logger = new Logger(ArticleImageService.name);
   private readonly uploadsDir = join(process.cwd(), 'uploads', 'articles');
 
-  constructor() {
+  constructor(private readonly eventEmitter: EventEmitter2) {
     mkdirSync(this.uploadsDir, { recursive: true });
   }
 
@@ -56,6 +57,7 @@ export class ArticleImageService {
     if (article.imageUrl) {
       await this.deleteFileForUrl(article.imageUrl);
     }
+    this.eventEmitter.emit('article.catalog-changed', { tenantId: getTenantId(), articleId });
     return updated;
   }
 
@@ -70,6 +72,7 @@ export class ArticleImageService {
     if (article.imageUrl) {
       await this.deleteFileForUrl(article.imageUrl);
     }
+    this.eventEmitter.emit('article.catalog-changed', { tenantId: getTenantId(), articleId });
     return updated;
   }
 

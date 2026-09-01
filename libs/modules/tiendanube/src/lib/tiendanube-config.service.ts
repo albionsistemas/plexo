@@ -92,4 +92,14 @@ export class TiendanubeConfigService {
     }
     return `${base}/webhooks/tiendanube`;
   }
+
+  /** Bare public origin of this API process, same env var as `webhookUrl`
+   * above - Fase 4 (catálogo) uses it to turn `Article.imageUrl` (a
+   * relative path, served unauthenticated - see its schema comment) into a
+   * public `src` Tiendanube's image upload endpoint can actually fetch.
+   * Undefined on a machine without a public tunnel (local dev without one
+   * configured) - same recurring blocker as the webhook registration. */
+  get publicBaseUrl(): string | undefined {
+    return process.env['OAUTH_CALLBACK_BASE_URL'];
+  }
 }

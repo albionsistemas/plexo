@@ -133,8 +133,8 @@ export class InventoryService {
     return getTenantDb().category.findMany({ orderBy: { name: 'asc' } });
   }
 
-  createArticle(dto: CreateArticleDto): Promise<Article> {
-    return getTenantDb().article.create({
+  async createArticle(dto: CreateArticleDto): Promise<Article> {
+    const article = await getTenantDb().article.create({
       data: {
         tenantId: getTenantId(),
         name: dto.name,
@@ -147,6 +147,8 @@ export class InventoryService {
         hasVariants: dto.hasVariants,
       },
     });
+    this.eventEmitter.emit('article.catalog-changed', { tenantId: article.tenantId, articleId: article.id });
+    return article;
   }
 
   async updateArticle(id: string, dto: UpdateArticleDto): Promise<Article> {
@@ -171,7 +173,7 @@ export class InventoryService {
       }
     }
 
-    return db.article.update({
+    const article = await db.article.update({
       where: { id },
       data: {
         isService: dto.isService,
@@ -181,6 +183,8 @@ export class InventoryService {
         description: dto.description,
       },
     });
+    this.eventEmitter.emit('article.catalog-changed', { tenantId: article.tenantId, articleId: article.id });
+    return article;
   }
 
   async listArticles(filters?: ArticleListFilters): Promise<ArticleListItem[]> {
@@ -287,6 +291,7 @@ export class InventoryService {
       },
     });
 
+    this.eventEmitter.emit('article.catalog-changed', { tenantId, articleId: variant.articleId });
     return variant;
   }
 
@@ -302,6 +307,8 @@ export class InventoryService {
     await db.priceHistory.create({
       data: { tenantId, articleVariantId, unitPrice, changedById: getUserId() },
     });
+
+    this.eventEmitter.emit('article.catalog-changed', { tenantId, articleId: variant.articleId });
 
     return variant;
   }

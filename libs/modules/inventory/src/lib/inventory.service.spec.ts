@@ -628,6 +628,59 @@ describe('InventoryService.listReorderSuggestions', () => {
   });
 });
 
+describe('InventoryService.createArticle / updateArticle / createArticleVariant / updateArticleVariantPrice - catalog-changed event', () => {
+  it('createArticle emits article.catalog-changed with the new article id', async () => {
+    const emitter = makeEventEmitter();
+    const db = { article: { create: jest.fn().mockResolvedValue({ id: 'article-1', tenantId: 'tenant-1' }) } };
+    const service = new InventoryService(emitter);
+
+    await runInTenant(db, () => service.createArticle({ name: 'Test', unitOfMeasure: 'UNIT' } as never));
+
+    expect(emitter.emit).toHaveBeenCalledWith('article.catalog-changed', { tenantId: 'tenant-1', articleId: 'article-1' });
+  });
+
+  it('updateArticle emits article.catalog-changed', async () => {
+    const emitter = makeEventEmitter();
+    const db = { article: { update: jest.fn().mockResolvedValue({ id: 'article-1', tenantId: 'tenant-1' }) } };
+    const service = new InventoryService(emitter);
+
+    await runInTenant(db, () => service.updateArticle('article-1', { description: 'x' }));
+
+    expect(emitter.emit).toHaveBeenCalledWith('article.catalog-changed', { tenantId: 'tenant-1', articleId: 'article-1' });
+  });
+
+  it('createArticleVariant emits article.catalog-changed for the owning article', async () => {
+    const emitter = makeEventEmitter();
+    const db = {
+      articleVariant: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'variant-1', articleId: 'article-1' }),
+      },
+      priceHistory: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const service = new InventoryService(emitter);
+
+    await runInTenant(db, () =>
+      service.createArticleVariant({ articleId: 'article-1', sku: 'SKU-1', unitPrice: 100 } as never),
+    );
+
+    expect(emitter.emit).toHaveBeenCalledWith('article.catalog-changed', { tenantId: 'tenant-1', articleId: 'article-1' });
+  });
+
+  it('updateArticleVariantPrice emits article.catalog-changed for the owning article', async () => {
+    const emitter = makeEventEmitter();
+    const db = {
+      articleVariant: { update: jest.fn().mockResolvedValue({ id: 'variant-1', articleId: 'article-1' }) },
+      priceHistory: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const service = new InventoryService(emitter);
+
+    await runInTenant(db, () => service.updateArticleVariantPrice('variant-1', 150));
+
+    expect(emitter.emit).toHaveBeenCalledWith('article.catalog-changed', { tenantId: 'tenant-1', articleId: 'article-1' });
+  });
+});
+
 describe('InventoryService.updateArticle', () => {
   function makeSupplier(overrides: Partial<{ active: boolean; roles: { role: string }[] }> = {}) {
     return {

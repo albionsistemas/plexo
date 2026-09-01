@@ -1,4 +1,5 @@
 export const STOCK_UPDATED = 'stock.updated';
+export const CATALOG_CHANGED = 'article.catalog-changed';
 export const INVOICE_CREATED = 'invoice.created';
 export const INVOICE_PAID = 'invoice.paid';
 
@@ -7,6 +8,16 @@ export interface StockUpdatedEvent {
   warehouseId: string;
   articleVariantId: string;
   newQuantity: string;
+}
+
+/** Raised on every Article/ArticleVariant create/update (name, price, sku,
+ * attributes, image) - consumed by TiendanubeCatalogSyncService (Fase 4 de
+ * PLAN_TIENDANUBE.md). Article-level, not variant-level: Tiendanube's
+ * "product" bundles every variant of one Article together, so a change to
+ * any one variant re-syncs the whole product. */
+export interface CatalogChangedEvent {
+  tenantId: string;
+  articleId: string;
 }
 
 export interface InvoiceCreatedEvent {
