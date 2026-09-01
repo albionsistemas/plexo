@@ -22,6 +22,7 @@ import type { AxiosError } from 'axios';
 import { useState } from 'react';
 import CurrencySettings from './CurrencySettings';
 import MercadoPagoCard from './MercadoPagoCard';
+import TiendanubeCard from './TiendanubeCard';
 
 const inputClass =
   'rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500';
@@ -108,6 +109,7 @@ export default function PreferencesPage() {
           />
           <AfipCertificateCard settings={settings} />
           <MercadoPagoCard />
+          <TiendanubeCard />
           <InvoicePdfCard settings={settings} />
           <WithholdingAgentCard settings={settings} />
           <InventoryPricingCard settings={settings} />

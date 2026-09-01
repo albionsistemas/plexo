@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { ConnectorService } from '@plexo/connectors';
 import { getTenantDb, getTenantId, PrismaService, withTenantContext } from '@plexo/database';
 import { InventoryService } from '@plexo/inventory';
@@ -13,9 +13,16 @@ import {
   type TiendanubeProductResource,
   type TiendanubeProductVariantInput,
 } from '@plexo/tiendanube';
-import { CATALOG_CHANGED, type CatalogChangedEvent } from '../dashboard/events.js';
+import { CATALOG_CHANGED, TIENDANUBE_CATALOG_SYNC_PROGRESS, type CatalogChangedEvent } from '../dashboard/events.js';
 
 const DEBOUNCE_MS = 5_000;
+
+export interface SyncArticleResult {
+  synced: boolean;
+  /** Motivo legible del salteo (Fase 5: "errores legibles, no stacktraces")
+   * - undefined cuando `synced` es true, siempre presente cuando es false. */
+  reason?: string;
+}
 
 interface VariantRow {
   id: string;
@@ -74,7 +81,23 @@ export class TiendanubeCatalogSyncService {
     private readonly apiClient: TiendanubeApiClient,
     private readonly inventoryService: InventoryService,
     private readonly config: TiendanubeConfigService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
+
+  /** Para la card de Tiendanube en el panel de sincronización (Fase 5):
+   * cuántos artículos publicados hay en total vs. cuántos ya tienen al
+   * menos una variante sincronizada (empezaron a sincronizarse alguna vez -
+   * no distingue "completo" de "parcial", ver el propio criterio de
+   * syncArticle: sincroniza todas las variantes de un artículo juntas o
+   * ninguna, así que en la práctica siempre es completo si está acá). */
+  async getCatalogStatus(): Promise<{ publishedCount: number; syncedCount: number }> {
+    const db = getTenantDb();
+    const [publishedCount, syncedCount] = await Promise.all([
+      db.article.count({ where: { isPublished: true } }),
+      db.article.count({ where: { isPublished: true, variants: { some: { tiendanubeMapping: { isNot: null } } } } }),
+    ]);
+    return { publishedCount, syncedCount };
+  }
 
   @OnEvent(CATALOG_CHANGED)
   onCatalogChanged(event: CatalogChangedEvent): void {
@@ -104,26 +127,40 @@ export class TiendanubeCatalogSyncService {
    * rate limit sin plomería nueva - más lento para cientos de artículos,
    * pero la barra de progreso en UI es explícitamente Fase 5, no esta.
    */
-  async syncAllPublished(): Promise<{ total: number; synced: number; skipped: number }> {
-    const articles = await getTenantDb().article.findMany({ where: { isPublished: true }, select: { id: true } });
+  async syncAllPublished(): Promise<{
+    total: number;
+    synced: number;
+    skipped: Array<{ articleId: string; name: string; reason: string }>;
+  }> {
+    const tenantId = getTenantId();
+    const articles = await getTenantDb().article.findMany({
+      where: { isPublished: true },
+      select: { id: true, name: true },
+    });
     let synced = 0;
-    let skipped = 0;
-    for (const { id } of articles) {
-      const ok = await this.syncArticle(id);
-      if (ok) {
+    const skipped: Array<{ articleId: string; name: string; reason: string }> = [];
+    for (const [index, article] of articles.entries()) {
+      const result = await this.syncArticle(article.id);
+      if (result.synced) {
         synced++;
       } else {
-        skipped++;
+        skipped.push({ articleId: article.id, name: article.name, reason: result.reason ?? 'Motivo desconocido' });
       }
+      this.eventEmitter.emit(TIENDANUBE_CATALOG_SYNC_PROGRESS, {
+        tenantId,
+        done: index + 1,
+        total: articles.length,
+      });
     }
     return { total: articles.length, synced, skipped };
   }
 
-  /** Devuelve false cuando el artículo se salteó (no publicado, sin
+  /** `synced: false` cuando el artículo se salteó (no publicado, sin
    * variantes, sin connector conectado, o atributos inconsistentes entre
-   * variantes) - nunca tira por esos casos, sólo por un fallo real de red/
-   * API tras agotar los reintentos de TiendanubeApiClient. */
-  async syncArticle(articleId: string): Promise<boolean> {
+   * variantes) - siempre con un `reason` legible, nunca tira por esos
+   * casos, sólo por un fallo real de red/API tras agotar los reintentos de
+   * TiendanubeApiClient. */
+  async syncArticle(articleId: string): Promise<SyncArticleResult> {
     const tenantId = getTenantId();
     const db = getTenantDb();
 
@@ -131,13 +168,19 @@ export class TiendanubeCatalogSyncService {
       where: { id: articleId },
       include: { variants: { include: { tiendanubeMapping: true } } },
     });
-    if (!article || !article.isPublished || article.variants.length === 0) {
-      return false;
+    if (!article) {
+      return { synced: false, reason: 'El artículo no existe' };
+    }
+    if (!article.isPublished) {
+      return { synced: false, reason: 'El artículo no está publicado' };
+    }
+    if (article.variants.length === 0) {
+      return { synced: false, reason: 'El artículo no tiene ninguna variante' };
     }
 
     const connector = await this.connectorService.getConnector('TIENDANUBE');
     if (!connector || connector.status !== 'CONNECTED' || !connector.externalAccountId) {
-      return false;
+      return { synced: false, reason: 'Tiendanube no está conectado' };
     }
     const storeId = connector.externalAccountId;
 
@@ -153,16 +196,14 @@ export class TiendanubeCatalogSyncService {
     });
     const uniqueKeySets = new Set(keySets);
     if (uniqueKeySets.size > 1) {
-      this.logger.warn(
-        `Artículo "${article.name}" (${articleId}, tenant ${tenantId}) tiene variantes con atributos inconsistentes entre sí - Tiendanube exige el mismo conjunto de atributos para todas las variantes de un producto. No sincronizado.`,
-      );
-      return false;
+      const reason = 'Las variantes tienen atributos inconsistentes entre sí (Tiendanube exige el mismo conjunto para todas)';
+      this.logger.warn(`Artículo "${article.name}" (${articleId}, tenant ${tenantId}): ${reason}. No sincronizado.`);
+      return { synced: false, reason };
     }
     if (variants.length > 1 && keySets[0] === '') {
-      this.logger.warn(
-        `Artículo "${article.name}" (${articleId}, tenant ${tenantId}) tiene ${variants.length} variantes sin ningún atributo que las distinga - Tiendanube no puede representarlas bajo un mismo producto. No sincronizado.`,
-      );
-      return false;
+      const reason = `Tiene ${variants.length} variantes sin ningún atributo que las distinga`;
+      this.logger.warn(`Artículo "${article.name}" (${articleId}, tenant ${tenantId}): ${reason}. No sincronizado.`);
+      return { synced: false, reason };
     }
     const canonicalAttributes = keySets[0] ? keySets[0].split('|') : [];
 
@@ -280,7 +321,7 @@ export class TiendanubeCatalogSyncService {
     }
 
     await this.syncImage(article, variants, productId, connector.id, storeId, accessToken);
-    return true;
+    return { synced: true };
   }
 
   /**

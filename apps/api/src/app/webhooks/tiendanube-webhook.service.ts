@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CompaniesService } from '@plexo/companies';
 import { ConnectorService } from '@plexo/connectors';
 import { getTenantDb, getTenantId, Prisma, PrismaService, withTenantContext, type ConnectorProvider } from '@plexo/database';
@@ -10,6 +11,7 @@ import {
   verifyTiendanubeWebhookSignature,
   type TiendanubeOrderResource,
 } from '@plexo/tiendanube';
+import { TIENDANUBE_ORDER_RECEIVED } from '../dashboard/events.js';
 
 const PROVIDER: ConnectorProvider = 'TIENDANUBE';
 
@@ -60,6 +62,7 @@ export class TiendanubeWebhookService {
     private readonly connector: TiendanubeConnector,
     private readonly apiClient: TiendanubeApiClient,
     private readonly companiesService: CompaniesService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -279,7 +282,7 @@ export class TiendanubeWebhookService {
     const { lineItems, reviewReason } = await this.mapLineItems(order);
 
     const tenantId = getTenantId();
-    await db.tiendanubeOrder.upsert({
+    const tiendanubeOrder = await db.tiendanubeOrder.upsert({
       // Idempotencia propia además de la de WebhookEvent (decisión ya
       // acordada) - un upsert, no un create, para que un eventual segundo
       // paso por acá (una carrera, no el camino normal) no reviente con
@@ -302,6 +305,11 @@ export class TiendanubeWebhookService {
       },
       update: {},
     });
+    // Fase 5 de PLAN_TIENDANUBE.md: refresca en vivo la bandeja de revisión
+    // (mismo patrón que INVOICE_CREATED/INVOICE_PAID) - inofensivo en el
+    // caso raro de un reintento sobre una orden ya existente, sólo dispara
+    // un refetch de más en el cliente.
+    this.eventEmitter.emit(TIENDANUBE_ORDER_RECEIVED, { tenantId, tiendanubeOrderRowId: tiendanubeOrder.id });
   }
 
   /**

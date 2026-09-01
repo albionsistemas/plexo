@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import type { EventEmitter2 } from '@nestjs/event-emitter';
 import type { CompaniesService } from '@plexo/companies';
 import type { ConnectorService } from '@plexo/connectors';
 import { type PrismaService } from '@plexo/database';
@@ -63,6 +64,7 @@ interface Deps {
   connector: jest.Mocked<TiendanubeConnector>;
   apiClient: jest.Mocked<TiendanubeApiClient>;
   companiesService: jest.Mocked<CompaniesService>;
+  eventEmitter: jest.Mocked<EventEmitter2>;
 }
 
 function makeDeps(
@@ -115,6 +117,7 @@ function makeDeps(
     companiesService: {
       createCompany: jest.fn().mockResolvedValue({ id: 'new-company-1' }),
     } as unknown as jest.Mocked<CompaniesService>,
+    eventEmitter: { emit: jest.fn() } as unknown as jest.Mocked<EventEmitter2>,
   };
 }
 
@@ -126,6 +129,7 @@ function makeService(deps: Deps): TiendanubeWebhookService {
     deps.connector,
     deps.apiClient,
     deps.companiesService,
+    deps.eventEmitter,
   );
 }
 
@@ -272,6 +276,29 @@ describe('TiendanubeWebhookService.handleNotification - idempotency', () => {
     expect(deps.prisma.webhookEvent.update).not.toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ processed: true }) }),
     );
+  });
+});
+
+describe('TiendanubeWebhookService.handleNotification - live order-received event (Fase 5)', () => {
+  it('emits tiendanube.order-received once the TiendanubeOrder row is persisted', async () => {
+    const deps = makeDeps();
+    const service = makeService(deps);
+
+    await service.handleNotification(baseInput());
+
+    expect(deps.eventEmitter.emit).toHaveBeenCalledWith('tiendanube.order-received', {
+      tenantId: 'tenant-1',
+      tiendanubeOrderRowId: 'tn-order-1',
+    });
+  });
+
+  it('never emits it when the webhook signature is invalid', async () => {
+    const deps = makeDeps();
+    const service = makeService(deps);
+
+    await expect(service.handleNotification(baseInput({ signatureHeader: 'ts=1,v1=deadbeef' }))).rejects.toThrow();
+
+    expect(deps.eventEmitter.emit).not.toHaveBeenCalled();
   });
 });
 

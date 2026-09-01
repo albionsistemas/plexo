@@ -55,7 +55,7 @@ const NAV_ENTRIES: NavEntry[] = [
       { href: '/quotes', label: 'Cotizaciones' },
       { href: '/receivables', label: 'Cuentas a Cobrar' },
       { href: '/clients', label: 'Clientes' },
-      { href: '/tiendanube-orders', label: 'Órdenes Tiendanube' },
+      { href: '/tiendanube-orders', label: 'Tiendanube' },
     ],
   },
   {

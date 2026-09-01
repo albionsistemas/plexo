@@ -1,3 +1,4 @@
+import type { EventEmitter2 } from '@nestjs/event-emitter';
 import type { ConnectorService } from '@plexo/connectors';
 import { Prisma, tenantContextStorage, type PrismaService } from '@plexo/database';
 import type { InventoryService } from '@plexo/inventory';
@@ -5,9 +6,13 @@ import type { TiendanubeApiClient, TiendanubeConfigService, TiendanubeConnector 
 import type { CatalogChangedEvent } from '../dashboard/events.js';
 import { TiendanubeCatalogSyncService } from './tiendanube-catalog-sync.service.js';
 
+function makeEventEmitter(): EventEmitter2 {
+  return { emit: jest.fn() } as unknown as EventEmitter2;
+}
+
 interface Tx {
   $executeRaw: jest.Mock;
-  article: { findUnique: jest.Mock; findMany: jest.Mock };
+  article: { findUnique: jest.Mock; findMany: jest.Mock; count: jest.Mock };
   tiendanubeProductMapping: { findMany: jest.Mock; create: jest.Mock; updateMany: jest.Mock };
 }
 
@@ -19,6 +24,7 @@ interface Deps {
   apiClient: jest.Mocked<TiendanubeApiClient>;
   inventoryService: jest.Mocked<InventoryService>;
   config: jest.Mocked<TiendanubeConfigService>;
+  eventEmitter: jest.Mocked<EventEmitter2>;
 }
 
 function makeVariant(overrides: Record<string, unknown> = {}) {
@@ -66,6 +72,7 @@ function makeDeps(
     article: {
       findUnique: jest.fn().mockResolvedValue(overrides.article === undefined ? makeArticle() : overrides.article),
       findMany: jest.fn().mockResolvedValue(overrides.articles ?? []),
+      count: jest.fn().mockResolvedValue(0),
     },
     tiendanubeProductMapping: {
       findMany: jest.fn().mockResolvedValue(overrides.mappingRows ?? []),
@@ -92,6 +99,7 @@ function makeDeps(
     config: {
       publicBaseUrl: 'publicBaseUrl' in overrides ? overrides.publicBaseUrl : 'https://oplex.example.com',
     } as unknown as jest.Mocked<TiendanubeConfigService>,
+    eventEmitter: makeEventEmitter() as jest.Mocked<EventEmitter2>,
   };
 }
 
@@ -103,6 +111,7 @@ function makeService(deps: Deps): TiendanubeCatalogSyncService {
     deps.apiClient,
     deps.inventoryService,
     deps.config,
+    deps.eventEmitter,
   );
 }
 
@@ -130,9 +139,9 @@ describe('TiendanubeCatalogSyncService.syncArticle', () => {
     });
     const service = makeService(deps);
 
-    const ok = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
+    const result = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
 
-    expect(ok).toBe(true);
+    expect(result.synced).toBe(true);
     expect(deps.apiClient.request).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
@@ -225,9 +234,9 @@ describe('TiendanubeCatalogSyncService.syncArticle', () => {
     const deps = makeDeps({ article: makeArticle({ isPublished: false }) });
     const service = makeService(deps);
 
-    const ok = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
+    const result = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
 
-    expect(ok).toBe(false);
+    expect(result.synced).toBe(false);
     expect(deps.apiClient.request).not.toHaveBeenCalled();
   });
 
@@ -235,9 +244,9 @@ describe('TiendanubeCatalogSyncService.syncArticle', () => {
     const deps = makeDeps({ connector: null });
     const service = makeService(deps);
 
-    const ok = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
+    const result = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
 
-    expect(ok).toBe(false);
+    expect(result.synced).toBe(false);
     expect(deps.apiClient.request).not.toHaveBeenCalled();
   });
 
@@ -252,9 +261,9 @@ describe('TiendanubeCatalogSyncService.syncArticle', () => {
     });
     const service = makeService(deps);
 
-    const ok = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
+    const result = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
 
-    expect(ok).toBe(false);
+    expect(result.synced).toBe(false);
     expect(deps.apiClient.request).not.toHaveBeenCalled();
   });
 
@@ -266,9 +275,9 @@ describe('TiendanubeCatalogSyncService.syncArticle', () => {
     });
     const service = makeService(deps);
 
-    const ok = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
+    const result = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
 
-    expect(ok).toBe(false);
+    expect(result.synced).toBe(false);
     expect(deps.apiClient.request).not.toHaveBeenCalled();
   });
 
@@ -277,9 +286,9 @@ describe('TiendanubeCatalogSyncService.syncArticle', () => {
     (deps.apiClient.request as jest.Mock).mockResolvedValueOnce({ id: 777, variants: [{ id: 1, product_id: 777, sku: 'ABC-123', stock: 10 }] });
     const service = makeService(deps);
 
-    const ok = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
+    const result = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
 
-    expect(ok).toBe(true);
+    expect(result.synced).toBe(true);
     expect(deps.apiClient.request).toHaveBeenCalledWith(
       expect.objectContaining({ body: expect.objectContaining({ attributes: undefined }) }),
     );
@@ -398,25 +407,63 @@ describe('TiendanubeCatalogSyncService.syncArticle', () => {
     (deps.apiClient.request as jest.Mock).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
     const service = makeService(deps);
 
-    const ok = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
+    const result = await runInTenant('tenant-1', deps.tx, () => service.syncArticle('article-1'));
 
-    expect(ok).toBe(true);
+    expect(result.synced).toBe(true);
     expect(deps.apiClient.request).not.toHaveBeenCalledWith(expect.objectContaining({ path: expect.stringContaining('/images') }));
   });
 });
 
 describe('TiendanubeCatalogSyncService.syncAllPublished', () => {
-  it('syncs every published article sequentially and reports a summary', async () => {
-    const deps = makeDeps({ articles: [{ id: 'article-1' }, { id: 'article-2' }] });
+  it('syncs every published article sequentially, collects a readable reason per skip, and emits progress after each one', async () => {
+    const deps = makeDeps({
+      articles: [
+        { id: 'article-1', name: 'Remera' },
+        { id: 'article-2', name: 'Pantalón' },
+      ],
+    });
     const service = makeService(deps);
-    const spy = jest.spyOn(service, 'syncArticle').mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const spy = jest
+      .spyOn(service, 'syncArticle')
+      .mockResolvedValueOnce({ synced: true })
+      .mockResolvedValueOnce({ synced: false, reason: 'El artículo no está publicado' });
 
     const result = await runInTenant('tenant-1', deps.tx, () => service.syncAllPublished());
 
-    expect(deps.tx.article.findMany).toHaveBeenCalledWith({ where: { isPublished: true }, select: { id: true } });
+    expect(deps.tx.article.findMany).toHaveBeenCalledWith({ where: { isPublished: true }, select: { id: true, name: true } });
     expect(spy).toHaveBeenNthCalledWith(1, 'article-1');
     expect(spy).toHaveBeenNthCalledWith(2, 'article-2');
-    expect(result).toEqual({ total: 2, synced: 1, skipped: 1 });
+    expect(result).toEqual({
+      total: 2,
+      synced: 1,
+      skipped: [{ articleId: 'article-2', name: 'Pantalón', reason: 'El artículo no está publicado' }],
+    });
+    expect(deps.eventEmitter.emit).toHaveBeenNthCalledWith(1, 'tiendanube.catalog-sync-progress', {
+      tenantId: 'tenant-1',
+      done: 1,
+      total: 2,
+    });
+    expect(deps.eventEmitter.emit).toHaveBeenNthCalledWith(2, 'tiendanube.catalog-sync-progress', {
+      tenantId: 'tenant-1',
+      done: 2,
+      total: 2,
+    });
+  });
+});
+
+describe('TiendanubeCatalogSyncService.getCatalogStatus', () => {
+  it('returns published vs. synced article counts', async () => {
+    const deps = makeDeps();
+    deps.tx.article.count = jest.fn().mockResolvedValueOnce(12).mockResolvedValueOnce(5);
+    const service = makeService(deps);
+
+    const result = await runInTenant('tenant-1', deps.tx, () => service.getCatalogStatus());
+
+    expect(deps.tx.article.count).toHaveBeenNthCalledWith(1, { where: { isPublished: true } });
+    expect(deps.tx.article.count).toHaveBeenNthCalledWith(2, {
+      where: { isPublished: true, variants: { some: { tiendanubeMapping: { isNot: null } } } },
+    });
+    expect(result).toEqual({ publishedCount: 12, syncedCount: 5 });
   });
 });
 

@@ -2,6 +2,8 @@ export const STOCK_UPDATED = 'stock.updated';
 export const CATALOG_CHANGED = 'article.catalog-changed';
 export const INVOICE_CREATED = 'invoice.created';
 export const INVOICE_PAID = 'invoice.paid';
+export const TIENDANUBE_CATALOG_SYNC_PROGRESS = 'tiendanube.catalog-sync-progress';
+export const TIENDANUBE_ORDER_RECEIVED = 'tiendanube.order-received';
 
 export interface StockUpdatedEvent {
   tenantId: string;
@@ -40,6 +42,25 @@ export interface InvoicePaidEvent {
   amount: string;
   balanceDue: string;
   status: string;
+}
+
+/** Raised by TiendanubeCatalogSyncService.syncAllPublished after each
+ * article it processes (synced or skipped) - drives the "sincronizando
+ * X/Y" progress bar (Fase 5 de PLAN_TIENDANUBE.md). `done` includes both
+ * outcomes, not just successes, so it always reaches `total`. */
+export interface TiendanubeCatalogSyncProgressEvent {
+  tenantId: string;
+  done: number;
+  total: number;
+}
+
+/** Raised once a Tiendanube order webhook finishes persisting its
+ * TiendanubeOrder row (order/paid) - drives the live "nueva orden" refresh
+ * on the orders-in-review page (Fase 5), same live-update pattern as
+ * INVOICE_CREATED/INVOICE_PAID. */
+export interface TiendanubeOrderReceivedEvent {
+  tenantId: string;
+  tiendanubeOrderRowId: string;
 }
 
 // Presence isn't driven through EventEmitter2 like the two above - the

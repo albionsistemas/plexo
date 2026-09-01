@@ -14,6 +14,8 @@ import type {
   InvoicePaidEvent,
   PresenceUser,
   StockUpdatedEvent,
+  TiendanubeCatalogSyncProgressEvent,
+  TiendanubeOrderReceivedEvent,
 } from './events.js';
 import {
   INVOICE_CREATED,
@@ -22,6 +24,8 @@ import {
   PRESENCE_ONLINE,
   PRESENCE_SNAPSHOT,
   STOCK_UPDATED,
+  TIENDANUBE_CATALOG_SYNC_PROGRESS,
+  TIENDANUBE_ORDER_RECEIVED,
 } from './events.js';
 
 interface OnlineUser extends PresenceUser {
@@ -146,5 +150,15 @@ export class DashboardGateway implements OnGatewayConnection, OnGatewayDisconnec
   @OnEvent(INVOICE_PAID)
   onInvoicePaid(event: InvoicePaidEvent) {
     this.server.to(`tenant:${event.tenantId}`).emit(INVOICE_PAID, event);
+  }
+
+  @OnEvent(TIENDANUBE_CATALOG_SYNC_PROGRESS)
+  onTiendanubeCatalogSyncProgress(event: TiendanubeCatalogSyncProgressEvent) {
+    this.server.to(`tenant:${event.tenantId}`).emit(TIENDANUBE_CATALOG_SYNC_PROGRESS, event);
+  }
+
+  @OnEvent(TIENDANUBE_ORDER_RECEIVED)
+  onTiendanubeOrderReceived(event: TiendanubeOrderReceivedEvent) {
+    this.server.to(`tenant:${event.tenantId}`).emit(TIENDANUBE_ORDER_RECEIVED, event);
   }
 }
