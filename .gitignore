@@ -53,6 +53,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+env
 
 # prisma generated client
 libs/shared/database/src/generated
