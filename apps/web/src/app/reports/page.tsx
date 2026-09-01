@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import CashflowTab from './CashflowTab';
 import FinancialTab from './FinancialTab';
 import ResultsTab from './ResultsTab';
 import SalesTab from './SalesTab';
@@ -9,6 +10,7 @@ const TABS = [
   { id: 'results', label: 'Resultados' },
   { id: 'sales', label: 'Ventas' },
   { id: 'financial', label: 'Financiero' },
+  { id: 'cashflow', label: 'Flujo de Caja' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -39,6 +41,7 @@ export default function ReportsPage() {
       {tab === 'results' && <ResultsTab />}
       {tab === 'sales' && <SalesTab />}
       {tab === 'financial' && <FinancialTab />}
+      {tab === 'cashflow' && <CashflowTab />}
     </div>
   );
 }

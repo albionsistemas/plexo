@@ -34,6 +34,10 @@ export default function TransferBetweenAccountsModal({ accounts, defaultFromId, 
       void queryClient.invalidateQueries({ queryKey: ['financial-accounts'] });
       void queryClient.invalidateQueries({ queryKey: ['financial-unreconciled'] });
       void queryClient.invalidateQueries({ queryKey: ['financial-reconciliation'] });
+      // Tesorería → Cajas y Bancos (AccountsTab.tsx) cachea el extracto por
+      // cuenta bajo esta key - sin invalidarla, la tabla de movimientos
+      // queda mostrando el estado previo a la transferencia hasta reload.
+      void queryClient.invalidateQueries({ queryKey: ['financial-transactions'] });
       onClose();
     },
     onError: (err: AxiosError<{ message?: string | string[] }>) => {
