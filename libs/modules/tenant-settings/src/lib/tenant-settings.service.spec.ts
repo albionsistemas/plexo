@@ -38,12 +38,13 @@ const noopEncryption = {} as EncryptionService;
 
 describe('TenantSettingsService.getSettings', () => {
   it('reads defaults when no row exists yet', async () => {
-    const db = withTenant({ tenantSettings: { findUnique: jest.fn().mockResolvedValue(null) } }, null);
+    const findUnique = jest.fn().mockResolvedValue(null);
+    const db = withTenant({ tenantSettings: { findUnique } }, null);
     const service = new TenantSettingsService(null, noopEncryption);
 
     const result = await runInTenant(db, () => service.getSettings());
 
-    expect(db.tenantSettings.findUnique).toHaveBeenCalledWith({ where: { tenantId: 'tenant-1' } });
+    expect(findUnique).toHaveBeenCalledWith({ where: { tenantId: 'tenant-1' } });
     expect(result).toEqual({
       arReminderIntervalDays: null,
       emailSenderMode: 'SHARED',
