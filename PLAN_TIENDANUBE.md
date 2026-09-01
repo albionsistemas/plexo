@@ -3,6 +3,8 @@
 > **Para:** Claude Code sobre el monorepo OPLEX (Nx · NestJS/Fastify `apps/api` · Next.js/React `apps/web` · PostgreSQL/Prisma · RLS multi-tenant).
 > **Objetivo:** que un tenant vincule su tienda de Tiendanube y OPLEX sincronice en los **tres sentidos**: (1) las **órdenes** de la tienda entran a OPLEX como ventas/facturas, (2) el **stock** se mantiene consistente entre OPLEX y la tienda, y (3) el **catálogo y precios** se publican desde OPLEX hacia la tienda. Todo sin doble carga.
 > **Base ya construida:** el patrón `Connector` (cifrado `ConnectorSecret`, OAuth, `ConnectorRegistry`, interfaz `ProviderConnector`, validación de webhook HMAC) del trabajo de Mercado Pago. **Tiendanube se enchufa sobre eso — NO se reinventa nada de cifrado, OAuth ni webhooks.**
+>
+> **✅ ESTADO: PLAN CERRADO (2026-09-01, PC_TRABAJO).** Las 6 fases de este documento están construidas, testeadas (256 tests en `api` + 56 en `tiendanube`, RLS 21/21) y verificadas contra la base de datos real (no sólo mocks) — el detalle sesión por sesión de cada fase vive en `PROGRESS.md`, buscar los encabezados `## Tiendanube - Fase 1` a `## Tiendanube - Fase 6`. Único bloqueo transversal sin resolver, no depende de código: no hay una app real dada de alta en el panel de Partners de Tiendanube ni un túnel público en ninguna máquina todavía, así que nada se probó contra la API real de una tienda de verdad — retomar eso el día que exista una cuenta de Partners real.
 
 ---
 

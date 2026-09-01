@@ -8,6 +8,14 @@
 
 Los 9 módulos de negocio del brief original están construidos y commiteados. Hoy, por primera vez, se corrió todo contra una base de datos real (hasta ahora solo compilaba/testeaba con mocks) — se encontró y arregló un bug real, y se confirmó que el aislamiento por tenant (RLS) funciona de verdad, no solo en el papel.
 
+## ✅ CERRADO (2026-09-01, PC_TRABAJO): integración Tiendanube completa — [`PLAN_TIENDANUBE.md`](./PLAN_TIENDANUBE.md)
+
+Las 6 fases del plan (conexión OAuth, órdenes→venta, stock, catálogo/precios, UI/UX, hardening) están construidas, testeadas y verificadas contra la base de datos real. Un tenant puede vincular su tienda de Tiendanube, sus órdenes pagadas entran a una bandeja de revisión y se convierten a venta con un clic, el stock se sincroniza OPLEX→tienda de forma automática, el catálogo/precios se publican solos, hay un panel de sincronización con progreso en vivo, y los 3 webhooks de protección de datos que Tiendanube exige para aprobar la app ya están implementados.
+
+**Detalle sesión por sesión** (decisiones de diseño, hallazgos reales, tests, verificación en Chrome/contra la base real) en los encabezados `## Tiendanube - Fase 1` a `## Tiendanube - Fase 6` más abajo en este mismo archivo, en orden cronológico (2026-08-31 a 2026-09-01).
+
+**Único bloqueo transversal sin resolver, en las 6 fases por igual** — no depende de código, así que ninguna fase pudo probarse contra la API real de una tienda: no hay una app real dada de alta en el panel de Partners de Tiendanube ni un túnel público en esta máquina. Todo lo construido está verificado con tests unitarios exhaustivos + contra la base de datos real de OPLEX (inserción/lectura directa, sin mockear Postgres) - retomar la verificación end-to-end real el día que exista una cuenta de Partners.
+
 ## ✅ RESUELTO (2026-08-13): fuga real de RLS vía Foreign Key cruzada
 
 **Qué era**: los FOREIGN KEY de Postgres no respetan RLS (comportamiento documentado de Postgres). Se podía crear una `PurchaseCreditNote` en el tenant A con `tenantId` correcto pero `purchaseInvoiceId` apuntando a una `PurchaseInvoice` del tenant B, y el INSERT se aceptaba. No era explotable por la API real (cada service revalida con `findUnique` bajo RLS antes de usar la fila referenciada), pero era un hueco de defensa en profundidad. Detalle completo del hallazgo y la decisión de diseño quedó en la memoria de sesión `project_plexo_rls_fk_gap` (histórica, ya resuelta).
