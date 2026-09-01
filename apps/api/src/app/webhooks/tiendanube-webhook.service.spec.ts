@@ -4,7 +4,7 @@ import type { CompaniesService } from '@plexo/companies';
 import type { ConnectorService } from '@plexo/connectors';
 import { type PrismaService } from '@plexo/database';
 import type { TiendanubeApiClient, TiendanubeConfigService, TiendanubeConnector, TiendanubeOrderResource } from '@plexo/tiendanube';
-import { TiendanubeWebhookService, type TiendanubeWebhookInput } from './tiendanube-webhook.service.js';
+import { TiendanubeWebhookService, type TiendanubeComplianceWebhookInput, type TiendanubeWebhookInput } from './tiendanube-webhook.service.js';
 
 const SECRET = 'test-app-secret';
 
@@ -27,6 +27,15 @@ function makeOrder(overrides: Partial<TiendanubeOrderResource> = {}): Tiendanube
     total: '1500.00',
     products: [{ id: 1, product_id: 10, variant_id: 20, sku: 'ABC-123', name: 'Remera', price: '1500.00', quantity: 1 }],
     ...overrides,
+  };
+}
+
+function complianceInput(payload: unknown, overrides: Partial<TiendanubeComplianceWebhookInput> = {}): TiendanubeComplianceWebhookInput {
+  const rawBody = overrides.rawBody ?? Buffer.from(JSON.stringify(payload));
+  return {
+    rawBody,
+    signatureHeader: overrides.signatureHeader ?? sign(rawBody.toString('utf8')),
+    payload,
   };
 }
 
@@ -53,7 +62,8 @@ interface Tx {
   $executeRaw: jest.Mock;
   company: { findFirst: jest.Mock };
   articleVariant: { findUnique: jest.Mock };
-  tiendanubeOrder: { upsert: jest.Mock };
+  tiendanubeOrder: { upsert: jest.Mock; findMany: jest.Mock; update: jest.Mock };
+  connector: { update: jest.Mock };
 }
 
 interface Deps {
@@ -74,6 +84,7 @@ function makeDeps(
     connector?: Record<string, unknown> | null;
     order?: TiendanubeOrderResource;
     articleVariant?: Record<string, unknown> | null;
+    tiendanubeOrders?: Record<string, unknown>[];
   } = {},
 ): Deps {
   const tx: Tx = {
@@ -82,7 +93,12 @@ function makeDeps(
     articleVariant: {
       findUnique: jest.fn().mockResolvedValue(overrides.articleVariant === undefined ? { id: 'variant-1' } : overrides.articleVariant),
     },
-    tiendanubeOrder: { upsert: jest.fn().mockResolvedValue({ id: 'tn-order-1' }) },
+    tiendanubeOrder: {
+      upsert: jest.fn().mockResolvedValue({ id: 'tn-order-1' }),
+      findMany: jest.fn().mockResolvedValue(overrides.tiendanubeOrders ?? []),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    connector: { update: jest.fn().mockResolvedValue({}) },
   };
 
   const prisma = {
@@ -541,5 +557,156 @@ describe('TiendanubeWebhookService.handleNotification - app/uninstalled', () => 
 
     expect(deps.connectorService.clearSecrets).not.toHaveBeenCalled();
     expect(deps.connectorService.setStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('TiendanubeWebhookService.handleStoreRedact (Fase 6)', () => {
+  it('rejects an invalid signature and never touches the database', async () => {
+    const deps = makeDeps();
+    const service = makeService(deps);
+
+    await expect(
+      service.handleStoreRedact(complianceInput({ store_id: 999 }, { signatureHeader: 'deadbeef' })),
+    ).rejects.toThrow('Firma de Tiendanube inválida');
+
+    expect(deps.prisma.webhookEvent.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('resolves the tenant even when the connector is already REVOKED (the normal case for this webhook) and nulls the store identity', async () => {
+    const deps = makeDeps({ resolvedTenantId: 'tenant-1', connector: { id: 'connector-1', status: 'REVOKED' } });
+    const service = makeService(deps);
+
+    await service.handleStoreRedact(complianceInput({ store_id: 999 }));
+
+    expect(deps.prisma.$queryRaw).toHaveBeenCalled();
+    expect(deps.tx.connector.update).toHaveBeenCalledWith({
+      where: { id: 'connector-1' },
+      data: { externalAccountId: null, externalNickname: null },
+    });
+    expect(deps.prisma.webhookEvent.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ processed: true }) }),
+    );
+  });
+
+  it('is a clean no-op (not an error) when no tenant resolves for that store_id at all', async () => {
+    const deps = makeDeps({ resolvedTenantId: null });
+    const service = makeService(deps);
+
+    await service.handleStoreRedact(complianceInput({ store_id: 999 }));
+
+    expect(deps.tx.connector.update).not.toHaveBeenCalled();
+    expect(deps.prisma.webhookEvent.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ processed: true }) }),
+    );
+  });
+
+  it('the same store_id notified twice only redacts once', async () => {
+    const deps = makeDeps({ resolvedTenantId: 'tenant-1' });
+    const service = makeService(deps);
+
+    await service.handleStoreRedact(complianceInput({ store_id: 999 }));
+    (deps.prisma.webhookEvent.findUnique as jest.Mock).mockResolvedValue({ id: 'event-1', tenantId: 'tenant-1', processed: true });
+    await service.handleStoreRedact(complianceInput({ store_id: 999 }));
+
+    expect(deps.tx.connector.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('TiendanubeWebhookService.handleCustomersRedact (Fase 6)', () => {
+  it('rejects an invalid signature and never touches the database', async () => {
+    const deps = makeDeps();
+    const service = makeService(deps);
+
+    await expect(
+      service.handleCustomersRedact(
+        complianceInput({ store_id: 999, customer: { id: 1 }, orders_to_redact: [555] }, { signatureHeader: 'deadbeef' }),
+      ),
+    ).rejects.toThrow('Firma de Tiendanube inválida');
+  });
+
+  it('nulls the contact fields and strips them from rawPayload for every order in orders_to_redact, leaving the rest intact', async () => {
+    const order = {
+      id: 'tn-order-1',
+      rawPayload: { id: 555, contact_name: 'Juan', contact_email: 'juan@x.com', contact_phone: '+549', contact_identification: '20-1-9', total: '1500.00' },
+    };
+    const deps = makeDeps({ resolvedTenantId: 'tenant-1', tiendanubeOrders: [order] });
+    const service = makeService(deps);
+
+    await service.handleCustomersRedact(
+      complianceInput({ store_id: 999, customer: { id: 1, email: 'juan@x.com' }, orders_to_redact: [555] }),
+    );
+
+    expect(deps.tx.tiendanubeOrder.findMany).toHaveBeenCalledWith({ where: { tiendanubeOrderId: { in: ['555'] } } });
+    expect(deps.tx.tiendanubeOrder.update).toHaveBeenCalledWith({
+      where: { id: 'tn-order-1' },
+      data: {
+        contactName: null,
+        contactEmail: null,
+        contactIdentification: null,
+        rawPayload: { id: 555, total: '1500.00' },
+      },
+    });
+  });
+
+  it('does nothing when orders_to_redact is empty - no matching orders to touch', async () => {
+    const deps = makeDeps({ resolvedTenantId: 'tenant-1' });
+    const service = makeService(deps);
+
+    await service.handleCustomersRedact(complianceInput({ store_id: 999, customer: { id: 1 }, orders_to_redact: [] }));
+
+    expect(deps.tx.tiendanubeOrder.findMany).not.toHaveBeenCalled();
+  });
+
+  it('the same customer.id notified twice only redacts once', async () => {
+    const deps = makeDeps({ resolvedTenantId: 'tenant-1', tiendanubeOrders: [{ id: 'tn-order-1', rawPayload: {} }] });
+    const service = makeService(deps);
+    const input = complianceInput({ store_id: 999, customer: { id: 1 }, orders_to_redact: [555] });
+
+    await service.handleCustomersRedact(input);
+    (deps.prisma.webhookEvent.findUnique as jest.Mock).mockResolvedValue({ id: 'event-1', tenantId: 'tenant-1', processed: true });
+    await service.handleCustomersRedact(input);
+
+    expect(deps.tx.tiendanubeOrder.findMany).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('TiendanubeWebhookService.handleCustomersDataRequest (Fase 6)', () => {
+  it('rejects an invalid signature and never touches the database', async () => {
+    const deps = makeDeps();
+    const service = makeService(deps);
+
+    await expect(
+      service.handleCustomersDataRequest(
+        complianceInput({ store_id: 999, data_request: { id: 1 } }, { signatureHeader: 'deadbeef' }),
+      ),
+    ).rejects.toThrow('Firma de Tiendanube inválida');
+  });
+
+  it('logs the request and marks it processed - no email, no DB mutation beyond WebhookEvent itself (decisión: seguimiento manual)', async () => {
+    const deps = makeDeps({ resolvedTenantId: 'tenant-1' });
+    const service = makeService(deps);
+
+    await service.handleCustomersDataRequest(
+      complianceInput({ store_id: 999, customer: { id: 1, email: 'juan@x.com' }, orders_requested: [555], data_request: { id: 42 } }),
+    );
+
+    expect(deps.prisma.webhookEvent.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ processed: true }) }),
+    );
+    expect(deps.tx.tiendanubeOrder.findMany).not.toHaveBeenCalled();
+    expect(deps.tx.connector.update).not.toHaveBeenCalled();
+  });
+
+  it('the same data_request.id notified twice is only logged once', async () => {
+    const deps = makeDeps({ resolvedTenantId: 'tenant-1' });
+    const service = makeService(deps);
+    const input = complianceInput({ store_id: 999, data_request: { id: 42 } });
+
+    await service.handleCustomersDataRequest(input);
+    (deps.prisma.webhookEvent.findUnique as jest.Mock).mockResolvedValue({ id: 'event-1', tenantId: 'tenant-1', processed: true });
+    const createCallsBefore = (deps.prisma.webhookEvent.create as jest.Mock).mock.calls.length;
+    await service.handleCustomersDataRequest(input);
+
+    expect((deps.prisma.webhookEvent.create as jest.Mock).mock.calls.length).toBe(createCallsBefore);
   });
 });

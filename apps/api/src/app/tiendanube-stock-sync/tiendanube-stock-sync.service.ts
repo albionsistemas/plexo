@@ -3,7 +3,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { ConnectorService } from '@plexo/connectors';
 import { getTenantDb, PrismaService, withTenantContext } from '@plexo/database';
 import { InventoryService } from '@plexo/inventory';
-import { TiendanubeApiClient, TiendanubeConnector, type TiendanubeProductResource } from '@plexo/tiendanube';
+import { TiendanubeApiClient, TiendanubeAuthError, TiendanubeConnector, type TiendanubeProductResource } from '@plexo/tiendanube';
 import { STOCK_UPDATED, type StockUpdatedEvent } from '../dashboard/events.js';
 
 /** Coalesces a burst of movements against the same variant into one push -
@@ -54,10 +54,21 @@ export class TiendanubeStockSyncService {
     }
     const timer = setTimeout(() => {
       this.timers.delete(key);
-      this.push(event.tenantId, event.articleVariantId).catch((err) => {
+      this.push(event.tenantId, event.articleVariantId).catch(async (err) => {
         this.logger.warn(
           `No se pudo sincronizar el stock del variant ${event.articleVariantId} (tenant ${event.tenantId}) con Tiendanube: ${err}`,
         );
+        // Fase 6 (hardening): "manejo de desinstalación... o 401
+        // sistemático → REVOKED" - un 401/403 acá significa que Tiendanube
+        // invalidó el token sin que llegara (o sin esperar) el webhook
+        // app/uninstalled. La transacción de `push` ya hizo rollback solo
+        // (TiendanubeAuthError la interrumpió), así que revocar necesita su
+        // propia transacción nueva, no puede reusar esa.
+        if (err instanceof TiendanubeAuthError) {
+          await withTenantContext(this.prisma, event.tenantId, () => this.revokeOnAuthError()).catch((revokeErr) => {
+            this.logger.warn(`No se pudo marcar REVOKED el connector de Tiendanube (tenant ${event.tenantId}): ${revokeErr}`);
+          });
+        }
       });
     }, DEBOUNCE_MS);
     // No debe mantener vivo el proceso sólo por este timer pendiente -
@@ -156,6 +167,11 @@ export class TiendanubeStockSyncService {
         path: `/products/sku/${encodeURIComponent(sku)}`,
       });
     } catch (err) {
+      if (err instanceof TiendanubeAuthError) {
+        // No es "SKU no encontrado" - re-lanzar para que el catch de
+        // onStockUpdated lo detecte y marque el connector REVOKED.
+        throw err;
+      }
       this.logger.warn(
         `SKU "${sku}" no encontrado en la tienda de Tiendanube (tenant ${tenantId}) - no se pudo sincronizar el stock: ${err}`,
       );
@@ -178,5 +194,22 @@ export class TiendanubeStockSyncService {
         tiendanubeVariantId: String(matchedVariant.id),
       },
     });
+  }
+
+  /** Mismo criterio que TiendanubeWebhookService.revokeConnector
+   * (app/uninstalled) - acá el disparador es un 401/403 real detectado en
+   * uso, no un webhook. No-op sobre un connector ya REVOKED/DISCONNECTED o
+   * inexistente (idempotente ante varios 401 seguidos). */
+  private async revokeOnAuthError(): Promise<void> {
+    const connector = await this.connectorService.getConnector('TIENDANUBE');
+    if (!connector || connector.status === 'REVOKED' || connector.status === 'DISCONNECTED') {
+      return;
+    }
+    await this.connectorService.clearSecrets(connector.id);
+    await this.connectorService.setStatus(
+      connector.id,
+      'REVOKED',
+      'Tiendanube devolvió 401/403 al sincronizar stock - posible revocación no notificada por webhook',
+    );
   }
 }

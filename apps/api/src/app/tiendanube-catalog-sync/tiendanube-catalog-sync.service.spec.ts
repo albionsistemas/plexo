@@ -2,7 +2,7 @@ import type { EventEmitter2 } from '@nestjs/event-emitter';
 import type { ConnectorService } from '@plexo/connectors';
 import { Prisma, tenantContextStorage, type PrismaService } from '@plexo/database';
 import type { InventoryService } from '@plexo/inventory';
-import type { TiendanubeApiClient, TiendanubeConfigService, TiendanubeConnector } from '@plexo/tiendanube';
+import { TiendanubeAuthError, type TiendanubeApiClient, type TiendanubeConfigService, type TiendanubeConnector } from '@plexo/tiendanube';
 import type { CatalogChangedEvent } from '../dashboard/events.js';
 import { TiendanubeCatalogSyncService } from './tiendanube-catalog-sync.service.js';
 
@@ -88,6 +88,8 @@ function makeDeps(
     tx,
     connectorService: {
       getConnector: jest.fn().mockResolvedValue(overrides.connector === undefined ? makeConnector() : overrides.connector),
+      clearSecrets: jest.fn().mockResolvedValue(undefined),
+      setStatus: jest.fn().mockResolvedValue({}),
     } as unknown as jest.Mocked<ConnectorService>,
     tiendanubeConnector: {
       getValidAccessToken: jest.fn().mockResolvedValue('access-token-1'),
@@ -483,5 +485,55 @@ describe('TiendanubeCatalogSyncService.onCatalogChanged - debounce', () => {
     await jest.advanceTimersByTimeAsync(5_000);
 
     expect(deps.prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks the connector REVOKED (Fase 6) when Tiendanube returns a real auth error, without crashing', async () => {
+    const deps = makeDeps({ mapping: null });
+    (deps.apiClient.request as jest.Mock).mockRejectedValueOnce(new TiendanubeAuthError('401', 401));
+    const service = makeService(deps);
+
+    service.onCatalogChanged({ tenantId: 'tenant-1', articleId: 'article-1' });
+    await jest.advanceTimersByTimeAsync(5_000);
+
+    expect(deps.connectorService.clearSecrets).toHaveBeenCalledWith('connector-1');
+    expect(deps.connectorService.setStatus).toHaveBeenCalledWith('connector-1', 'REVOKED', expect.any(String));
+  });
+});
+
+describe('TiendanubeCatalogSyncService.syncAllPublished - 401/403 stops the batch (Fase 6)', () => {
+  it('marks REVOKED, stops processing further articles, and reports the rest as skipped with a clear reason', async () => {
+    const deps = makeDeps({
+      articles: [
+        { id: 'article-1', name: 'Remera' },
+        { id: 'article-2', name: 'Pantalón' },
+        { id: 'article-3', name: 'Campera' },
+      ],
+    });
+    const service = makeService(deps);
+    jest
+      .spyOn(service, 'syncArticle')
+      .mockResolvedValueOnce({ synced: true })
+      .mockRejectedValueOnce(new TiendanubeAuthError('401', 401));
+
+    const result = await runInTenant('tenant-1', deps.tx, () => service.syncAllPublished());
+
+    expect(deps.connectorService.setStatus).toHaveBeenCalledWith('connector-1', 'REVOKED', expect.any(String));
+    expect(result).toEqual({
+      total: 3,
+      synced: 1,
+      skipped: [
+        { articleId: 'article-2', name: 'Pantalón', reason: 'Tiendanube revocó el acceso durante la sincronización' },
+        { articleId: 'article-3', name: 'Campera', reason: 'Tiendanube revocó el acceso durante la sincronización' },
+      ],
+    });
+  });
+
+  it('re-throws any other error untouched (not swallowed as a revocation)', async () => {
+    const deps = makeDeps({ articles: [{ id: 'article-1', name: 'Remera' }] });
+    const service = makeService(deps);
+    jest.spyOn(service, 'syncArticle').mockRejectedValueOnce(new Error('network blip'));
+
+    await expect(runInTenant('tenant-1', deps.tx, () => service.syncAllPublished())).rejects.toThrow('network blip');
+    expect(deps.connectorService.setStatus).not.toHaveBeenCalled();
   });
 });

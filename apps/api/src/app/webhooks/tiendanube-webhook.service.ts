@@ -23,6 +23,17 @@ const PROVIDER: ConnectorProvider = 'TIENDANUBE';
 const HANDLED_EVENT = 'order/paid';
 const UNINSTALL_EVENT = 'app/uninstalled';
 
+// Fase 6 (hardening) - los 3 "Required Webhooks" de protección de datos que
+// Tiendanube exige para aprobar la app. A diferencia de order/paid y
+// app/uninstalled, sus payloads no traen ningún campo `event`/tipo (doc
+// oficial confirmada, no un descuido) - por eso cada uno tiene su propia
+// ruta en el controller en vez de compartir la de arriba, y estos strings
+// son sólo la etiqueta que ESTE código les da en `WebhookEvent.type`, no
+// algo que Tiendanube mande.
+const STORE_REDACT_EVENT = 'store/redact';
+const CUSTOMERS_REDACT_EVENT = 'customers/redact';
+const CUSTOMERS_DATA_REQUEST_EVENT = 'customers/data_request';
+
 export interface TiendanubeWebhookInput {
   signatureHeader: string | undefined;
   rawBody: Buffer;
@@ -30,6 +41,38 @@ export interface TiendanubeWebhookInput {
   event: string | undefined;
   orderId: string | undefined;
   payload: unknown;
+}
+
+export interface TiendanubeComplianceWebhookInput {
+  signatureHeader: string | undefined;
+  rawBody: Buffer;
+  payload: unknown;
+}
+
+interface TiendanubeStoreRedactPayload {
+  store_id?: number | string;
+}
+
+interface TiendanubeCustomerRef {
+  id?: number | string;
+  email?: string;
+  phone?: string;
+  identification?: string;
+}
+
+interface TiendanubeCustomersRedactPayload {
+  store_id?: number | string;
+  customer?: TiendanubeCustomerRef;
+  orders_to_redact?: Array<number | string>;
+}
+
+interface TiendanubeCustomersDataRequestPayload {
+  store_id?: number | string;
+  customer?: TiendanubeCustomerRef;
+  orders_requested?: Array<number | string>;
+  checkouts_requested?: Array<number | string>;
+  drafts_orders_requested?: Array<number | string>;
+  data_request?: { id?: number | string };
 }
 
 export interface TiendanubeOrderLineItemSnapshot {
@@ -73,14 +116,7 @@ export class TiendanubeWebhookService {
    * store_id.
    */
   async handleNotification(input: TiendanubeWebhookInput): Promise<void> {
-    const secret = this.config.clientSecret;
-    const signatureOk =
-      Boolean(secret) &&
-      verifyTiendanubeWebhookSignature({
-        signatureHeader: input.signatureHeader,
-        rawBody: input.rawBody,
-        secret: secret as string,
-      });
+    const signatureOk = this.isSignatureValid(input.signatureHeader, input.rawBody);
 
     if (!signatureOk) {
       // Mismo criterio ya documentado en MercadoPagoWebhookService: logueado
@@ -180,6 +216,29 @@ export class TiendanubeWebhookService {
       SELECT tenant_id FROM find_tenant_by_connector(${PROVIDER}, ${storeId})
     `;
     return rows[0]?.tenant_id;
+  }
+
+  /** Variante sin filtro de status (20260916000000_tiendanube_compliance) -
+   * a diferencia de `resolveTenantId`, los 3 webhooks de compliance de la
+   * Fase 6 pueden llegar (de hecho, `store/redact` típicamente llega) DESPUÉS
+   * de que el Connector ya pasó a REVOKED/DISCONNECTED - filtrar por
+   * CONNECTED acá dejaría el pedido de borrado sin poder resolverse nunca. */
+  private async resolveTenantIdAnyStatus(storeId: string | undefined): Promise<string | undefined> {
+    if (!storeId) {
+      return undefined;
+    }
+    const rows = await this.prisma.$queryRaw<{ tenant_id: string }[]>`
+      SELECT tenant_id FROM find_tenant_by_connector_any_status(${PROVIDER}, ${storeId})
+    `;
+    return rows[0]?.tenant_id;
+  }
+
+  private isSignatureValid(signatureHeader: string | undefined, rawBody: Buffer): boolean {
+    const secret = this.config.clientSecret;
+    return (
+      Boolean(secret) &&
+      verifyTiendanubeWebhookSignature({ signatureHeader, rawBody, secret: secret as string })
+    );
   }
 
   /**
@@ -403,4 +462,258 @@ export class TiendanubeWebhookService {
 
     return { lineItems, reviewReason: reasons.length > 0 ? reasons.join(' — ') : undefined };
   }
+
+  // ---------------------------------------------------------------------
+  // Fase 6 (hardening) - "Required Webhooks" de protección de datos que
+  // Tiendanube exige para aprobar la app. Cada uno tiene su propia ruta en
+  // TiendanubeWebhookController (sin `event` en el payload para rutear por
+  // el camino compartido de arriba - confirmado contra la doc oficial).
+  // ---------------------------------------------------------------------
+
+  /**
+   * "After a merchant uninstall your app, Tiendanube sends this webhook...
+   * so that you can delete the shopkeeper's information" (doc oficial). Lo
+   * único que OPLEX guarda sobre la tienda en sí (no del negocio del
+   * tenant, que sigue siendo suyo) es `externalAccountId`/`externalNickname`
+   * en el Connector - se limpian, el resto de los datos del tenant (ventas,
+   * facturas, clientes ya creados a partir de órdenes) NO son "información
+   * de la tienda", son registros propios del tenant una vez convertidos
+   * (mismo criterio ya documentado para `TiendanubeOrder` como snapshot).
+   */
+  async handleStoreRedact(input: TiendanubeComplianceWebhookInput): Promise<void> {
+    if (!this.isSignatureValid(input.signatureHeader, input.rawBody)) {
+      await this.logInvalidComplianceSignature(STORE_REDACT_EVENT, input.payload);
+      throw new UnauthorizedException('Firma de Tiendanube inválida');
+    }
+
+    const payload = (input.payload ?? {}) as TiendanubeStoreRedactPayload;
+    const storeId = payload.store_id != null ? String(payload.store_id) : undefined;
+    const externalId = storeId ?? randomUUID();
+
+    const existing = await this.prisma.webhookEvent.findUnique({
+      where: { provider_externalId_type: { provider: PROVIDER, externalId, type: STORE_REDACT_EVENT } },
+    });
+    if (existing?.processed) {
+      return;
+    }
+
+    const tenantId = existing?.tenantId ?? (await this.resolveTenantIdAnyStatus(storeId));
+    const webhookEvent =
+      existing ??
+      (await this.prisma.webhookEvent.create({
+        data: {
+          provider: PROVIDER,
+          externalId,
+          type: STORE_REDACT_EVENT,
+          signatureOk: true,
+          tenantId: tenantId ?? undefined,
+          payload: (input.payload ?? {}) as Prisma.InputJsonValue,
+        },
+      }));
+
+    if (!tenantId) {
+      // No hay (o ya no hay) ningún Connector de Tiendanube para este
+      // store_id bajo ningún tenant - nada que redactar, no es un error.
+      await this.prisma.webhookEvent.update({
+        where: { id: webhookEvent.id },
+        data: { processed: true, processedAt: new Date() },
+      });
+      return;
+    }
+
+    try {
+      await withTenantContext(this.prisma, tenantId, () => this.redactStore());
+      await this.prisma.webhookEvent.update({
+        where: { id: webhookEvent.id },
+        data: { processed: true, processedAt: new Date() },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.prisma.webhookEvent.update({ where: { id: webhookEvent.id }, data: { error: message } });
+      this.logger.error(`Fallo al procesar store/redact de Tiendanube (store ${storeId}): ${message}`);
+      throw err;
+    }
+  }
+
+  private async redactStore(): Promise<void> {
+    const connector = await this.connectorService.getConnector(PROVIDER);
+    if (!connector) {
+      return;
+    }
+    await getTenantDb().connector.update({
+      where: { id: connector.id },
+      data: { externalAccountId: null, externalNickname: null },
+    });
+  }
+
+  /**
+   * Borra los datos personales de un cliente puntual de las órdenes
+   * listadas en `orders_to_redact` - nunca borra la fila `TiendanubeOrder`
+   * entera (los totales/líneas siguen siendo un registro de venta legítimo
+   * del tenant), sólo los campos de contacto y las mismas claves dentro de
+   * `rawPayload` (el snapshot crudo del webhook original).
+   */
+  async handleCustomersRedact(input: TiendanubeComplianceWebhookInput): Promise<void> {
+    if (!this.isSignatureValid(input.signatureHeader, input.rawBody)) {
+      await this.logInvalidComplianceSignature(CUSTOMERS_REDACT_EVENT, input.payload);
+      throw new UnauthorizedException('Firma de Tiendanube inválida');
+    }
+
+    const payload = (input.payload ?? {}) as TiendanubeCustomersRedactPayload;
+    const storeId = payload.store_id != null ? String(payload.store_id) : undefined;
+    const externalId = payload.customer?.id != null ? String(payload.customer.id) : randomUUID();
+
+    const existing = await this.prisma.webhookEvent.findUnique({
+      where: { provider_externalId_type: { provider: PROVIDER, externalId, type: CUSTOMERS_REDACT_EVENT } },
+    });
+    if (existing?.processed) {
+      return;
+    }
+
+    const tenantId = existing?.tenantId ?? (await this.resolveTenantIdAnyStatus(storeId));
+    const webhookEvent =
+      existing ??
+      (await this.prisma.webhookEvent.create({
+        data: {
+          provider: PROVIDER,
+          externalId,
+          type: CUSTOMERS_REDACT_EVENT,
+          signatureOk: true,
+          tenantId: tenantId ?? undefined,
+          payload: (input.payload ?? {}) as Prisma.InputJsonValue,
+        },
+      }));
+
+    if (!tenantId) {
+      await this.prisma.webhookEvent.update({
+        where: { id: webhookEvent.id },
+        data: { processed: true, processedAt: new Date() },
+      });
+      return;
+    }
+
+    const orderIds = (payload.orders_to_redact ?? []).map(String);
+    try {
+      await withTenantContext(this.prisma, tenantId, () => this.redactCustomerOrders(orderIds));
+      await this.prisma.webhookEvent.update({
+        where: { id: webhookEvent.id },
+        data: { processed: true, processedAt: new Date() },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.prisma.webhookEvent.update({ where: { id: webhookEvent.id }, data: { error: message } });
+      this.logger.error(`Fallo al procesar customers/redact de Tiendanube (store ${storeId}): ${message}`);
+      throw err;
+    }
+  }
+
+  private async redactCustomerOrders(tiendanubeOrderIds: string[]): Promise<void> {
+    if (tiendanubeOrderIds.length === 0) {
+      return;
+    }
+    const db = getTenantDb();
+    const orders = await db.tiendanubeOrder.findMany({ where: { tiendanubeOrderId: { in: tiendanubeOrderIds } } });
+    for (const order of orders) {
+      await db.tiendanubeOrder.update({
+        where: { id: order.id },
+        data: {
+          contactName: null,
+          contactEmail: null,
+          contactIdentification: null,
+          rawPayload: redactContactFields(order.rawPayload),
+        },
+      });
+    }
+  }
+
+  /**
+   * "It is the application's responsibility to send the information
+   * directly to the merchant" (doc oficial) - decisión con el usuario:
+   * el mínimo de compliance acá es dejar constancia idempotente del pedido
+   * (para no perder ninguno, ni procesarlo dos veces) y loguearlo con todo
+   * lo necesario para que un humano arme y mande el envío a mano. No arma
+   * ni manda ningún email automático - eso es una funcionalidad nueva
+   * (puerto de email dedicado, ver los ya existentes por módulo en
+   * invoicing/purchases/quotes/auth-email) fuera del alcance de este pase.
+   */
+  async handleCustomersDataRequest(input: TiendanubeComplianceWebhookInput): Promise<void> {
+    if (!this.isSignatureValid(input.signatureHeader, input.rawBody)) {
+      await this.logInvalidComplianceSignature(CUSTOMERS_DATA_REQUEST_EVENT, input.payload);
+      throw new UnauthorizedException('Firma de Tiendanube inválida');
+    }
+
+    const payload = (input.payload ?? {}) as TiendanubeCustomersDataRequestPayload;
+    const storeId = payload.store_id != null ? String(payload.store_id) : undefined;
+    const externalId = payload.data_request?.id != null ? String(payload.data_request.id) : randomUUID();
+
+    const existing = await this.prisma.webhookEvent.findUnique({
+      where: { provider_externalId_type: { provider: PROVIDER, externalId, type: CUSTOMERS_DATA_REQUEST_EVENT } },
+    });
+    if (existing?.processed) {
+      return;
+    }
+
+    const tenantId = existing?.tenantId ?? (await this.resolveTenantIdAnyStatus(storeId));
+    const webhookEvent =
+      existing ??
+      (await this.prisma.webhookEvent.create({
+        data: {
+          provider: PROVIDER,
+          externalId,
+          type: CUSTOMERS_DATA_REQUEST_EVENT,
+          signatureOk: true,
+          tenantId: tenantId ?? undefined,
+          payload: (input.payload ?? {}) as Prisma.InputJsonValue,
+        },
+      }));
+
+    this.logger.warn(
+      `Pedido de acceso a datos de Tiendanube (customers/data_request, store ${storeId}, tenant ${tenantId ?? 'desconocido'}) - ` +
+        `armar y enviar a mano la información al comerciante. Cliente: ${JSON.stringify(payload.customer ?? {})}. ` +
+        `Órdenes: ${JSON.stringify(payload.orders_requested ?? [])}. Checkouts: ${JSON.stringify(payload.checkouts_requested ?? [])}. ` +
+        `Borradores: ${JSON.stringify(payload.drafts_orders_requested ?? [])}.`,
+    );
+    // Nunca falla de forma reintentable - "loguear para seguimiento manual"
+    // no tiene un camino de error propio, siempre queda marcado procesado.
+    await this.prisma.webhookEvent.update({
+      where: { id: webhookEvent.id },
+      data: { processed: true, processedAt: new Date() },
+    });
+  }
+
+  private async logInvalidComplianceSignature(type: string, payload: unknown): Promise<void> {
+    await this.prisma.webhookEvent
+      .create({
+        data: {
+          provider: PROVIDER,
+          externalId: randomUUID(),
+          type,
+          signatureOk: false,
+          payload: (payload ?? {}) as Prisma.InputJsonValue,
+          error: 'Invalid x-linkedstore-hmac-sha256 signature',
+        },
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(`Failed to log invalid Tiendanube ${type} signature attempt: ${(err as Error).message}`);
+      });
+  }
+}
+
+/** Saca las mismas claves de contacto que `redactCustomerOrders` limpia en
+ * las columnas promovidas, pero dentro del JSON crudo del webhook original -
+ * nunca toca nada más (SKUs/cantidades/totales siguen siendo datos de
+ * negocio legítimos del tenant, no datos personales). */
+function redactContactFields(payload: Prisma.JsonValue): Prisma.InputJsonValue {
+  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+    const { contact_name, contact_email, contact_phone, contact_identification, ...rest } = payload as Record<
+      string,
+      unknown
+    >;
+    void contact_name;
+    void contact_email;
+    void contact_phone;
+    void contact_identification;
+    return rest as Prisma.InputJsonValue;
+  }
+  return payload as Prisma.InputJsonValue;
 }

@@ -1,7 +1,7 @@
 import type { ConnectorService } from '@plexo/connectors';
 import { Prisma, type PrismaService } from '@plexo/database';
 import type { InventoryService } from '@plexo/inventory';
-import type { TiendanubeApiClient, TiendanubeConnector } from '@plexo/tiendanube';
+import { TiendanubeAuthError, type TiendanubeApiClient, type TiendanubeConnector } from '@plexo/tiendanube';
 import type { StockUpdatedEvent } from '../dashboard/events.js';
 import { TiendanubeStockSyncService } from './tiendanube-stock-sync.service.js';
 
@@ -57,6 +57,8 @@ function makeDeps(
     tx,
     connectorService: {
       getConnector: jest.fn().mockResolvedValue(overrides.connector === undefined ? makeConnector() : overrides.connector),
+      clearSecrets: jest.fn().mockResolvedValue(undefined),
+      setStatus: jest.fn().mockResolvedValue({}),
     } as unknown as jest.Mocked<ConnectorService>,
     tiendanubeConnector: {
       getValidAccessToken: jest.fn().mockResolvedValue('access-token-1'),
@@ -243,5 +245,37 @@ describe('TiendanubeStockSyncService', () => {
 
     expect(deps.prisma.$transaction).toHaveBeenCalledTimes(2);
     expect(deps.apiClient.request).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('TiendanubeStockSyncService - 401/403 marks the connector REVOKED (Fase 6)', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('marks REVOKED and clears secrets when resolving the SKU comes back with a real auth error (not "SKU not found")', async () => {
+    const deps = makeDeps({ mapping: null });
+    (deps.apiClient.request as jest.Mock).mockRejectedValueOnce(new TiendanubeAuthError('401', 401));
+    const service = makeService(deps);
+
+    service.onStockUpdated(makeEvent());
+    await jest.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    expect(deps.connectorService.clearSecrets).toHaveBeenCalledWith('connector-1');
+    expect(deps.connectorService.setStatus).toHaveBeenCalledWith('connector-1', 'REVOKED', expect.any(String));
+    expect(deps.tx.tiendanubeProductMapping.create).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the connector is already REVOKED by the time the retry runs - idempotent', async () => {
+    const deps = makeDeps({ mapping: null });
+    (deps.connectorService.getConnector as jest.Mock)
+      .mockResolvedValueOnce(makeConnector()) // read inside push()
+      .mockResolvedValueOnce({ id: 'connector-1', status: 'REVOKED', externalAccountId: 'store-999' }); // read inside revokeOnAuthError()
+    (deps.apiClient.request as jest.Mock).mockRejectedValueOnce(new TiendanubeAuthError('401', 401));
+    const service = makeService(deps);
+
+    service.onStockUpdated(makeEvent());
+    await jest.advanceTimersByTimeAsync(DEBOUNCE_MS);
+
+    expect(deps.connectorService.setStatus).not.toHaveBeenCalled();
   });
 });

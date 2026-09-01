@@ -5,6 +5,7 @@ import { getTenantDb, getTenantId, PrismaService, withTenantContext } from '@ple
 import { InventoryService } from '@plexo/inventory';
 import {
   TiendanubeApiClient,
+  TiendanubeAuthError,
   TiendanubeConfigService,
   TiendanubeConnector,
   type TiendanubeImageResource,
@@ -108,8 +109,17 @@ export class TiendanubeCatalogSyncService {
     }
     const timer = setTimeout(() => {
       this.timers.delete(key);
-      withTenantContext(this.prisma, event.tenantId, () => this.syncArticle(event.articleId)).catch((err) => {
+      withTenantContext(this.prisma, event.tenantId, () => this.syncArticle(event.articleId)).catch(async (err) => {
         this.logger.warn(`No se pudo sincronizar el catálogo del artículo ${event.articleId} (tenant ${event.tenantId}) con Tiendanube: ${err}`);
+        // Fase 6 (hardening): mismo criterio que TiendanubeStockSyncService -
+        // un 401/403 real acá es la señal de una revocación que ningún
+        // webhook avisó todavía. Transacción nueva: la de `syncArticle` ya
+        // hizo rollback.
+        if (err instanceof TiendanubeAuthError) {
+          await withTenantContext(this.prisma, event.tenantId, () => this.revokeOnAuthError()).catch((revokeErr) => {
+            this.logger.warn(`No se pudo marcar REVOKED el connector de Tiendanube (tenant ${event.tenantId}): ${revokeErr}`);
+          });
+        }
       });
     }, DEBOUNCE_MS);
     timer.unref?.();
@@ -140,11 +150,28 @@ export class TiendanubeCatalogSyncService {
     let synced = 0;
     const skipped: Array<{ articleId: string; name: string; reason: string }> = [];
     for (const [index, article] of articles.entries()) {
-      const result = await this.syncArticle(article.id);
-      if (result.synced) {
-        synced++;
-      } else {
-        skipped.push({ articleId: article.id, name: article.name, reason: result.reason ?? 'Motivo desconocido' });
+      try {
+        const result = await this.syncArticle(article.id);
+        if (result.synced) {
+          synced++;
+        } else {
+          skipped.push({ articleId: article.id, name: article.name, reason: result.reason ?? 'Motivo desconocido' });
+        }
+      } catch (err) {
+        if (!(err instanceof TiendanubeAuthError)) {
+          throw err;
+        }
+        // Fase 6 (hardening): un 401/403 acá invalida el resto del lote
+        // entero (mismo token para todos los artículos) - marcar REVOKED
+        // (misma transacción de este request, ya activa) y cortar en vez de
+        // seguir gastando reintentos contra un token que ya no sirve.
+        await this.revokeOnAuthError();
+        const reason = 'Tiendanube revocó el acceso durante la sincronización';
+        for (const remaining of articles.slice(index)) {
+          skipped.push({ articleId: remaining.id, name: remaining.name, reason });
+        }
+        this.eventEmitter.emit(TIENDANUBE_CATALOG_SYNC_PROGRESS, { tenantId, done: articles.length, total: articles.length });
+        return { total: articles.length, synced, skipped };
       }
       this.eventEmitter.emit(TIENDANUBE_CATALOG_SYNC_PROGRESS, {
         tenantId,
@@ -153,6 +180,20 @@ export class TiendanubeCatalogSyncService {
       });
     }
     return { total: articles.length, synced, skipped };
+  }
+
+  /** Mismo criterio que TiendanubeStockSyncService.revokeOnAuthError. */
+  private async revokeOnAuthError(): Promise<void> {
+    const connector = await this.connectorService.getConnector('TIENDANUBE');
+    if (!connector || connector.status === 'REVOKED' || connector.status === 'DISCONNECTED') {
+      return;
+    }
+    await this.connectorService.clearSecrets(connector.id);
+    await this.connectorService.setStatus(
+      connector.id,
+      'REVOKED',
+      'Tiendanube devolvió 401/403 al sincronizar el catálogo - posible revocación no notificada por webhook',
+    );
   }
 
   /** `synced: false` cuando el artículo se salteó (no publicado, sin
@@ -362,6 +403,9 @@ export class TiendanubeCatalogSyncService {
           path: `/products/${productId}/images/${currentImageId}`,
         });
       } catch (err) {
+        if (err instanceof TiendanubeAuthError) {
+          throw err;
+        }
         this.logger.warn(`No se pudo borrar la imagen anterior (${currentImageId}) del producto ${productId} en Tiendanube: ${err}`);
       }
     }
@@ -386,6 +430,9 @@ export class TiendanubeCatalogSyncService {
         });
         newImageId = String(image.id);
       } catch (err) {
+        if (err instanceof TiendanubeAuthError) {
+          throw err;
+        }
         this.logger.warn(`No se pudo subir la imagen del artículo ${article.id} a Tiendanube: ${err}`);
         return;
       }

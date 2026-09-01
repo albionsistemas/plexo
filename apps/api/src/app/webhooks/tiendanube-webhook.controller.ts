@@ -52,4 +52,59 @@ export class TiendanubeWebhookController {
       payload: body,
     });
   }
+
+  /**
+   * Fase 6 (hardening) - los 3 "Required Webhooks" de protección de datos.
+   * Rutas propias, no la de arriba: sus payloads no traen ningún campo
+   * `event` para rutear (confirmado contra la doc oficial), así que cada
+   * uno necesita su propia URL a configurar del lado de Tiendanube. La
+   * doc oficial no aclara si el panel de Partners expone 1 URL compartida o
+   * 3 separadas para esto - se construyeron 3 rutas distintas por ser la
+   * opción más robusta (nunca asume una forma no confirmada), documentado
+   * en PROGRESS.md para quien las dé de alta el día que exista una app real.
+   */
+  @Public()
+  @Post('store-redact')
+  @HttpCode(200)
+  async storeRedact(
+    @Headers('x-linkedstore-hmac-sha256') signatureHeader: string | undefined,
+    @Req() request: FastifyRequest & { rawBody?: Buffer },
+    @Body() body: unknown,
+  ): Promise<void> {
+    await this.webhookService.handleStoreRedact({
+      signatureHeader,
+      rawBody: request.rawBody ?? Buffer.from(''),
+      payload: body,
+    });
+  }
+
+  @Public()
+  @Post('customers-redact')
+  @HttpCode(200)
+  async customersRedact(
+    @Headers('x-linkedstore-hmac-sha256') signatureHeader: string | undefined,
+    @Req() request: FastifyRequest & { rawBody?: Buffer },
+    @Body() body: unknown,
+  ): Promise<void> {
+    await this.webhookService.handleCustomersRedact({
+      signatureHeader,
+      rawBody: request.rawBody ?? Buffer.from(''),
+      payload: body,
+    });
+  }
+
+  @Public()
+  @Post('customers-data-request')
+  @HttpCode(200)
+  async customersDataRequest(
+    @Headers('x-linkedstore-hmac-sha256') signatureHeader: string | undefined,
+    @Req() request: FastifyRequest & { rawBody?: Buffer },
+    @Body() body: unknown,
+  ): Promise<void> {
+    await this.webhookService.handleCustomersDataRequest({
+      signatureHeader,
+      rawBody: request.rawBody ?? Buffer.from(''),
+      payload: body,
+    });
+  }
 }
