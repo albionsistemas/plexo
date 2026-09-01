@@ -907,6 +907,7 @@ model ArticleVariant {
   quoteRequestLines  QuoteRequestLine[]
   purchaseOrderLines PurchaseOrderLine[]
   cartItems          InventoryCartItem[]
+  tiendanubeMapping  TiendanubeProductMapping?
 
   @@unique([tenantId, sku])
   @@index([tenantId, articleId])
@@ -2651,4 +2652,46 @@ model TiendanubeOrder {
   @@unique([tenantId, tiendanubeOrderId])
   @@index([tenantId, status])
   @@map("tiendanube_orders")
+}
+
+// Mapeo persistente ArticleVariant -> producto/variante de Tiendanube -
+// Fase 3 de PLAN_TIENDANUBE.md (sync de stock). Adelantado desde la Fase 4
+// (catálogo) a propósito, decisión con el usuario: sin esto, cada push de
+// stock necesitaría resolver la variante por SKU contra la API en vivo
+// (GET /products/sku/:sku) en cada debounce, gastando presupuesto del
+// rate limit que la sincronización de catálogo también va a necesitar. Se
+// crea perezosamente la primera vez que TiendanubeStockSyncService
+// resuelve un SKU con éxito - no hay alta masiva ni back-fill acá. Cuando
+// se codee la Fase 4, esta misma tabla es la que esa fase extiende (no se
+// crea una segunda).
+model TiendanubeProductMapping {
+  id       String @id @default(uuid())
+  tenantId String
+
+  // @unique (no sólo parte de un compuesto): articleVariantId ya es un UUID
+  // global, no hace falta tenantId para que sea único - Prisma además exige
+  // esto para el lado "uno" de una relación uno-a-uno como
+  // ArticleVariant.tiendanubeMapping.
+  articleVariantId String         @unique
+  articleVariant   ArticleVariant @relation(fields: [articleVariantId], references: [id])
+
+  // IDs de Tiendanube como String, mismo criterio que
+  // Connector.externalAccountId/TiendanubeOrder.tiendanubeOrderId - la API
+  // los devuelve como number, pero este proyecto nunca hace aritmética con
+  // un ID externo.
+  tiendanubeProductId String
+  tiendanubeVariantId String
+
+  // Último valor de stock efectivamente empujado (y cuándo) - le permite a
+  // TiendanubeStockSyncService saltear el PUT cuando una ráfaga de
+  // movimientos netea al mismo total ya confirmado en la tienda, sin gastar
+  // otra llamada del rate limit por algo que Tiendanube ya sabe.
+  lastPushedStock Decimal?  @db.Decimal(14, 3)
+  lastPushedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@map("tiendanube_product_mappings")
 }

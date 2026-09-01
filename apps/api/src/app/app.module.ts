@@ -37,6 +37,7 @@ import { SchedulerModule } from './scheduler/scheduler.module.js';
 import { SupplierReturnsModule } from './supplier-returns/supplier-returns.module.js';
 import { SystemModule } from './system/system.module.js';
 import { TiendanubeOrdersModule } from './tiendanube-orders/tiendanube-orders.module.js';
+import { TiendanubeStockSyncModule } from './tiendanube-stock-sync/tiendanube-stock-sync.module.js';
 import { TreasuryModule } from './treasury/treasury.module.js';
 import { UsersModule } from './users/users.module.js';
 import { MercadoPagoWebhookModule } from './webhooks/mercadopago-webhook.module.js';
@@ -79,6 +80,7 @@ import { TiendanubeWebhookModule } from './webhooks/tiendanube-webhook.module.js
     TiendanubeModule,
     TiendanubeWebhookModule,
     TiendanubeOrdersModule,
+    TiendanubeStockSyncModule,
     AdminModule,
     SystemModule,
     UsersModule,
